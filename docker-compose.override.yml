@@ -1,0 +1,38 @@
+# Overrides de desarrollo: se aplican automáticamente junto con docker-compose.yml
+# (docker compose up ya los mezcla). Montan el código fuente para hot-reload y
+# bajan gunicorn a 1 worker con --reload para no tener que reconstruir la imagen
+# en cada cambio.
+
+services:
+  core:
+    volumes:
+      - jwt_keys:/app/keys
+      - ./services/core:/app
+    environment:
+      - GUNICORN_RELOAD=true
+      - GUNICORN_WORKERS=1
+
+  channel-gateway:
+    volumes:
+      - ./services/channel-gateway:/app
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+
+  conversation-engine:
+    volumes:
+      - ./services/conversation-engine:/app
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+
+  operators-desk:
+    volumes:
+      - ./services/operators-desk:/app
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+
+  analytics:
+    volumes:
+      - ./services/analytics:/app
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+
+  webchat:
+    volumes:
+      - ./services/webchat:/app
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]

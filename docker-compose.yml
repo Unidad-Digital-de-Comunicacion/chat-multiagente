@@ -1,0 +1,181 @@
+x-fastapi-common: &fastapi-common
+  environment:
+    - CORE_BASE_URL=http://core:80
+    - JWT_PUBLIC_KEY_URL=http://core:80/api/auth/jwks/
+  depends_on:
+    db:
+      condition: service_healthy
+    core:
+      condition: service_healthy
+  # Stubs livianos (Fase 0): con esto alcanza y de sobra. Subir cuando cada
+  # servicio tenga lógica real (Fase 3+).
+  deploy:
+    resources:
+      limits:
+        cpus: "0.5"
+        memory: 256M
+      reservations:
+        memory: 128M
+
+services:
+  db:
+    image: postgres:16
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_READONLY_USER=${POSTGRES_READONLY_USER}
+      - POSTGRES_READONLY_PASSWORD=${POSTGRES_READONLY_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./services/db/init-schemas.sh:/docker-entrypoint-initdb.d/init-schemas.sh:ro
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1G
+        reservations:
+          memory: 256M
+
+  # Django + DRF. Dentro del contenedor corren nginx (puerto 80, sirve
+  # estáticos/media y hace de proxy) y gunicorn (127.0.0.1:8000, no expuesto),
+  # coordinados por supervisord — ver services/core/docker/.
+  core:
+    build: ./services/core
+    environment:
+      - DJANGO_SECRET_KEY=${DJANGO_SECRET_KEY}
+      - DJANGO_DEBUG=${DJANGO_DEBUG}
+      - DJANGO_ALLOWED_HOSTS=${DJANGO_ALLOWED_HOSTS}
+      - FRONTEND_ORIGINS=${FRONTEND_ORIGINS}
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_NAME=${POSTGRES_DB}
+      - DB_SCHEMA=core
+      - DB_USER=${POSTGRES_USER}
+      - DB_PASSWORD=${POSTGRES_PASSWORD}
+      - JWT_PRIVATE_KEY_PATH=${JWT_PRIVATE_KEY_PATH}
+      - JWT_PUBLIC_KEY_PATH=${JWT_PUBLIC_KEY_PATH}
+    volumes:
+      - jwt_keys:/app/keys
+    ports:
+      - "8001:80"
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+        reservations:
+          memory: 256M
+
+  channel-gateway:
+    build: ./services/channel-gateway
+    <<: *fastapi-common
+    environment:
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_NAME=${POSTGRES_DB}
+      - DB_SCHEMA=channel_gateway
+      - DB_USER=${POSTGRES_USER}
+      - DB_PASSWORD=${POSTGRES_PASSWORD}
+      - META_APP_ID=${META_APP_ID}
+      - META_APP_SECRET=${META_APP_SECRET}
+      - META_WEBHOOK_VERIFY_TOKEN=${META_WEBHOOK_VERIFY_TOKEN}
+    ports:
+      - "8002:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  conversation-engine:
+    build: ./services/conversation-engine
+    <<: *fastapi-common
+    environment:
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_NAME=${POSTGRES_DB}
+      - DB_SCHEMA=conversation_engine
+      - DB_USER=${POSTGRES_USER}
+      - DB_PASSWORD=${POSTGRES_PASSWORD}
+    ports:
+      - "8003:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  operators-desk:
+    build: ./services/operators-desk
+    <<: *fastapi-common
+    environment:
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_NAME=${POSTGRES_DB}
+      - DB_SCHEMA=operators_desk
+      - DB_USER=${POSTGRES_USER}
+      - DB_PASSWORD=${POSTGRES_PASSWORD}
+      - CONVERSATION_ENGINE_URL=http://conversation-engine:8000
+    ports:
+      - "8004:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  analytics:
+    build: ./services/analytics
+    <<: *fastapi-common
+    environment:
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_NAME_CORE_READONLY=${POSTGRES_DB}
+      - DB_USER_READONLY=${POSTGRES_READONLY_USER}
+      - DB_PASSWORD_READONLY=${POSTGRES_READONLY_PASSWORD}
+    ports:
+      - "8005:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  webchat:
+    build: ./services/webchat
+    <<: *fastapi-common
+    environment:
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_NAME=${POSTGRES_DB}
+      - DB_SCHEMA=webchat
+      - DB_USER=${POSTGRES_USER}
+      - DB_PASSWORD=${POSTGRES_PASSWORD}
+    ports:
+      - "8006:8000"
+    profiles: ["webchat"] # no arranca por defecto: docker compose --profile webchat up
+
+volumes:
+  pgdata:
+  jwt_keys:

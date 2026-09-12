@@ -216,3 +216,30 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# --- chat-multiagente ---
+# Secrets / local env
+.env
+services/*/.env
+
+# JWT signing keys (generated at container start, never committed)
+services/core/keys/
+
+# Django runtime artifacts per service
+services/core/staticfiles/
+services/core/mediafiles/
+
+# Node / React frontends
+node_modules/
+frontend/*/dist/
+frontend/*/build/
+
+# Android
+mobile/*/build/
+mobile/*/.gradle/
+mobile/*/local.properties
+*.apk
+*.aab
+
+# Docker volumes mounted locally (if any)
+services/db/data/
