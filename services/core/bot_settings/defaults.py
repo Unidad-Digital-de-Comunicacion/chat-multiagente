@@ -18,11 +18,13 @@ MENSAJE_CIERRE_INACTIVIDAD = (
     "Cerramos esta conversación por inactividad. Si necesitás algo más, "
     "volvé a escribirnos y con gusto te ayudamos. ¡Hasta pronto!"
 )
+MENSAJE_OPERADOR_TOMA = "Hola, mi nombre es {nombre}. ¿En qué puedo ayudarte hoy?"
 
 # Variables disponibles dentro de cada plantilla, para mostrar como ayuda en
 # el formulario del panel.
 #   {area}   -> nombre del menú donde está el contacto (sólo saludo de área)
-#   {nombre} -> nombre del contacto (vacío si no se tiene)
+#   {nombre} -> nombre del contacto (vacío si no se tiene) — EXCEPTO en
+#               "mensaje_operador_toma", donde es el nombre del operador.
 VARIABLES_POR_CAMPO = {
     "mensaje_bienvenida": ["nombre"],
     "saludo_inicial": ["nombre"],
@@ -30,6 +32,7 @@ VARIABLES_POR_CAMPO = {
     "mensaje_despedida": ["nombre"],
     "mensaje_cierre_inactividad": ["nombre"],
     "derivacion_mensaje": ["area", "nombre"],
+    "mensaje_operador_toma": ["nombre"],
 }
 
 DEFAULT_POR_CAMPO = {
@@ -40,6 +43,7 @@ DEFAULT_POR_CAMPO = {
     "mensaje_cierre_inactividad": MENSAJE_CIERRE_INACTIVIDAD,
     "derivacion_texto": DERIVACION_TEXTO,
     "derivacion_mensaje": DERIVACION_MENSAJE,
+    "mensaje_operador_toma": MENSAJE_OPERADOR_TOMA,
 }
 
 

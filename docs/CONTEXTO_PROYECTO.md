@@ -605,8 +605,14 @@ son templates Django con SSO, esa idea se descartó a favor de una sola UI en el
   semanal (desde/hasta + Marcar horario/Marcar cerrado).
 - **Mensajes predeterminados** (`bot_settings` app, nueva — no estaba en el enunciado original de
   esta fase pero es parte natural de "configurar el chatbot"): un `BotMessages` por organización
-  con los 7 textos del bot (bienvenida, saludos, despedida, derivación, cierre por inactividad) +
-  2 parámetros numéricos. Mismos `MessageEditor` + vista previa tipo chat que el menú.
+  con los 8 textos configurables (bienvenida, saludos, despedida, derivación, cierre por
+  inactividad, saludo del operador al tomar la conversación) + 2 parámetros numéricos. Mismos
+  `MessageEditor` + vista previa tipo chat que el menú. El campo `mensaje_operador_toma` es un
+  caso particular: a diferencia de todos los demás, ahí `{nombre}` es el nombre del **operador**
+  (no el del contacto) — default: "Hola, mi nombre es {nombre}. ¿En qué puedo ayudarte hoy?". Es
+  sólo la configuración del texto; sugerírselo al operador al marcar una conversación como
+  "tomada" (o mandarlo solo) es Operators Desk, Fase 4/5 — todavía no implementado, igual que el
+  resto del flujo de conversaciones.
 - **Catálogo de etiquetas de conversación** (`tags` app, nueva — sólo la parte de configuración;
   ver el resto de la consigna, deferido, en la Fase 4/5 de abajo): modelo `Etiqueta` con
   `organization` obligatoria. Dos orígenes automáticos, ninguno editable a mano por un Admin más

@@ -5,6 +5,7 @@ from .models import BotMessages
 _CAMPOS_CON_DEFAULT = [
     "mensaje_bienvenida", "saludo_inicial", "saludo_area", "mensaje_despedida",
     "derivacion_texto", "derivacion_mensaje", "mensaje_cierre_inactividad",
+    "mensaje_operador_toma",
 ]
 
 
@@ -21,6 +22,7 @@ class BotMessagesSerializer(serializers.ModelSerializer):
         fields = [
             "mensaje_bienvenida", "saludo_inicial", "saludo_area", "mensaje_despedida",
             "derivacion_texto", "derivacion_mensaje", "mensaje_cierre_inactividad",
+            "mensaje_operador_toma",
             "minutos_inactividad_cierre", "segundos_remostrar_menu",
             "valores_efectivos", "updated_at",
         ]

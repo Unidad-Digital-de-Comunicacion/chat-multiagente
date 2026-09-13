@@ -18,6 +18,14 @@ class BotMessagesModelTests(TestCase):
         mensajes = BotMessages.objects.create(organization=org, mensaje_bienvenida="Hola personalizado")
         self.assertEqual(mensajes.valor_o_default("mensaje_bienvenida"), "Hola personalizado")
 
+    def test_default_del_saludo_del_operador_al_tomar_la_conversacion(self):
+        org = make_organization()
+        mensajes = BotMessages.objects.create(organization=org)
+        self.assertEqual(
+            mensajes.valor_o_default("mensaje_operador_toma"),
+            "Hola, mi nombre es {nombre}. ¿En qué puedo ayudarte hoy?",
+        )
+
 
 class BotMessagesViewTests(TestCase):
     def setUp(self):
@@ -36,6 +44,19 @@ class BotMessagesViewTests(TestCase):
     def test_get_incluye_valores_efectivos_con_los_defaults(self):
         response = authenticated_client(self.admin).get(self.url)
         self.assertEqual(response.data["valores_efectivos"]["mensaje_despedida"], defaults.MENSAJE_DESPEDIDA)
+        self.assertEqual(
+            response.data["valores_efectivos"]["mensaje_operador_toma"], defaults.MENSAJE_OPERADOR_TOMA,
+        )
+
+    def test_admin_puede_editar_el_saludo_del_operador_al_tomar(self):
+        response = authenticated_client(self.admin).patch(
+            self.url, {"mensaje_operador_toma": "¡Hola! Soy {nombre}, ¿te puedo ayudar?"},
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        self.org.refresh_from_db()
+        self.assertEqual(
+            self.org.mensajes_bot.mensaje_operador_toma, "¡Hola! Soy {nombre}, ¿te puedo ayudar?",
+        )
 
     def test_admin_puede_editar(self):
         response = authenticated_client(self.admin).patch(self.url, {"mensaje_bienvenida": "Bienvenido a UCD"})

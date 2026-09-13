@@ -48,6 +48,13 @@ class BotMessages(models.Model):
         blank=True, verbose_name="Mensaje de cierre por inactividad",
         help_text="Se manda al cerrar automáticamente una conversación inactiva. Variable: {nombre}.",
     )
+    mensaje_operador_toma = models.TextField(
+        blank=True, verbose_name="Saludo del operador al tomar la conversación",
+        help_text='Se le sugiere al operador al marcar una conversación como "tomada". A diferencia '
+                   "del resto de los campos, acá {nombre} es el nombre del OPERADOR, no el del "
+                   "contacto. Es sólo configuración: aplicarlo de verdad (sugerirlo/mandarlo al tomar "
+                   "una conversación) es parte del Operators Desk, Fase 4/5 — todavía no implementado.",
+    )
 
     minutos_inactividad_cierre = models.PositiveIntegerField(
         default=0, verbose_name="Minutos de inactividad para cerrar la conversación",

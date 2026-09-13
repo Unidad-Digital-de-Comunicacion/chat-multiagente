@@ -63,9 +63,19 @@ const CAMPOS_TEXTO: Campo[] = [
     multiline: true,
     variables: ["nombre"],
   },
+  {
+    name: "mensaje_operador_toma",
+    label: "Saludo del operador al tomar la conversación",
+    help: 'Se le sugiere al operador al marcar una conversación como "tomada". Acá {nombre} es el '
+      + "nombre del OPERADOR, no el del contacto (a diferencia de los demás campos). Es sólo "
+      + "configuración por ahora: aplicarlo de verdad es parte del Operators Desk (Fase 4/5).",
+    multiline: true,
+    variables: ["nombre"],
+  },
 ];
 
 const EJEMPLO = { area: "Ventas", nombre: "Juan" };
+const EJEMPLO_OPERADOR = { nombre: "Marina (operadora)" };
 
 export default function BotMessagesPage() {
   const { me } = useAuth();
@@ -113,6 +123,7 @@ export default function BotMessagesPage() {
         derivacion_texto: mensajes.derivacion_texto,
         derivacion_mensaje: mensajes.derivacion_mensaje,
         mensaje_cierre_inactividad: mensajes.mensaje_cierre_inactividad,
+        mensaje_operador_toma: mensajes.mensaje_operador_toma,
         minutos_inactividad_cierre: mensajes.minutos_inactividad_cierre,
         segundos_remostrar_menu: mensajes.segundos_remostrar_menu,
       };
@@ -229,6 +240,9 @@ export default function BotMessagesPage() {
             ) : (
               <div className="wa-bubble-caption">Cierre por inactividad: desactivado</div>
             )}
+            <BotBubble caption='Al tomar la conversación (lo escribe el operador, no el bot)'>
+              {renderMarkup(aplicarVariables(efectivo("mensaje_operador_toma"), EJEMPLO_OPERADOR))}
+            </BotBubble>
           </PhoneFrame>
         </aside>
       </div>

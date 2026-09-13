@@ -154,6 +154,7 @@ export interface BotMessages {
   derivacion_texto: string;
   derivacion_mensaje: string;
   mensaje_cierre_inactividad: string;
+  mensaje_operador_toma: string;
   minutos_inactividad_cierre: number;
   segundos_remostrar_menu: number;
   valores_efectivos: Record<string, string>;
