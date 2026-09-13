@@ -1,9 +1,10 @@
 """Las 7 etiquetas de estado que pide la consigna, con un color default
-razonable (el admin puede recolorearlas después). `asegurar_etiquetas_sistema`
-es idempotente y se llama de forma lazy (en `EtiquetaViewSet.get_queryset`,
-mismo patrón que `business_hours.services.sincronizar_feriados` para el
-catálogo compartido) para que también se completen en organizaciones que ya
-existían antes de esta app."""
+razonable (el admin puede recolorearlas después), más la sincronización
+"cada equipo es una etiqueta". Ambas funciones son idempotentes y se llaman
+de forma lazy (en `EtiquetaViewSet.get_queryset`, mismo patrón que
+`business_hours.services.sincronizar_feriados` para el catálogo compartido)
+para que también se completen en organizaciones/equipos que ya existían
+antes de esta app o de que se cargara un equipo nuevo."""
 
 ETIQUETAS_SISTEMA = [
     {"codigo": "pendiente", "nombre": "Pendiente", "color": "#9CA3AF"},
@@ -14,6 +15,8 @@ ETIQUETAS_SISTEMA = [
     {"codigo": "rechazado", "nombre": "Rechazado", "color": "#EF4444"},
     {"codigo": "resuelto", "nombre": "Resuelto", "color": "#22C55E"},
 ]
+
+COLOR_EQUIPO_DEFAULT = "#3454D1"
 
 
 def asegurar_etiquetas_sistema(organization_id):
@@ -37,3 +40,29 @@ def asegurar_etiquetas_sistema(organization_id):
         )
         for d in faltantes
     ])
+
+
+def asegurar_etiquetas_equipo(organization_id):
+    """"Cada equipo es una etiqueta": una por `Team`, autogenerada y con el
+    nombre siempre igual al del equipo (si lo renombran, se corrige acá) —
+    no se crea/borra/renombra a mano desde la API de etiquetas."""
+    from teams.models import Team
+
+    from .models import Etiqueta
+
+    equipos = Team.objects.filter(organization_id=organization_id)
+    existentes = {e.team_id: e for e in Etiqueta.objects.filter(organization_id=organization_id, team__isnull=False)}
+
+    nuevas = [
+        Etiqueta(organization_id=organization_id, team_id=equipo.id, nombre=equipo.name, color=COLOR_EQUIPO_DEFAULT)
+        for equipo in equipos
+        if equipo.id not in existentes
+    ]
+    if nuevas:
+        Etiqueta.objects.bulk_create(nuevas)
+
+    for equipo in equipos:
+        etiqueta = existentes.get(equipo.id)
+        if etiqueta is not None and etiqueta.nombre != equipo.name:
+            etiqueta.nombre = equipo.name
+            etiqueta.save(update_fields=["nombre"])

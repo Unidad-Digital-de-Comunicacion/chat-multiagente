@@ -4,27 +4,35 @@ from .models import HEX_RE, Etiqueta
 
 
 class EtiquetaSerializer(serializers.ModelSerializer):
+    """`team` es de sólo lectura: nunca se elige a mano — lo asigna
+    `defaults.asegurar_etiquetas_equipo` una única vez por equipo ("cada
+    equipo es una etiqueta"). Toda etiqueta que arma un Admin a mano es
+    general (`team=None`)."""
+
     class Meta:
         model = Etiqueta
-        fields = ["id", "team", "codigo", "nombre", "color", "es_sistema", "orden", "created_at", "updated_at"]
-        read_only_fields = ["id", "codigo", "es_sistema", "created_at", "updated_at"]
+        fields = [
+            "id", "team", "codigo", "nombre", "color", "color_texto", "es_sistema", "orden",
+            "created_at", "updated_at",
+        ]
+        read_only_fields = ["id", "team", "codigo", "es_sistema", "created_at", "updated_at"]
 
-    def validate_color(self, value):
+    def _validar_hex(self, value):
         if not HEX_RE.match(value):
             raise serializers.ValidationError("El color debe ser hexadecimal, ej: #3454D1.")
         return value.upper()
 
+    def validate_color(self, value):
+        return self._validar_hex(value)
+
+    def validate_color_texto(self, value):
+        return self._validar_hex(value)
+
     def validate_nombre(self, value):
-        if self.instance and self.instance.es_sistema and value != self.instance.nombre:
+        instance = self.instance
+        if instance and (instance.es_sistema or instance.team_id) and value != instance.nombre:
             raise serializers.ValidationError(
-                "El nombre de una etiqueta del sistema no se puede modificar, sólo su color."
+                "El nombre de una etiqueta de sistema o de equipo no se puede modificar, sólo su color "
+                "(la de equipo se renombra sola si renombrás el equipo)."
             )
         return value
-
-    def validate_team(self, team):
-        if team is None:
-            return team
-        request = self.context.get("request")
-        if request and team.organization_id != request.user.organization_id:
-            raise serializers.ValidationError("El equipo debe ser de tu organización.")
-        return team

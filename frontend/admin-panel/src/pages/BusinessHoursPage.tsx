@@ -555,6 +555,13 @@ function ExceptionsEditor({ canEdit }: { canEdit: boolean }) {
 
         {dia && (
           <>
+            {canEdit && (
+              <div className="toolbar">
+                <button className="btn btn-primary" onClick={guardar} disabled={saving}>
+                  {saving ? "Guardando…" : "Guardar"}
+                </button>
+              </div>
+            )}
             {dia.compartido && (
               <div className="hint-box">
                 Este día es <strong>{labelTipo(dia.tipo)}</strong> según el catálogo nacional
@@ -661,12 +668,6 @@ function ExceptionsEditor({ canEdit }: { canEdit: boolean }) {
             )}
 
             {cerrado && <p className="text-muted">Este día queda cerrado todo el día (sin horario de atención).</p>}
-
-            {canEdit && (
-              <button className="btn btn-primary" onClick={guardar} disabled={saving}>
-                {saving ? "Guardando…" : "Guardar"}
-              </button>
-            )}
           </>
         )}
       </div>

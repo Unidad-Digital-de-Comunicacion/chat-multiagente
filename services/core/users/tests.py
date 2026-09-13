@@ -334,6 +334,22 @@ class MeViewTests(TestCase):
         self.assertIn("menu.change_menuopcion", response.data["permissions"])
 
 
+class GroupListViewTests(TestCase):
+    """El selector de grupos del Admin Panel (`UsersPage.tsx::UserFormModal`)
+    espera un array plano (`Group[]`), no el sobre paginado `{count,
+    results}` que usa el resto de la API — si esto vuelve a paginarse por
+    accidente, el front rompe con "groups.map is not a function" apenas se
+    abre el modal de alta/edición de usuario."""
+
+    def test_devuelve_un_array_plano_no_paginado(self):
+        org = make_organization()
+        user = make_user(org, groups=["administradores"])
+        response = authenticated_client(user).get(reverse("group-list"))
+        self.assertEqual(response.status_code, 200)
+        self.assertIsInstance(response.data, list)
+        self.assertEqual(len(response.data), 5)
+
+
 class LoginViewTests(TestCase):
     def test_login_devuelve_access_y_refresh_con_claims_multi_tenant(self):
         import jwt as pyjwt

@@ -22,24 +22,30 @@ def _validar_color(value):
 
 
 class Etiqueta(models.Model):
-    """`organization` es siempre obligatoria (multi-tenant). `team` es
-    opcional: null = etiqueta general de la organización (incluidas las 7 de
-    sistema), cargado = etiqueta propia de ese equipo únicamente.
+    """`organization` es siempre obligatoria (multi-tenant). Dos orígenes
+    posibles, ambos automáticos y de sólo lectura para el admin (nunca se
+    elige "por equipo o general" a mano al crear una etiqueta):
 
-    `es_sistema=True` marca las 7 etiquetas de estado que existen por
-    default en toda organización (una copia por organización, no una fila
-    global, para que cada una pueda elegir sus propios colores sin afectar a
-    las demás) — se identifican por `codigo` y no se pueden borrar ni
-    renombrar, sólo recolorear (ver `EtiquetaSerializer.validate_nombre` y
-    `EtiquetaViewSet.perform_destroy`)."""
+    - `es_sistema=True`: las 7 etiquetas de estado que existen por default en
+      toda organización (una copia por organización, no una fila global,
+      para que cada una elija sus propios colores) — identificadas por
+      `codigo`, no se pueden borrar ni renombrar, sólo recolorear.
+    - `team` cargado: "cada equipo es una etiqueta" — una etiqueta por
+      equipo, autogenerada y sincronizada con su nombre (`defaults.
+      asegurar_etiquetas_equipo`), tampoco se puede borrar ni renombrar a
+      mano (se borra sola en cascada si se borra el equipo).
+
+    Todas las demás etiquetas (las que arma el admin a mano) son generales:
+    `team=None`, `es_sistema=False`."""
 
     organization = models.ForeignKey(
         "organizations.Organization", on_delete=models.CASCADE, related_name="etiquetas",
     )
-    team = models.ForeignKey(
-        "teams.Team", on_delete=models.CASCADE, null=True, blank=True, related_name="etiquetas",
+    team = models.OneToOneField(
+        "teams.Team", on_delete=models.CASCADE, null=True, blank=True, related_name="etiqueta",
         verbose_name="Equipo",
-        help_text="Vacío = etiqueta general de la organización. Cargado = sólo para ese equipo.",
+        help_text="Cargado sólo en la etiqueta autogenerada que representa a ese equipo. "
+                   "Vacío en toda etiqueta general (de sistema o creada por un Admin).",
     )
     codigo = models.CharField(
         max_length=30, blank=True,
@@ -47,6 +53,11 @@ class Etiqueta(models.Model):
     )
     nombre = models.CharField(max_length=50)
     color = models.CharField(max_length=7, default="#6B7280", validators=[_validar_color])
+    color_texto = models.CharField(
+        max_length=7, default="#FFFFFF", validators=[_validar_color],
+        help_text="Color de la fuente sobre `color` — blanco o negro, para que el texto se lea bien "
+                   "según qué tan claro/oscuro sea el fondo elegido.",
+    )
     es_sistema = models.BooleanField(default=False)
     orden = models.IntegerField(default=0)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -57,8 +68,14 @@ class Etiqueta(models.Model):
         verbose_name_plural = "Etiquetas"
         ordering = ["orden", "nombre"]
         constraints = [
+            # Sólo para las generales (`team=None`) — Postgres no considera
+            # iguales dos NULL para una unique constraint común, así que sin
+            # esta condición dos etiquetas generales podrían repetir nombre
+            # en la misma organización. Las de equipo ya son únicas por sí
+            # solas (`team` es `OneToOneField`).
             models.UniqueConstraint(
-                fields=["organization", "team", "nombre"], name="unique_etiqueta_nombre_por_alcance",
+                fields=["organization", "nombre"], condition=models.Q(team__isnull=True),
+                name="unique_etiqueta_general_nombre_por_org",
             ),
         ]
 

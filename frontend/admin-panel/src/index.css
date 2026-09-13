@@ -727,6 +727,30 @@ input, select, textarea {
   flex: 1;
 }
 
+/* ---- Catálogo de etiquetas de conversación ---- */
+.tag-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.tag-chip-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.tag-chip {
+  display: inline-block;
+  padding: 0.25rem 0.75rem;
+  border-radius: 999px;
+  /* El color de fondo y de fuente vienen siempre por estilo inline
+     (`Etiqueta.color`/`color_texto`, elegidos en el form) — sin default
+     acá para no taparlos por accidente. */
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
 /* ---- Mini almanaque (días excepcionales) ---- */
 .calendar-header {
   display: flex;

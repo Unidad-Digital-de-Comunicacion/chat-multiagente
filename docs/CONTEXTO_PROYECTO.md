@@ -609,14 +609,20 @@ son templates Django con SSO, esa idea se descartó a favor de una sola UI en el
   2 parámetros numéricos. Mismos `MessageEditor` + vista previa tipo chat que el menú.
 - **Catálogo de etiquetas de conversación** (`tags` app, nueva — sólo la parte de configuración;
   ver el resto de la consigna, deferido, en la Fase 4/5 de abajo): modelo `Etiqueta` con
-  `organization` obligatoria y `team` opcional (vacío = etiqueta general de la organización, cargado
-  = sólo de ese equipo). Las 7 etiquetas de estado que pide la consigna (`pendiente`, `asignada`,
-  `tomada`, `en_proceso`, `en_pausa`, `rechazado`, `resuelto`) se autogeneran por organización la
-  primera vez que se lista el catálogo (`es_sistema=True`, identificadas por `codigo`) — no se
-  pueden borrar ni renombrar, sólo recolorear; el resto de las etiquetas (generales o por equipo)
-  las administra un Admin sin esa restricción (`tags.add_/change_/delete_/view_etiqueta`;
-  `operadores` sólo lectura, para cuando la Fase 4/5 les permita aplicarlas). `?team=<id>` filtra
-  el catálogo por equipo. `EtiquetaSerializer` valida el color como hexadecimal (`#RRGGBB`).
+  `organization` obligatoria. Dos orígenes automáticos, ninguno editable a mano por un Admin más
+  allá del color: las 7 etiquetas de estado que pide la consigna (`pendiente`, `asignada`,
+  `tomada`, `en_proceso`, `en_pausa`, `rechazado`, `resuelto`, `es_sistema=True`, identificadas por
+  `codigo`) y **una etiqueta por cada equipo** ("cada equipo es una etiqueta" — `team` es un
+  `OneToOneField` a `Team`, el nombre se sincroniza solo si renombrás el equipo y se borra sola en
+  cascada si borrás el equipo); ambas se autogeneran/sincronizan la primera vez que se lista el
+  catálogo (`defaults.asegurar_etiquetas_sistema` / `asegurar_etiquetas_equipo`) y no se pueden
+  borrar ni renombrar, sólo recolorear. Todas las demás etiquetas las arma un Admin a mano y son
+  siempre **generales** (`team=None`) — no existe la opción de asignarles un equipo, `team` es de
+  sólo lectura en `EtiquetaSerializer`. Permisos: `tags.add_/change_/delete_/view_etiqueta` para
+  administradores, sólo `view_etiqueta` para operadores (para cuando la Fase 4/5 les permita
+  aplicarlas). `?team=<id>` filtra el catálogo por equipo. El color se valida como hexadecimal
+  (`#RRGGBB`). Admin Panel: página "Etiquetas" (`frontend/admin-panel/src/pages/TagsPage.tsx`) con
+  dos grupos — generales y de equipo.
 
 ### Fase 3 — Channel Gateway + integración WhatsApp
 - Embedded Signup, recepción y verificación de webhooks (`X-Hub-Signature-256`), envío de

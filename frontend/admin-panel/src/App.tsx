@@ -14,6 +14,7 @@ import TeamsPage from "./pages/TeamsPage";
 import MenuPage from "./pages/MenuPage";
 import BusinessHoursPage from "./pages/BusinessHoursPage";
 import BotMessagesPage from "./pages/BotMessagesPage";
+import TagsPage from "./pages/TagsPage";
 
 export default function App() {
   return (
@@ -32,6 +33,7 @@ export default function App() {
             <Route path="/menu" element={<MenuPage />} />
             <Route path="/horarios" element={<BusinessHoursPage />} />
             <Route path="/mensajes" element={<BotMessagesPage />} />
+            <Route path="/etiquetas" element={<TagsPage />} />
             <Route path="/" element={<Navigate to="/menu" replace />} />
           </Route>
         </Route>

@@ -175,3 +175,16 @@ export interface GrillaDias {
   slots: string[];
   dias: GrillaDia[];
 }
+
+export interface Etiqueta {
+  id: number;
+  team: number | null;
+  codigo: string;
+  nombre: string;
+  color: string;
+  color_texto: string;
+  es_sistema: boolean;
+  orden: number;
+  created_at: string;
+  updated_at: string;
+}

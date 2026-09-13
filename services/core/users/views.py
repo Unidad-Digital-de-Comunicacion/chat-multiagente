@@ -100,8 +100,11 @@ class ChangeMyPasswordView(APIView):
 class GroupListView(ListAPIView):
     """Los 5 grupos de la plataforma, para que el Admin Panel arme el
     selector al asignarle grupo(s) a un usuario. `auth.view_group` (sección
-    `users.group_permissions`)."""
+    `users.group_permissions`). Sin paginar a propósito: son siempre 5, el
+    Admin Panel espera un array plano (`Group[]`), no el sobre paginado
+    `{count, results}` que usa el resto de la API."""
 
     queryset = Group.objects.all().order_by("name")
+    pagination_class = None
     serializer_class = GroupSerializer
     permission_classes = [IsAuthenticated, StrictDjangoModelPermissions]

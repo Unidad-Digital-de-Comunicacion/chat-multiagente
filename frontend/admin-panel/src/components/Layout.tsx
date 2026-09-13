@@ -9,6 +9,7 @@ const NAV_ITEMS = [
   { to: "/menu", label: "Menú" },
   { to: "/horarios", label: "Horarios" },
   { to: "/mensajes", label: "Mensajes" },
+  { to: "/etiquetas", label: "Etiquetas" },
 ];
 
 export default function Layout() {
