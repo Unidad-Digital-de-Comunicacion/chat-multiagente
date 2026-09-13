@@ -13,8 +13,8 @@ class EtiquetaViewSetTests(TestCase):
         self.org_a = make_organization(name="Org A", slug="org-a")
         self.org_b = make_organization(name="Org B", slug="org-b")
         self.admin_a = make_user(self.org_a, groups=["administradores"])
+        self.admin_b = make_user(self.org_b, groups=["administradores"])
         self.operador_a = make_user(self.org_a, groups=["operadores"])
-        self.operador_b = make_user(self.org_b, groups=["operadores"])
         self.team_a = Team.objects.create(organization=self.org_a, name="Ventas")
         self.list_url = reverse("etiqueta-list")
 
@@ -32,14 +32,21 @@ class EtiquetaViewSetTests(TestCase):
 
     def test_cada_organizacion_tiene_su_propia_copia_de_las_etiquetas_de_sistema(self):
         authenticated_client(self.admin_a).get(self.list_url)
-        authenticated_client(self.operador_b).get(self.list_url)
+        authenticated_client(self.admin_b).get(self.list_url)
         pendiente_a = Etiqueta.objects.get(organization=self.org_a, codigo="pendiente")
         pendiente_b = Etiqueta.objects.get(organization=self.org_b, codigo="pendiente")
         self.assertNotEqual(pendiente_a.id, pendiente_b.id)
 
-    def test_operador_puede_leer_pero_no_crear_etiquetas(self):
-        response = authenticated_client(self.operador_a).post(self.list_url, {"nombre": "Urgente", "color": "#FF0000"})
-        self.assertEqual(response.status_code, 403)
+    def test_operador_no_puede_leer_ni_crear_etiquetas(self):
+        # Core es sólo la API de autenticación de un operador — no tiene ningún permiso sobre
+        # el catálogo de etiquetas ni el resto de la configuración (`users.group_permissions`).
+        self.assertEqual(authenticated_client(self.operador_a).get(self.list_url).status_code, 403)
+        self.assertEqual(
+            authenticated_client(self.operador_a).post(
+                self.list_url, {"nombre": "Urgente", "color": "#FF0000"},
+            ).status_code,
+            403,
+        )
 
     def test_admin_crea_etiqueta_general(self):
         response = authenticated_client(self.admin_a).post(
@@ -116,9 +123,8 @@ class EtiquetaViewSetTests(TestCase):
         self.assertFalse(Etiqueta.objects.filter(pk=etiqueta.id).exists())
 
     def test_lista_solo_etiquetas_de_la_propia_organizacion(self):
-        authenticated_client(self.admin_a).get(self.list_url)
-        authenticated_client(self.operador_b).get(self.list_url)
-        response = authenticated_client(self.operador_a).get(self.list_url)
+        authenticated_client(self.admin_b).get(self.list_url)
+        response = authenticated_client(self.admin_a).get(self.list_url)
         orgs = {Etiqueta.objects.get(pk=e["id"]).organization_id for e in response.data["results"]}
         self.assertEqual(orgs, {self.org_a.id})
 

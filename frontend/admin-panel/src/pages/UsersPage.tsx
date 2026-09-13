@@ -16,14 +16,16 @@ export default function UsersPage() {
 
   const [users, setUsers] = useState<UserRow[] | null>(null);
   const [groups, setGroups] = useState<Group[]>([]);
+  const [verEliminados, setVerEliminados] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [editing, setEditing] = useState<UserRow | null>(null);
   const [resetResult, setResetResult] = useState<{ email: string; password: string } | null>(null);
 
-  async function load() {
+  async function load(incluirEliminados = verEliminados) {
     try {
-      const data = await api.get<Paginated<UserRow>>("/api/core/users/");
+      const path = incluirEliminados ? "/api/core/users/?incluir_eliminados=1" : "/api/core/users/";
+      const data = await api.get<Paginated<UserRow>>(path);
       setUsers(data.results);
     } catch (err) {
       setError(err instanceof ApiError && err.status === 403 ? "No tenés permiso para ver esta sección." : "No se pudo cargar la lista.");
@@ -42,6 +44,7 @@ export default function UsersPage() {
   useEffect(() => {
     load();
     loadGroups();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function toggleActivo(user: UserRow) {
@@ -50,8 +53,13 @@ export default function UsersPage() {
   }
 
   async function eliminar(user: UserRow) {
-    if (!confirm(`¿Eliminar a ${user.email}?`)) return;
+    if (!confirm(`¿Eliminar a ${user.email}? Se puede restaurar después, no se pierde nada.`)) return;
     await api.delete(`/api/core/users/${user.id}/`);
+    load();
+  }
+
+  async function restaurar(user: UserRow) {
+    await api.post(`/api/core/users/${user.id}/restaurar/`);
     load();
   }
 
@@ -76,6 +84,17 @@ export default function UsersPage() {
         )}
       </div>
 
+      {canDelete && (
+        <label className="checkbox-label">
+          <input
+            type="checkbox"
+            checked={verEliminados}
+            onChange={(e) => { setVerEliminados(e.target.checked); load(e.target.checked); }}
+          />
+          Ver eliminados
+        </label>
+      )}
+
       <table className="table">
         <thead>
           <tr>
@@ -84,7 +103,7 @@ export default function UsersPage() {
             <th>Nombre</th>
             <th>DNI</th>
             <th>Grupos</th>
-            <th>Activo</th>
+            <th>Estado</th>
             {(canEdit || canDelete) && <th></th>}
           </tr>
         </thead>
@@ -105,7 +124,9 @@ export default function UsersPage() {
                     ))}
               </td>
               <td>
-                {canEdit ? (
+                {u.deleted_at ? (
+                  <span className="badge badge-warning">Eliminado</span>
+                ) : canEdit ? (
                   <input type="checkbox" checked={u.is_active} onChange={() => toggleActivo(u)} />
                 ) : u.is_active ? (
                   "Sí"
@@ -115,20 +136,30 @@ export default function UsersPage() {
               </td>
               {(canEdit || canDelete) && (
                 <td className="table-actions">
-                  {canEdit && (
-                    <button className="btn btn-ghost" onClick={() => setEditing(u)}>
-                      Editar
-                    </button>
-                  )}
-                  {canEdit && (
-                    <button className="btn btn-ghost" onClick={() => resetearPassword(u)}>
-                      Resetear contraseña
-                    </button>
-                  )}
-                  {canDelete && (
-                    <button className="btn btn-ghost btn-danger" onClick={() => eliminar(u)}>
-                      Eliminar
-                    </button>
+                  {u.deleted_at ? (
+                    canDelete && (
+                      <button className="btn btn-ghost" onClick={() => restaurar(u)}>
+                        Restaurar
+                      </button>
+                    )
+                  ) : (
+                    <>
+                      {canEdit && (
+                        <button className="btn btn-ghost" onClick={() => setEditing(u)}>
+                          Editar
+                        </button>
+                      )}
+                      {canEdit && (
+                        <button className="btn btn-ghost" onClick={() => resetearPassword(u)}>
+                          Resetear contraseña
+                        </button>
+                      )}
+                      {canDelete && (
+                        <button className="btn btn-ghost btn-danger" onClick={() => eliminar(u)}>
+                          Eliminar
+                        </button>
+                      )}
+                    </>
                   )}
                 </td>
               )}

@@ -62,6 +62,7 @@ export interface UserRow {
   group_names: string[];
   organization: number | null;
   is_active: boolean;
+  deleted_at: string | null;
   date_joined: string;
   must_change_password: boolean;
 }
@@ -147,6 +148,7 @@ export interface GrillaSemanal {
 }
 
 export interface BotMessages {
+  menu_activo: boolean;
   mensaje_bienvenida: string;
   saludo_inicial: string;
   saludo_area: string;
@@ -188,4 +190,128 @@ export interface Etiqueta {
   orden: number;
   created_at: string;
   updated_at: string;
+}
+
+export type CanalTipo = "WHATSAPP" | "MESSENGER" | "INSTAGRAM" | "WEBCHAT";
+
+export const CANAL_TIPO_LABELS: Record<CanalTipo, string> = {
+  WHATSAPP: "WhatsApp",
+  MESSENGER: "Messenger",
+  INSTAGRAM: "Instagram",
+  WEBCHAT: "Webchat",
+};
+
+export interface Canal {
+  id: number;
+  tipo: CanalTipo;
+  tipo_display: string;
+  api_key_configurada: boolean;
+  api_key_preview: string | null;
+  activo: boolean;
+  ultimo_chequeo_at: string | null;
+  ultimo_chequeo_ok: boolean | null;
+  ultimo_chequeo_detalle: string;
+  updated_at: string;
+}
+
+// --------------------------------------------------------------------- //
+// Sección "Plataforma" — sólo la ve el superusuario real de plataforma
+// (`me.is_superuser && !me.organization_id`, ver `Layout.tsx`). El resto
+// de los tipos de acá arriba son siempre de la organización del usuario
+// autenticado; éstos abarcan TODAS las organizaciones a la vez.
+// --------------------------------------------------------------------- //
+
+export type Plan = "basico" | "profesional" | "enterprise";
+
+export const PLAN_LABELS: Record<Plan, string> = {
+  basico: "Básico",
+  profesional: "Profesional",
+  enterprise: "Enterprise",
+};
+
+export interface PlatformOrganization {
+  id: number;
+  name: string;
+  slug: string;
+  plan: Plan;
+  connection_limit: number;
+  user_limit: number;
+  monthly_conversation_limit: number;
+  is_active: boolean;
+  deleted_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PlatformUser {
+  id: number;
+  email: string;
+  first_name: string;
+  last_name: string;
+  dni: string | null;
+  avatar: string | null;
+  avatar_thumbnail: string | null;
+  groups: number[];
+  group_names: string[];
+  organization: number | null;
+  organization_name: string | null;
+  is_active: boolean;
+  deleted_at: string | null;
+  date_joined: string;
+  must_change_password: boolean;
+}
+
+export type ServicioInterno =
+  | "CHANNEL_GATEWAY" | "CONVERSATION_ENGINE" | "OPERATORS_DESK" | "ANALYTICS" | "WEBCHAT";
+
+export const SERVICIO_INTERNO_LABELS: Record<ServicioInterno, string> = {
+  CHANNEL_GATEWAY: "Channel Gateway",
+  CONVERSATION_ENGINE: "Conversation Engine",
+  OPERATORS_DESK: "Operators Desk",
+  ANALYTICS: "Analytics",
+  WEBCHAT: "Webchat",
+};
+
+export interface ServiceToken {
+  id: number;
+  servicio: ServicioInterno;
+  servicio_display: string;
+  token_configurado: boolean;
+  token_preview: string | null;
+  activo: boolean;
+  generado_at: string | null;
+  updated_at: string;
+}
+
+export interface PlatformStatsOrg {
+  organization_id: number;
+  organization_name: string;
+  is_active: boolean;
+  usuarios: number;
+  user_limit: number;
+  equipos: number;
+  canales_activos: number;
+}
+
+export interface PlatformStats {
+  organizaciones_total: number;
+  organizaciones_activas: number;
+  usuarios_total: number;
+  usuarios_activos: number;
+  equipos_total: number;
+  canales_configurados: number;
+  canales_activos: number;
+  por_organizacion: PlatformStatsOrg[];
+}
+
+export interface ExternalHealthRow {
+  organization_id: number;
+  organization_name: string;
+  tipo: CanalTipo;
+  tipo_display: string;
+  activo: boolean;
+  api_key_configurada: boolean;
+  ultimo_chequeo_at: string | null;
+  ultimo_chequeo_ok: boolean | null;
+  ultimo_chequeo_detalle: string;
 }

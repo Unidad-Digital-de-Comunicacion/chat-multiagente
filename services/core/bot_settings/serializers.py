@@ -20,6 +20,7 @@ class BotMessagesSerializer(serializers.ModelSerializer):
     class Meta:
         model = BotMessages
         fields = [
+            "menu_activo",
             "mensaje_bienvenida", "saludo_inicial", "saludo_area", "mensaje_despedida",
             "derivacion_texto", "derivacion_mensaje", "mensaje_cierre_inactividad",
             "mensaje_operador_toma",

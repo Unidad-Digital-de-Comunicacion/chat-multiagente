@@ -19,10 +19,22 @@ class BotMessages(models.Model):
         "organizations.Organization", on_delete=models.CASCADE, related_name="mensajes_bot",
     )
 
+    menu_activo = models.BooleanField(
+        default=True, verbose_name="Usar el menú del bot",
+        help_text="Desactivado: no se usa el árbol de menú (ni sus saludos de sección ni la "
+                   "derivación por opción elegida) — el contacto sólo recibe el mensaje de "
+                   "bienvenida y, sin nada en el medio, la conversación queda directamente en la "
+                   "bandeja sin asignar para que cualquier operador la tome. El mensaje de "
+                   "despedida y el saludo del operador al tomar la conversación se siguen usando "
+                   "en ambos modos. Sólo configuración por ahora: aplicarlo de verdad (saltear el "
+                   "bot) es Channel Gateway/Conversation Engine, Fase 3/4 — todavía no implementado.",
+    )
+
     mensaje_bienvenida = models.TextField(
         blank=True, verbose_name="Mensaje de bienvenida (primer contacto)",
-        help_text="Se manda una sola vez, la primera vez que el contacto escribe, antes del menú. "
-                   "Variable disponible: {nombre}.",
+        help_text="Se manda una sola vez, la primera vez que el contacto escribe — antes del menú, "
+                   "o si el menú está desactivado, antes de que la conversación quede libre para "
+                   "que la tome un operador. Se usa en ambos modos. Variable disponible: {nombre}.",
     )
     saludo_inicial = models.TextField(
         blank=True, verbose_name="Saludo del menú principal",
@@ -34,7 +46,9 @@ class BotMessages(models.Model):
     )
     mensaje_despedida = models.TextField(
         blank=True, verbose_name="Mensaje de despedida",
-        help_text='Lo manda cualquier opción de tipo "Terminar" del árbol de menú. Variable: {nombre}.',
+        help_text='Se usa en ambos modos: lo manda cualquier opción de tipo "Terminar" del árbol '
+                   "de menú, o el cierre de la conversación si el menú está desactivado. "
+                   "Variable: {nombre}.",
     )
     derivacion_texto = models.CharField(
         max_length=24, blank=True, verbose_name='Texto de la opción "Hablar con un operador"',
@@ -50,10 +64,11 @@ class BotMessages(models.Model):
     )
     mensaje_operador_toma = models.TextField(
         blank=True, verbose_name="Saludo del operador al tomar la conversación",
-        help_text='Se le sugiere al operador al marcar una conversación como "tomada". A diferencia '
-                   "del resto de los campos, acá {nombre} es el nombre del OPERADOR, no el del "
-                   "contacto. Es sólo configuración: aplicarlo de verdad (sugerirlo/mandarlo al tomar "
-                   "una conversación) es parte del Operators Desk, Fase 4/5 — todavía no implementado.",
+        help_text='Se usa siempre, tenga el menú activado o no. Se le sugiere al operador al marcar '
+                   'una conversación como "tomada". A diferencia del resto de los campos, acá '
+                   "{nombre} es el nombre del OPERADOR, no el del contacto. Es sólo configuración: "
+                   "aplicarlo de verdad (sugerirlo/mandarlo al tomar una conversación) es parte del "
+                   "Operators Desk, Fase 4/5 — todavía no implementado.",
     )
 
     minutos_inactividad_cierre = models.PositiveIntegerField(

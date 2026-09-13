@@ -17,14 +17,18 @@ class TeamViewSetTests(TestCase):
         self.list_url = reverse("team-list")
 
     def test_lista_solo_equipos_de_la_propia_organizacion(self):
-        response = authenticated_client(self.operador_a).get(self.list_url)
+        response = authenticated_client(self.admin_a).get(self.list_url)
         nombres_ids = {t["id"] for t in response.data["results"]}
         self.assertIn(self.team_a.id, nombres_ids)
         self.assertNotIn(self.team_b.id, nombres_ids)
 
-    def test_operador_puede_leer_pero_no_crear_equipos(self):
-        response = authenticated_client(self.operador_a).post(self.list_url, {"name": "Soporte"})
-        self.assertEqual(response.status_code, 403)
+    def test_operador_no_puede_leer_ni_crear_equipos(self):
+        # Core es sólo la API de autenticación de un operador — no tiene ningún permiso sobre
+        # equipos ni el resto de la configuración (`users.group_permissions`).
+        self.assertEqual(authenticated_client(self.operador_a).get(self.list_url).status_code, 403)
+        self.assertEqual(
+            authenticated_client(self.operador_a).post(self.list_url, {"name": "Soporte"}).status_code, 403,
+        )
 
     def test_admin_crea_equipo_en_su_organizacion(self):
         response = authenticated_client(self.admin_a).post(self.list_url, {"name": "Soporte"})
@@ -53,3 +57,18 @@ class TeamViewSetTests(TestCase):
         response = authenticated_client(self.admin_a).delete(url)
         self.assertEqual(response.status_code, 404)
         self.assertTrue(Team.objects.filter(pk=self.team_b.id).exists())
+
+    def test_superusuario_de_plataforma_no_puede_gestionar_equipos(self):
+        # `OrganizationScopedModelViewSet` es exclusivamente de recursos de UNA organización — ni
+        # siquiera un `is_superuser=True` real hace excepción a propósito (antes sí la hacía): el
+        # superusuario de plataforma gestiona organizaciones/usuarios/tokens desde la sección
+        # "Plataforma", nunca equipos/menú/mensajes/etiquetas/horarios/canales de una organización
+        # puntual — ver `common.viewsets.OrganizationScopedModelViewSet`.
+        superusuario = make_user(
+            None, groups=["superusuarios"], email="superusuario@plataforma.test",
+            is_staff=True, is_superuser=True,
+        )
+        self.assertEqual(authenticated_client(superusuario).get(self.list_url).status_code, 403)
+        self.assertEqual(
+            authenticated_client(superusuario).post(self.list_url, {"name": "Soporte"}).status_code, 403,
+        )

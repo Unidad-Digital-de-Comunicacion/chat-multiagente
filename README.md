@@ -31,9 +31,20 @@ Estado del código: **Fase 0** (esqueleto + contenedores) y **Fase 1**
 recuperación de usuario/contraseña por DNI y bloqueo por IP, perfil personal
 con avatar recortable) implementadas, más buena parte de **Fase 2**
 (horarios/días excepcionales, árbol de menú, mensajes predeterminados del
-bot y catálogo de etiquetas de conversación, con su UI en el Admin Panel —
-vista previa tipo chat, editor de formato/emojis, calendario de feriados,
-selector rápido de rango horario). Ver sección 9 (convenciones/seguridad) y
-sección 10 (estado por fase) del documento de contexto para el detalle y lo
-que sigue — incluida la parte de etiquetas/observaciones/chat interno que
-queda explícitamente para la Fase 4/5 (Conversation Engine/Operators Desk).
+bot con modo de atención con/sin menú, catálogo de etiquetas de conversación
+y configuración de canales de mensajería con chequeo real de salud contra
+la Graph API de Meta, con su UI en el Admin Panel — vista previa tipo chat,
+editor de formato/emojis, calendario de feriados, selector rápido de rango
+horario), más una sección "Plataforma" del Admin Panel sólo para el
+superusuario real (organizaciones con sus límites de uso, usuarios de todas
+las organizaciones, tokens para la comunicación entre los propios
+microservicios del proyecto, estadísticas de uso y salud general de las
+APIs externas, y manuales/referencia autogenerada de la API interna vía
+Swagger/Redoc) — `encargados_difusion`/`analistas_datos`/`operadores` no
+tienen ninguna pantalla en el Admin Panel de Core, es sólo su API de
+autenticación. Ver sección 9 (convenciones/seguridad) y sección 10 (estado
+por fase) del documento de contexto para el detalle y lo que sigue —
+incluida la parte de etiquetas/observaciones/chat interno que queda
+explícitamente para la Fase 4/5 (Conversation Engine/Operators Desk), y la
+conexión real de cada canal (Embedded Signup, webhooks, envío) que es
+Channel Gateway, Fase 3.

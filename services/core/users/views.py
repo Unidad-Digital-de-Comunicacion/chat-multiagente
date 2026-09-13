@@ -3,6 +3,8 @@ import secrets
 from django.contrib.auth.models import Group
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
+from django.shortcuts import get_object_or_404
+from rest_framework import viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
 from rest_framework.generics import ListAPIView, RetrieveUpdateAPIView
@@ -11,11 +13,71 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from common.permissions import StrictDjangoModelPermissions, require_perm
+from common.permissions import IsPlatformSuperuser, StrictDjangoModelPermissions, require_perm
+from common.soft_delete import marcar_eliminado, restaurar_eliminado
 from common.viewsets import OrganizationScopedModelViewSet
 
 from .models import User
-from .serializers import GroupSerializer, MeSerializer, MyProfileSerializer, UserCreateSerializer, UserSerializer
+from .serializers import (
+    GroupSerializer, MeSerializer, MyProfileSerializer, PlatformUserCreateSerializer,
+    PlatformUserSerializer, UserCreateSerializer, UserSerializer,
+)
+
+
+class PlatformUserViewSet(viewsets.ModelViewSet):
+    """Usuarios de TODAS las organizaciones — sección "Plataforma" del Admin
+    Panel, sólo el superusuario real (`IsPlatformSuperuser`, mismo motivo
+    que `organizations.PlatformOrganizationViewSet`: `users.view_user`/
+    `change_user`/etc. son los mismos permisos que ya tiene
+    `administradores` para su propia organización). `?organization=<id>`
+    filtra el listado por organización, para "usuarios divididos por cada
+    organización"; sin el filtro, devuelve todos."""
+
+    queryset = User.objects.all().order_by("email")
+    permission_classes = [IsPlatformSuperuser]
+
+    def get_serializer_class(self):
+        if self.action == "create":
+            return PlatformUserCreateSerializer
+        return PlatformUserSerializer
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        organization_id = self.request.query_params.get("organization")
+        if organization_id == "null":
+            qs = qs.filter(organization_id=None)
+        elif organization_id:
+            qs = qs.filter(organization_id=organization_id)
+        if self.request.query_params.get("incluir_eliminados") != "1":
+            qs = qs.filter(deleted_at__isnull=True)
+        return qs
+
+    def perform_destroy(self, instance):
+        """`DELETE` es un soft delete (`common.soft_delete`) — nunca se
+        borra la fila, se marca `deleted_at` y `is_active=False`. Se
+        deshace con la action `restaurar`."""
+        marcar_eliminado(instance)
+
+    @action(detail=True, methods=["post"])
+    def restaurar(self, request, pk=None):
+        """Deshace el soft delete. Busca por fuera de `get_queryset` (que
+        excluye eliminados por default) — si no, nunca encontraría al
+        usuario que justamente hay que restaurar."""
+        user = get_object_or_404(User, pk=pk)
+        restaurar_eliminado(user)
+        return Response(self.get_serializer(user).data)
+
+    @action(detail=True, methods=["post"], url_path="reset-password")
+    def reset_password(self, request, pk=None):
+        """Igual que `UserViewSet.reset_password` pero sin scoping de
+        organización — acá el superusuario puede resetear la de cualquier
+        usuario de cualquier organización."""
+        user = self.get_object()
+        temporal = secrets.token_urlsafe(9)
+        user.set_password(temporal)
+        user.must_change_password = True
+        user.save(update_fields=["password", "must_change_password"])
+        return Response({"password_temporal": temporal})
 
 
 class UserViewSet(OrganizationScopedModelViewSet):
@@ -33,6 +95,29 @@ class UserViewSet(OrganizationScopedModelViewSet):
         if self.action == "create":
             return UserCreateSerializer
         return UserSerializer
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        if self.request.query_params.get("incluir_eliminados") != "1":
+            qs = qs.filter(deleted_at__isnull=True)
+        return qs
+
+    def perform_destroy(self, instance):
+        """`DELETE` es un soft delete (`common.soft_delete`) — nunca se
+        borra la fila, se marca `deleted_at` y `is_active=False`. Se
+        deshace con la action `restaurar`."""
+        marcar_eliminado(instance)
+
+    @action(detail=True, methods=["post"], permission_classes=[IsAuthenticated])
+    def restaurar(self, request, pk=None):
+        """Deshace el soft delete de un usuario de la propia organización.
+        Busca por fuera de `get_queryset` (excluye eliminados por default,
+        si no nunca encontraría al usuario a restaurar) pero sigue scopeado
+        a la organización del Admin — no puede restaurar el de otra."""
+        require_perm(request, "users.change_user")
+        user = get_object_or_404(User, pk=pk, organization_id=request.user.organization_id)
+        restaurar_eliminado(user)
+        return Response(self.get_serializer(user).data)
 
     @action(detail=True, methods=["post"], url_path="reset-password", permission_classes=[IsAuthenticated])
     def reset_password(self, request, pk=None):

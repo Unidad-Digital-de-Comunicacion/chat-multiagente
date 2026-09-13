@@ -10,7 +10,7 @@ from rest_framework.generics import RetrieveAPIView
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from common.permissions import StrictDjangoModelPermissions, require_perm
+from common.permissions import StrictDjangoModelPermissions, require_organization, require_perm
 from common.viewsets import OrganizationScopedModelViewSet
 from teams.models import Team
 
@@ -37,7 +37,7 @@ class HorarioAtencionViewSet(OrganizationScopedModelViewSet):
 
     @action(detail=False, methods=["get", "post"])
     def grilla(self, request):
-        organization_id = request.user.organization_id
+        organization_id = require_organization(request)
         slots = _slots_str()
 
         if request.method == "GET":
@@ -87,9 +87,9 @@ class DiaExcepcionalViewSet(OrganizationScopedModelViewSet):
     permission_classes = [IsAuthenticated, StrictDjangoModelPermissions]
 
     def get_queryset(self):
-        user = self.request.user
+        organization_id = require_organization(self.request)
         return DiaExcepcional.objects.filter(
-            Q(organization_id=user.organization_id) | Q(organization__isnull=True)
+            Q(organization_id=organization_id) | Q(organization__isnull=True)
         )
 
     def perform_update(self, serializer):
@@ -125,7 +125,7 @@ class DiaExcepcionalViewSet(OrganizationScopedModelViewSet):
         Horario reducido, grilla de medias horas) — mismo patrón que
         `chatbot/templates/chatbot/calendario_excepciones.html`, adaptado a
         una sola organización por request."""
-        organization_id = request.user.organization_id
+        organization_id = require_organization(request)
         slots = _slots_str()
 
         if request.method == "GET":
@@ -245,7 +245,7 @@ class TeamHorarioHabilView(RetrieveAPIView):
     def get(self, request, *args, **kwargs):
         require_perm(request, "business_hours.view_horarioatencion")
         team = get_object_or_404(Team, pk=kwargs["team_id"])
-        if team.organization_id != request.user.organization_id and not request.user.is_superuser:
+        if team.organization_id != request.user.organization_id:
             raise PermissionDenied("El equipo no pertenece a tu organización.")
         data = {
             "en_horario": services.esta_en_horario(team.organization_id),

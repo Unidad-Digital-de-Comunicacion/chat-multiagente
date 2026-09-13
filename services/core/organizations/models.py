@@ -15,10 +15,31 @@ class Organization(models.Model):
     slug = models.SlugField(max_length=150, unique=True)
     plan = models.CharField(max_length=20, choices=Plan.choices, default=Plan.BASICO)
     connection_limit = models.PositiveIntegerField(
-        default=5,
-        help_text="Límite de conexiones simultáneas de operadores (Conversation Engine lo consulta acá).",
+        default=0,
+        verbose_name="Límite de operadores concurrentes",
+        help_text="Máximo de operadores conectados/tomando conversaciones a la vez (Conversation "
+                   "Engine lo va a consultar acá, Fase 4 — todavía no implementado). 0 = sin límite.",
+    )
+    user_limit = models.PositiveIntegerField(
+        default=0,
+        verbose_name="Límite de usuarios",
+        help_text="Máximo de usuarios (de cualquier grupo) que puede tener la organización. 0 = sin "
+                   "límite. Es sólo el tope configurado: todavía no se aplica al crear un usuario.",
+    )
+    monthly_conversation_limit = models.PositiveIntegerField(
+        default=0,
+        verbose_name="Límite de conversaciones mensuales",
+        help_text="Máximo de conversaciones nuevas por mes calendario. 0 = sin límite. El conteo real "
+                   "es del Conversation Engine, Fase 4 — acá sólo se guarda el tope configurado.",
     )
     is_active = models.BooleanField(default=True)
+    deleted_at = models.DateTimeField(
+        null=True, blank=True,
+        help_text="Soft delete: null = no está eliminada. Se marca (nunca se borra la fila, ni la "
+                   "de la organización ni las de sus usuarios) al eliminarla desde la sección "
+                   "\"Plataforma\" — recuperable con la action `restaurar` de "
+                   "`PlatformOrganizationViewSet`, o desde /admin/ (`common.soft_delete`).",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

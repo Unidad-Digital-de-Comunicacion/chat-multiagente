@@ -33,6 +33,8 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     "rest_framework",
     "corsheaders",
+    "drf_spectacular",
+    "drf_spectacular_sidecar",
     "common",
     "authentication",
     "organizations",
@@ -42,6 +44,8 @@ INSTALLED_APPS = [
     "menu",
     "bot_settings",
     "tags",
+    "channels",
+    "platform_admin",
 ]
 
 AUTH_USER_MODEL = "users.User"
@@ -151,6 +155,30 @@ REST_FRAMEWORK = {
         "password_reset": "5/hour",
         "username_reset": "5/hour",
     },
+    "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
+}
+
+# Esquema/documentación autogenerada de la API de Core (sección "Plataforma"
+# del Admin Panel, "Manuales y API" — sólo el superusuario real la puede ver,
+# `platform_admin.views` fija `permission_classes=[IsPlatformSuperuser]` a
+# mano en cada vista de drf-spectacular en vez de dejar el default AllowAny).
+SPECTACULAR_SETTINGS = {
+    "TITLE": "Chat Multiagente — API de Core",
+    "DESCRIPTION": "Referencia autogenerada de la API del microservicio Core (autenticación, "
+                    "organizaciones, usuarios, equipos, horarios, menú, mensajes del bot, etiquetas "
+                    "y canales). Es sólo la API de Core — Channel Gateway/Conversation "
+                    "Engine/Operators Desk/Analytics todavía son stubs de Fase 0.",
+    "VERSION": "1.0.0",
+    "SERVE_INCLUDE_SCHEMA": False,
+    # Por default Swagger/Redoc cargan su JS/CSS desde jsdelivr.net — en un
+    # entorno sin salida a internet (o con esa CDN bloqueada) la página
+    # queda en blanco sin ningún error visible. `drf-spectacular-sidecar`
+    # empaqueta esos mismos assets como estáticos de Django (los sirve
+    # nginx desde /static/, los junta `collectstatic` del entrypoint) para
+    # que el visor funcione 100% local, sin depender de ninguna CDN.
+    "SWAGGER_UI_DIST": "SIDECAR",
+    "SWAGGER_UI_FAVICON_HREF": "SIDECAR",
+    "REDOC_DIST": "SIDECAR",
 }
 
 # --------------------------------------------------------------------------- #

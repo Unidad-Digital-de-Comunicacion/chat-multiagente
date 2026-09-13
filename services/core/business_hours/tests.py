@@ -104,6 +104,19 @@ class TeamHorarioHabilViewTests(TestCase):
         response = authenticated_client(admin_a).get(reverse("team-horario-habil", args=[team_b.id]))
         self.assertEqual(response.status_code, 403)
 
+    def test_superusuario_de_plataforma_tampoco_puede_consultar_un_equipo(self):
+        # Antes un `is_superuser=True` real tenía una excepción a propósito acá — se sacó: el
+        # superusuario de plataforma no gestiona equipos/horarios de ninguna organización en
+        # particular, ni siquiera para consultar.
+        org = make_organization()
+        superusuario = make_user(
+            None, groups=["superusuarios"], email="superusuario@plataforma.test",
+            is_staff=True, is_superuser=True,
+        )
+        team = Team.objects.create(organization=org, name="Ventas")
+        response = authenticated_client(superusuario).get(reverse("team-horario-habil", args=[team.id]))
+        self.assertEqual(response.status_code, 403)
+
 
 class HorarioAtencionViewSetTests(TestCase):
     def test_admin_no_puede_ver_ni_editar_un_horario_de_otra_organizacion_por_id(self):
@@ -124,6 +137,16 @@ class HorarioAtencionViewSetTests(TestCase):
 
 
 class DiaExcepcionalViewSetTests(TestCase):
+    def test_superusuario_de_plataforma_no_puede_listar_excepciones(self):
+        # Antes de `require_organization`, `get_queryset` para una cuenta sin organización
+        # devolvía sólo el catálogo compartido de feriados en vez de bloquear del todo.
+        superusuario = make_user(
+            None, groups=["superusuarios"], email="superusuario@plataforma.test",
+            is_staff=True, is_superuser=True,
+        )
+        response = authenticated_client(superusuario).get(reverse("dia-excepcional-list"))
+        self.assertEqual(response.status_code, 403)
+
     def test_admin_no_puede_ver_ni_editar_una_excepcion_de_otra_organizacion_por_id(self):
         org_a = make_organization(name="Org A", slug="org-a")
         org_b = make_organization(name="Org B", slug="org-b")
@@ -230,6 +253,20 @@ class HorarioAtencionGrillaTests(TestCase):
         response = authenticated_client(self.operador).post(self.url, {"celdas": ["0-09:00"]}, format="json")
         self.assertEqual(response.status_code, 403)
 
+    def test_superusuario_de_plataforma_no_puede_ver_ni_guardar_la_grilla(self):
+        # Antes de `require_organization`, el GET devolvía una grilla vacía en silencio y el POST
+        # reventaba con un `IntegrityError` (`organization_id=None` no admite NULL) — ahora ambos
+        # cortan con un 403 limpio.
+        superusuario = make_user(
+            None, groups=["superusuarios"], email="superusuario@plataforma.test",
+            is_staff=True, is_superuser=True,
+        )
+        self.assertEqual(authenticated_client(superusuario).get(self.url).status_code, 403)
+        self.assertEqual(
+            authenticated_client(superusuario).post(self.url, {"celdas": ["0-09:00"]}, format="json").status_code,
+            403,
+        )
+
     def test_clave_de_celda_invalida_falla(self):
         response = authenticated_client(self.admin).post(self.url, {"celdas": ["nope"]}, format="json")
         self.assertEqual(response.status_code, 400)
@@ -247,6 +284,14 @@ class DiaExcepcionalGrillaTests(TestCase):
     def test_get_requiere_desde_y_hasta(self):
         response = authenticated_client(self.admin).get(self.url)
         self.assertEqual(response.status_code, 400)
+
+    def test_superusuario_de_plataforma_no_puede_usar_el_editor(self):
+        superusuario = make_user(
+            None, groups=["superusuarios"], email="superusuario@plataforma.test",
+            is_staff=True, is_superuser=True,
+        )
+        response = authenticated_client(superusuario).get(self.url, {"desde": "2026-01-05", "hasta": "2026-01-06"})
+        self.assertEqual(response.status_code, 403)
 
     def test_get_devuelve_normal_para_dias_sin_excepcion(self):
         response = authenticated_client(self.admin).get(self.url, {"desde": "2026-01-05", "hasta": "2026-01-06"})

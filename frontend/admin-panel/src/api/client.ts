@@ -28,6 +28,12 @@ export function hasSession(): boolean {
   return !!refreshToken;
 }
 
+/** Sólo para mostrarle al superusuario su propio token vigente (ej. para
+ * pegarlo en el botón "Authorize" de Swagger) — nunca se manda a otro lado. */
+export function getAccessToken(): string | null {
+  return accessToken;
+}
+
 export class ApiError extends Error {
   status: number;
   data: unknown;
@@ -97,3 +103,30 @@ export const api = {
   patch: <T>(path: string, body: unknown) => apiFetch<T>(path, { method: "PATCH", body: toBody(body) }),
   delete: (path: string) => apiFetch<null>(path, { method: "DELETE" }),
 };
+
+/** Para descargar un archivo binario (ej. el manual en PDF) que necesita el
+ * header `Authorization` — un `<a href>` común no lo manda, así que se baja
+ * como blob y se dispara la descarga a mano con un link temporal. */
+export async function downloadFile(path: string, filename: string): Promise<void> {
+  const headers = new Headers();
+  if (accessToken) headers.set("Authorization", `Bearer ${accessToken}`);
+  const res = await fetch(`${API_URL}${path}`, { headers });
+  if (!res.ok) throw new ApiError(res.status, null);
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+/** URL absoluta de Core (ej. para abrir Swagger/Redoc en una pestaña nueva
+ * con un link común — esas vistas no necesitan el header `Authorization`
+ * para el HTML/JS del visor, sólo para el esquema real que consultan
+ * adentro; ver `platform_admin.views.PlatformSwaggerView`). */
+export function coreUrl(path: string): string {
+  return `${API_URL}${path}`;
+}

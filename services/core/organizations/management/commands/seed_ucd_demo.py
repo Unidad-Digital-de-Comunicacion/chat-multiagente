@@ -27,6 +27,16 @@ def _get_or_create_user(email, organization, groups, grupos_por_nombre, **extra)
     if created:
         user.set_password(PASSWORD_DEMO)
         user.save()
+    elif extra:
+        # `get_or_create` no toca `defaults` en un usuario que ya existía —
+        # sincronizamos igual los flags que sí pasamos acá (is_staff/
+        # is_superuser) para que correr el seed de nuevo repare una cuenta
+        # de demo vieja que quedó desactualizada (ej. si se le sumó
+        # `is_superuser=True` al superusuario en una versión más nueva del
+        # comando), sin tocar nada que no se haya pasado por acá.
+        for campo, valor in extra.items():
+            setattr(user, campo, valor)
+        user.save(update_fields=list(extra.keys()))
     user.groups.set([grupos_por_nombre[g] for g in groups])
     return user, created
 
@@ -53,11 +63,14 @@ class Command(BaseCommand):
 
         # --- Usuarios --------------------------------------------------------
         # Superusuario de plataforma: sin organización (gestiona TODAS las
-        # organizaciones y sus admins desde /admin/), is_staff pero no
-        # is_superuser de Django — su alcance real son los permisos del
-        # grupo "superusuarios", no un bypass total.
+        # organizaciones y sus admins desde /admin/ y desde la sección
+        # "Plataforma" del Admin Panel), is_staff Y is_superuser de Django —
+        # hace falta el flag real (no sólo el grupo) porque las vistas de
+        # alcance global usan `is_superuser=True` + sin organización como
+        # criterio para distinguir "toda la plataforma" de "mi organización"
+        # (`common.permissions.IsPlatformSuperuser`, `UserManager.create_superuser`).
         superusuario, _ = _get_or_create_user(
-            "superusuario@ucd.demo", None, ["superusuarios"], grupos, is_staff=True,
+            "superusuario@ucd.demo", None, ["superusuarios"], grupos, is_staff=True, is_superuser=True,
         )
         administrador, _ = _get_or_create_user(
             "admin@ucd.demo", org, ["administradores"], grupos,

@@ -35,11 +35,31 @@ class BotMessagesViewTests(TestCase):
         self.otra_org = make_organization(name="Otra", slug="otra")
         self.url = reverse("bot-messages")
 
+    def test_superusuario_de_plataforma_no_puede_ver_ni_editar_mensajes(self):
+        # Sin organización, `get_object` no tiene sobre qué operar — antes esto era un 500
+        # (`Organization.objects.get(pk=None)`/`get_or_create(organization_id=None)`); ahora
+        # `require_organization` lo corta con un 403 limpio antes de tocar la base.
+        superusuario = make_user(
+            None, groups=["superusuarios"], email="superusuario@plataforma.test",
+            is_staff=True, is_superuser=True,
+        )
+        self.assertEqual(authenticated_client(superusuario).get(self.url).status_code, 403)
+
     def test_se_crea_solo_en_el_primer_get(self):
         self.assertFalse(BotMessages.objects.filter(organization=self.org).exists())
         response = authenticated_client(self.admin).get(self.url)
         self.assertEqual(response.status_code, 200)
         self.assertTrue(BotMessages.objects.filter(organization=self.org).exists())
+
+    def test_menu_activo_viene_prendido_por_default(self):
+        response = authenticated_client(self.admin).get(self.url)
+        self.assertTrue(response.data["menu_activo"])
+
+    def test_admin_puede_desactivar_el_menu(self):
+        response = authenticated_client(self.admin).patch(self.url, {"menu_activo": False})
+        self.assertEqual(response.status_code, 200, response.data)
+        self.org.refresh_from_db()
+        self.assertFalse(self.org.mensajes_bot.menu_activo)
 
     def test_get_incluye_valores_efectivos_con_los_defaults(self):
         response = authenticated_client(self.admin).get(self.url)

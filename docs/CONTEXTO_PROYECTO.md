@@ -454,11 +454,11 @@ guardan cifrados en la base de `channel-gateway`, no en variables de entorno.
 
   | Grupo | Alcance |
   |---|---|
-  | `superusuarios` | Staff de plataforma (`/admin/`, no necesariamente `is_superuser` de Django). Gestiona organizaciones y las cuentas Admin de cada una. |
-  | `administradores` | Sólo desde el Admin Panel (React). Gestiona usuarios, equipos y permisos (grupos) de su propia organización, y configura el chatbot (menú + horarios + mensajes) y el catálogo de etiquetas de conversación (por organización y por equipo, colores incluidos). |
-  | `encargados_difusion` | Todavía no funcional — arma/gestiona/envía campañas de difusión, templates y listas, ve estadísticas de envíos. Sin permisos reales hasta que exista esa app. |
-  | `analistas_datos` | Todavía no funcional — ve/gestiona reportes de conversaciones, agentes y contactos, exporta CSV. Depende de Analytics (Fase 7). |
-  | `operadores` | Pertenecen a equipos. Sólo lectura por ahora de equipos, horario hábil y el catálogo de etiquetas (`tags.view_etiqueta`). Ver/responder chats sin asignar o de sus equipos/a ellos mismos, aplicar/quitar etiquetas de una conversación, respuestas predefinidas, observaciones obligatorias al resolver/pausar y derivar son Fase 4/5, todavía no implementado (ver sección 11). |
+  | `superusuarios` | Staff de plataforma (`/admin/` y, si además tiene `is_superuser=True` real de Django, la sección "Plataforma" del Admin Panel — ver `IsPlatformSuperuser`). Gestiona organizaciones (con sus límites de uso), las cuentas de cualquier organización, los tokens de comunicación entre los propios microservicios del proyecto, y ve estadísticas/salud generales del sistema. |
+  | `administradores` | Sólo desde el Admin Panel (React). Gestiona usuarios, equipos y permisos (grupos) de su propia organización, y configura el chatbot (menú + horarios + mensajes + modo de atención con/sin menú), el catálogo de etiquetas de conversación (por organización y por equipo, colores incluidos) y la api key/estado/chequeo de salud de cada canal de mensajería. |
+  | `encargados_difusion` | NINGÚN permiso sobre Core — Core es sólo su API de autenticación (login, recuperar usuario/contraseña, "mi perfil"); campañas de difusión, templates y listas, estadísticas de envíos son de su propio panel cuando exista esa app (Fase 7+), no del Admin Panel de Core. |
+  | `analistas_datos` | NINGÚN permiso sobre Core — mismo motivo que `encargados_difusion`; reportes de conversaciones/agentes/contactos, exportar CSV, son de Analytics (Fase 7), no del Admin Panel de Core. |
+  | `operadores` | NINGÚN permiso sobre Core — mismo motivo; sólo su perfil y recuperar usuario/contraseña. Ver/responder chats sin asignar o de sus equipos/a ellos mismos, aplicar/quitar etiquetas de una conversación, respuestas predefinidas, observaciones obligatorias al resolver/pausar y derivar son de Operators Desk, Fase 4/5, todavía no implementado (ver sección 11). |
 
   El frontend nunca decide qué mostrar/ocultar mirando un nombre de rol o de grupo: `GET
   /api/core/users/me/` devuelve `permissions` (la lista real de `user.get_all_permissions()`) y
@@ -625,8 +625,9 @@ son templates Django con SSO, esa idea se descartó a favor de una sola UI en el
   borrar ni renombrar, sólo recolorear. Todas las demás etiquetas las arma un Admin a mano y son
   siempre **generales** (`team=None`) — no existe la opción de asignarles un equipo, `team` es de
   sólo lectura en `EtiquetaSerializer`. Permisos: `tags.add_/change_/delete_/view_etiqueta` para
-  administradores, sólo `view_etiqueta` para operadores (para cuando la Fase 4/5 les permita
-  aplicarlas). `?team=<id>` filtra el catálogo por equipo. El color se valida como hexadecimal
+  administradores — `operadores` ya no tiene ningún permiso sobre Core (ver sección 9), aplicar
+  etiquetas es Operators Desk (Fase 4/5), su propio panel, no el Admin Panel de Core. `?team=<id>`
+  filtra el catálogo por equipo. El color se valida como hexadecimal
   (`#RRGGBB`). Admin Panel: página "Etiquetas" (`frontend/admin-panel/src/pages/TagsPage.tsx`) con
   dos grupos — generales y de equipo, edición 100% en línea (sin modal: cada fila es su propio
   formulario, un encabezado de columnas por grupo en vez de repetir la etiqueta de cada campo por
@@ -637,6 +638,215 @@ son templates Django con SSO, esa idea se descartó a favor de una sola UI en el
   (alta directa por API/admin/shell), `tags/defaults.py::COLOR_EQUIPO_DEFAULT` (etiquetas de equipo
   autogeneradas) y el estado inicial de `TagCreateRow` en el Admin Panel — si se cambia la
   preferencia, actualizar los tres para que no queden inconsistentes entre sí.
+- **Modo de atención (`bot_settings.BotMessages.menu_activo`)**: booleano, default `True`. Apagado
+  = no se usa el árbol de menú (ni sus saludos de sección `saludo_inicial`/`saludo_area` ni la
+  derivación por opción elegida `derivacion_texto`/`derivacion_mensaje`/`mensaje_cierre_inactividad`)
+  — pero no es "nada": hay un estado intermedio. El contacto sigue recibiendo el mensaje de
+  bienvenida (`mensaje_bienvenida`) y, sin nada en el medio, la conversación queda directamente en
+  la bandeja sin asignar para que cualquier operador la tome; al cerrarla se sigue mandando el
+  mensaje de despedida (`mensaje_despedida`); y el saludo del operador al tomar la conversación
+  (`mensaje_operador_toma`) se usa siempre, tenga el menú activado o no — estos tres campos viven
+  fuera del bloque atenuado en el form. Sólo la configuración por ahora (botonera "Usar menú del
+  bot"/"Directo a operadores" arriba de todo en `/mensajes`, con los campos propios del menú
+  agrupados aparte y atenuados cuando está apagado, más la vista previa mostrando siempre
+  bienvenida → [menú o nota de "bandeja sin asignar"] → saludo del operador → despedida) —
+  aplicarlo de verdad (que Channel Gateway/Conversation Engine salgan del flujo del bot) es
+  Fase 3/4, todavía no implementado.
+- **Canales de mensajería** (`channels` app, nueva — sólo la parte de configuración; la app se
+  llama `channels` pero el modelo es `Canal`, cuidado con el módulo de terceros `django-channels`
+  si algún día se instala, no debería chocar porque no está en requirements pero mantenerlo en
+  mente): api key y estado (activo/inactivo) de los 4 canales que documenta la sección 3
+  (WhatsApp/Messenger/Instagram/Webchat). Según la sección 4.4, la conexión real — Embedded Signup,
+  verificación de webhooks, envío — y el token cifrado en su propia base son del Channel Gateway
+  (Fase 3, todavía sin construir); esto vive en Core mientras tanto para no bloquear la pantalla de
+  configuración, mismo criterio que `tags`/`bot_settings`. Un `Canal` por `(organization, tipo)` se
+  autogenera al listar (`defaults.asegurar_canales`) — no se crean ni se borran por API (ningún
+  grupo tiene `add_canal`/`delete_canal` a propósito, `StrictDjangoModelPermissions` los bloquea
+  con 403), sólo se edita `api_key`/`activo` de los 4 que ya existen. `api_key` es write-only: la
+  API nunca la devuelve, sólo `api_key_configurada` (bool) y `api_key_preview` (últimos 4
+  caracteres, ej. `"••••3f9a"`) — alcanza para confirmar que se cargó la correcta sin volver a
+  mostrarla. Cifrado en reposo real es tarea de cuando esto se mude a Channel Gateway; por ahora
+  sólo queda fuera de la respuesta de la API.
+  - **Chequeo de salud real** (`POST /api/core/canales/{id}/verificar/`, `channels/health.py`): no
+    es un simulacro — para WhatsApp/Messenger/Instagram (los 3 sobre la Graph API de Meta) pega de
+    verdad a `GET https://graph.facebook.com/v19.0/me` con la api key cargada y guarda el
+    resultado (`ultimo_chequeo_at/ok/detalle`): conectado + nombre de la cuenta, o el mensaje de
+    error real de Meta. No valida permisos de envío, sólo "¿el servidor la acepta y contesta?" — la
+    integración completa sigue siendo Channel Gateway. Webchat no tiene un servidor de terceros que
+    consultar (sería el propio Webchat Service, Fase 9, sin construir) — el chequeo ahí devuelve
+    `ultimo_chequeo_ok=None` ("No aplica") en vez de intentar una conexión que no existe. Esta
+    action tiene su propio `get_permissions()` (sólo pide `IsAuthenticated` + `require_perm`
+    manual a `channels.change_canal`) porque `StrictDjangoModelPermissions` mapea POST →
+    `add_canal`, que nadie tiene — sin ese override, hasta un Admin real quedaría bloqueado con 403
+    al intentar verificar. En los tests, `requests.get` va siempre mockeado
+    (`channels.tests.CanalVerificarConexionTests`) — la suite nunca pega de verdad a Meta.
+- **Sección "Plataforma" del Admin Panel** (sólo el superusuario real de plataforma — ver
+  `IsPlatformSuperuser` más abajo): organizaciones (con sus límites de uso), usuarios de TODAS las
+  organizaciones, tokens para la comunicación ENTRE los propios microservicios del proyecto,
+  estadísticas de uso de Core y salud general de las APIs externas, y manuales/referencia de la API
+  interna. Nada de esto es org-scoped — a propósito es la excepción multi-tenant del sistema.
+  - **`common.permissions.IsPlatformSuperuser`**: el gate real de todo lo de acá abajo. Los
+    permisos Django estándar (`organizations.view_organization`, `users.view_user`, etc.) NO
+    alcanzan para esto porque `administradores` tiene exactamente esos mismos permisos para su
+    propia organización — no hay forma de que un único código de permiso ("puede ver
+    organizaciones") signifique "todas" para un grupo y "la mía" para otro. La distinción real es
+    `request.user.is_superuser` (el flag real de Django, no el grupo "superusuarios") + sin
+    `organization` — la MISMA cuenta que, por ese mismo motivo (sin `organization`), queda afuera
+    de `OrganizationScopedModelViewSet` (ver más abajo, "Endurecimiento"): un superusuario real es
+    a la vez "adentro" de `IsPlatformSuperuser` (gestiona toda la plataforma) y "afuera" de
+    cualquier organización puntual (no gestiona la de ninguna en particular), nunca las dos cosas
+    mezcladas para el mismo recurso. El grupo "superusuarios" sigue existiendo y sigue teniendo sus
+    permisos Django estándar (por si algún día hace falta un
+    staff sin `is_superuser=True` real) pero las vistas de "Plataforma" no los consultan en
+    absoluto — sólo miran el flag. Por eso `seed_ucd_demo` ahora crea/actualiza
+    `superusuario@ucd.demo` con `is_staff=True` **e** `is_superuser=True` (antes sólo
+    `is_staff=True`, deliberadamente) — `_get_or_create_user` se ajustó para sincronizar esos flags
+    también en una cuenta de demo que ya existía, no sólo al crearla, porque `get_or_create` con
+    `defaults` no toca un registro preexistente.
+  - **Organizaciones** (`organizations.PlatformOrganizationViewSet`, ruta
+    `/api/core/plataforma/organizaciones/`): alta/edición de nombre/slug/plan y sus 3 límites de
+    uso, todos `PositiveIntegerField` con **default `0` = sin límite**: `connection_limit` (ya
+    existía como "límite de conexiones simultáneas de operadores", pasó de default `5` a default
+    `0` con esta semántica explícita), `user_limit` (nuevo) y `monthly_conversation_limit` (nuevo).
+    Ninguno de los 3 se aplica todavía de verdad (0 usuarios rechazados, 0 conversaciones
+    cortadas) — son sólo el tope configurado, a la espera de Conversation Engine (Fase 4) y de que
+    la creación de usuarios chequee el límite. `OrganizationSerializer` (el que usa
+    `MyOrganizationView`, self service de cada Admin) sigue siendo de sólo lectura para estos
+    campos — sólo `PlatformOrganizationSerializer` los expone editables.
+  - **Usuarios de todas las organizaciones** (`users.PlatformUserViewSet`, ruta
+    `/api/core/plataforma/usuarios/`, filtro `?organization=<id>` o `?organization=null` para las
+    cuentas de plataforma): mismo ABM que `UserViewSet` (que cada Admin usa para la propia) pero sin
+    scoping y con `organization` editable en el body — el superusuario elige a qué organización
+    pertenece cada usuario. `PlatformUserSerializer` extiende `UserSerializer` agregando
+    `organization_name` (sólo lectura, evita que el Admin Panel tenga que cruzar con el listado de
+    organizaciones nada más que para mostrar el nombre en una tabla). El Admin Panel
+    (`PlatformUsersPage.tsx`) NO usa un filtro de organización sobre una tabla plana — pide el
+    listado completo sin filtro y lo agrupa en el cliente (`agruparPorOrganizacion`), una sección
+    por organización (encabezado + su propia tabla) más una última sección "cuentas de plataforma"
+    si hay alguna sin organización; una caja de búsqueda por email/nombre filtra dentro de esas
+    mismas secciones agrupadas, nunca las deshace.
+  - **Soft delete de organizaciones y usuarios** (`common/soft_delete.py`: `marcar_eliminado`/
+    `restaurar_eliminado`, dos funciones de 3 líneas — ambos modelos ya tenían `is_active`, pero
+    hacía falta un campo APARTE, `deleted_at`, para distinguir "el Admin lo apagó a mano" de "está
+    eliminado" y poder excluirlo de los listados por default). `DELETE` en
+    `PlatformOrganizationViewSet`/`PlatformUserViewSet`/`UserViewSet` (el org-scoped, de cada
+    Admin) nunca borra la fila: marca `deleted_at` + `is_active=False` — recuperable con la action
+    `restaurar` (POST) de cada uno. `?incluir_eliminadas=1` (organizaciones) / `?incluir_eliminados=1`
+    (usuarios, en ambos ViewSets) trae de vuelta los eliminados en el listado; por default quedan
+    afuera. Eliminar una organización eliminá TAMBIÉN a todos sus usuarios (el pedido original: "con
+    sus usuarios") — usando el MISMO timestamp de `deleted_at` para la organización y para cada
+    usuario cascadeado, así `restaurar` la organización puede reactivar exactamente a los que se
+    eliminaron junto con ella (`filter(deleted_at=organization.deleted_at)`) sin reactivar a uno que
+    ya estaba eliminado de antes por su cuenta. No se relajó el `unique=True` de `email`/`dni`/
+    `slug` — un usuario/organización eliminado sigue "ocupando" su email/slug hasta que se
+    restaure (decisión deliberada por simplicidad, no un descuido). El Admin Panel agrega en las 3
+    pantallas (`PlatformOrganizationsPage`, `PlatformUsersPage`, `UsersPage`) un checkbox "Ver
+    eliminados/as" y, para una fila eliminada, un botón "Restaurar" en vez de Editar/Eliminar.
+  - **Endurecimiento: el superusuario NO gestiona la configuración de ninguna organización en
+    particular** (equipos, horarios, árbol de menú, mensajes del bot, etiquetas, canales — sólo
+    organizaciones/usuarios/tokens/estadísticas/salud, que son de toda la plataforma a la vez).
+    Antes, `common.viewsets.OrganizationScopedModelViewSet.get_queryset()` tenía a propósito un
+    bypass "`is_superuser=True` real + sin organización → ve TODO sin filtrar" — pensado
+    originalmente para otro caso de uso, pero en la práctica dejaba a un superusuario real
+    gestionar (leer Y escribir) los datos de CUALQUIER organización a través de
+    `TeamViewSet`/`MenuOpcionViewSet`/`BotMessagesView`/`EtiquetaViewSet`/`CanalViewSet`/etc., ya
+    que `request.user.has_perm(...)` también le da `True` automáticamente a cualquier permiso
+    Django para un `is_superuser=True` real (comportamiento del propio Django, no algo que se
+    pueda apagar). Se sacó el bypass: ahora, sin `organization_id`, `get_queryset`/`perform_create`
+    tiran `PermissionDenied` (403) — ni siquiera un superusuario real es la excepción. Varias vistas
+    NO pasan por esa base (arman su propio queryset con `request.user.organization_id` a mano) y
+    tenían el mismo problema de otra forma — algunas ni siquiera devolvían datos de otra
+    organización pero sí rompían con un 500 al intentar escribir con `organization_id=None` contra
+    un campo que no admite NULL: `bot_settings.BotMessagesView.get_object` (500 real, reproducido y
+    corregido), `organizations.MyOrganizationView.get_object` (`Organization.objects.get(pk=None)`
+    también rompía con 500), `menu.MenuOpcionViewSet.reordenar`,
+    `business_hours.HorarioAtencionViewSet.grilla`, `business_hours.DiaExcepcionalViewSet` (tanto
+    `get_queryset`, que antes devolvía sólo el catálogo compartido de feriados en vez de bloquear
+    del todo, como su acción `grilla`), y `business_hours.TeamHorarioHabilView` (tenía su propia
+    excepción explícita para `is_superuser`, también se sacó). Todas usan ahora
+    `common.permissions.require_organization(request)` — mismo criterio que
+    `OrganizationScopedModelViewSet`, para una vista/acción que arma su propio queryset a mano en
+    vez de pasar por esa base — que corta con un 403 limpio ("Este recurso es de una organización —
+    no aplica a una cuenta de plataforma") apenas se llama, antes de tocar la base. Test de
+    regresión por cada uno de estos puntos (`teams`/`channels`/`bot_settings`/`organizations`/
+    `menu`/`business_hours` `tests.py`, buscar `superusuario_de_plataforma`).
+  - **Tokens de servicios internos** (`platform_admin` app, nueva; modelo `ServiceToken`, ruta
+    `/api/core/plataforma/tokens-servicios/`): NO es la api key de un canal externo (eso sigue
+    siendo `channels.Canal.api_key`, cosa completamente distinta) — es con qué se va a autenticar
+    cada uno de los OTROS microservicios de este mismo proyecto (Channel Gateway, Conversation
+    Engine, Operators Desk, Analytics, Webchat) contra la API de Core. Un `ServiceToken` por
+    servicio, autogenerados los 5 al listar (`defaults.asegurar_service_tokens`, mismo patrón lazy
+    que `channels.defaults.asegurar_canales` pero sin `organization` — esto es un único set para
+    toda la plataforma, no por tenant). `token` es write-only (mismo patrón enmascarado que
+    `Canal.api_key`: `token_configurado` + `token_preview`); la action `generar` (POST) genera uno
+    seguro al azar (`secrets.token_urlsafe(32)`) y lo devuelve en texto plano UNA sola vez en esa
+    respuesta, igual que `UserViewSet.reset_password`. Es sólo la configuración — hoy los 5
+    microservicios son stubs de Fase 0 (sólo `/health`), nada valida estos tokens todavía; cuando
+    cada uno los consuma de verdad, hace falta además un middleware/vista en Core que los valide en
+    cada request entrante desde esos servicios.
+  - **Estadísticas** (`GET /api/core/plataforma/estadisticas/`): conteos reales de lo que Core
+    gestiona hoy (organizaciones, usuarios, equipos, canales configurados/activos, desglose por
+    organización) — no hay conversaciones que contar todavía, eso es Conversation Engine.
+  - **Salud de las APIs externas, vista global** (`GET /api/core/plataforma/salud-canales/`): el
+    último resultado guardado de `channels.health.verificar_conexion` de TODOS los canales de TODAS
+    las organizaciones a la vez — de sólo lectura, no dispara un chequeo nuevo (eso sigue siendo una
+    acción de configuración de cada organización en `channels.CanalViewSet.verificar`, que un Admin
+    dispara desde su propia pantalla de Canales).
+  - **Manuales y referencia de la API interna** (`GET /api/core/plataforma/manual/` descarga
+    `platform_admin/manual/manual-admin-panel.pdf`, copiado a mano dentro del código del servicio
+    para que viaje con la imagen de Core sin depender de un volumen — si el manual se actualiza, hay
+    que volver a copiar el PDF ahí y reconstruir la imagen). Además, `drf-spectacular` genera un
+    esquema OpenAPI real de la API de Core a partir de los serializers/vistas (`SPECTACULAR_SETTINGS`
+    en `config/settings.py`) con Swagger/Redoc en `/api/core/plataforma/schema/swagger|redoc/`.
+    `PlatformSchemaView` (`/schema/`) es `AllowAny` A PROPÓSITO — no `IsPlatformSuperuser` como el
+    resto de "Plataforma" (versión anterior, cambiada tras un bug real: Swagger UI/Redoc piden el
+    esquema con un `fetch()` propio del navegador apenas cargan, SIN el header `Authorization` —
+    ni JS tiene forma de saber del JWT, que vive en el `localStorage` del Admin Panel, otro origen
+    — así que exigir auth ahí hacía que ESE primer fetch diera 401 y el visor nunca llegara a
+    levantar ("Failed to load API definition"/"Something went wrong"), antes incluso de poder
+    ofrecer un botón "Authorize" para pegar un token). Sólo expone la FORMA de la API (paths/
+    params/campos) — nunca datos reales, que siguen exigiendo autenticación de verdad en cada
+    endpoint real. Lo que sigue acotado al superusuario es el link en el menú del Admin Panel
+    (`Layout.tsx`), no el propio endpoint. El botón "Copiar mi token de acceso" en
+    `/plataforma/manuales` quedó igual, por si alguna vez hace falta autenticar una llamada real
+    de "Probarlo" (`Try it out`) contra un endpoint protegido desde el propio Swagger UI. No cubre
+    Channel Gateway/Conversation Engine/Operators Desk/Analytics/Webchat, sólo la API de Core.
+    - **`drf-spectacular-sidecar`**: por default, Swagger/Redoc cargan su JS/CSS/fuentes desde
+      `cdn.jsdelivr.net` — en un entorno sin salida a esa CDN (o con ella bloqueada) la página
+      quedaba completamente en blanco, sin ningún error visible más que un 404/timeout silencioso
+      en la pestaña Network del navegador (reportado como "no funciona la Referencia de la API").
+      `drf-spectacular-sidecar` empaqueta el `swagger-ui-dist`/`redoc` como estáticos de Django
+      (`SWAGGER_UI_DIST`/`SWAGGER_UI_FAVICON_HREF`/`REDOC_DIST = "SIDECAR"`) — nginx los sirve desde
+      `/static/` como cualquier otro estático (`collectstatic` del entrypoint los junta solo), sin
+      depender de ninguna CDN. Redoc sigue cargando la tipografía (Montserrat/Roboto) desde Google
+      Fonts — no se resolvió, es sólo cosmético (la página funciona igual sin esas fuentes).
+  - **Frontend**: `Layout.tsx` reemplaza COMPLETAMENTE la navegación normal (`NAV_ITEMS`, ahora
+    filtrada por `hasPerm` ítem por ítem) por una lista aparte (`PLATFORM_NAV_ITEMS`) cuando
+    `isPlatformSuperuser(me)` — nunca las dos mezcladas, para que el superusuario no vea ruido de
+    opciones de organización (Equipos/Horarios/Mensajes/Etiquetas/Canales/Usuarios de una
+    organización) que no le aplican, aun cuando por `is_superuser=True` de Django técnicamente
+    "tendría" cualquier permiso (`user.has_perm()` de Django siempre da `True` para un superusuario
+    real, así que un `hasPerm` a secas NO alcanzaba para ocultar esas pantallas — hace falta la
+    condición explícita). `auth/permissions.ts::isPlatformSuperuser` espeja
+    `common.permissions.IsPlatformSuperuser` del back. La landing ("/") también depende de esto:
+    `App.tsx::Home` manda al superusuario a `/plataforma/organizaciones` en vez de `/menu` (no
+    tiene permiso para ver el menú de ninguna organización en particular).
+    - **Bug real, ya corregido: `LoginPage.tsx` tenía `navigate("/menu")` hardcodeado** en el
+      submit del formulario (y `"/menu"` como fallback si ya había sesión) — bypasseaba
+      completamente el criterio de `App.tsx::Home` de acá arriba. El superusuario terminaba
+      SIEMPRE en `/menu` después de loguearse (una pantalla a la que ya no tiene acceso, ver
+      "Endurecimiento" más abajo), con errores 403 sin capturar en consola y la página colgada —
+      exactamente el reporte de "no funciona nada". `AuthContext.login()` ahora devuelve el `Me`
+      recién cargado (antes no devolvía nada — el `me` del contexto capturado en el closure de
+      `LoginPage` seguía viejo hasta el siguiente render, un closure stale clásico) para que
+      `LoginPage` pueda decidir el destino con el dato correcto en la mano, con la misma función
+      `landingPorDefecto` (mismo criterio que `Home`) en los dos lugares.
+    - **Gotcha de Docker Desktop en Windows: el watcher de Vite (chokidar) no siempre detecta los
+      cambios del bind mount** (`docker-compose.override.yml` monta `./frontend/admin-panel:/app`)
+      — Vite se queda sirviendo el bundle viejo después de guardar un archivo, sin ningún error
+      visible, hasta reiniciar el contenedor a mano. Se agregó `server.watch.usePolling` +
+      `interval` en `vite.config.ts` (permanente, no un workaround puntual) — sin esto, cualquier
+      cambio de código corre el riesgo de no reflejarse en el navegador hasta un restart manual.
 
 ### Fase 3 — Channel Gateway + integración WhatsApp
 - Embedded Signup, recepción y verificación de webhooks (`X-Hub-Signature-256`), envío de

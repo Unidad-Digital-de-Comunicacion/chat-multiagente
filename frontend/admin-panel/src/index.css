@@ -32,6 +32,10 @@ h1, h2, h3 {
   color: var(--text-muted);
 }
 
+.small {
+  font-size: 0.78rem;
+}
+
 .text-center {
   text-align: center;
 }
@@ -1086,6 +1090,10 @@ input, select, textarea {
   align-items: flex-start;
 }
 
+.messages-fields-inactive {
+  opacity: 0.5;
+}
+
 .messages-main, .menu-main {
   flex: 1;
   min-width: 0;
@@ -1326,6 +1334,66 @@ input, select, textarea {
 .msg-editor-hint {
   font-size: 0.72rem;
   padding: 0.3rem 0.5rem;
+}
+
+/* ---- Sección "Plataforma" ---- */
+.platform-users-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1rem;
+  flex-wrap: wrap;
+}
+
+.platform-users-search {
+  width: 100%;
+  max-width: 360px;
+  margin-bottom: 0;
+}
+
+.platform-org-group {
+  margin-bottom: 1rem;
+}
+
+.platform-org-group-header {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 0.6rem;
+}
+
+.platform-org-group-header h3 {
+  margin: 0;
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 1.5rem;
+}
+
+.stats-card {
+  text-align: center;
+}
+
+.stats-card-value {
+  font-size: 2rem;
+  font-weight: 700;
+  color: var(--primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.stats-card-label {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.manuals-card {
+  margin-bottom: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
 }
 
 .msg-editor-hint code {

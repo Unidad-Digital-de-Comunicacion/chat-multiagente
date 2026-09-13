@@ -8,22 +8,31 @@ Un usuario puede pertenecer a más de un grupo a la vez (M2M nativo de
 `PermissionsMixin.groups`); sus permisos efectivos son la unión de los de
 todos sus grupos (`user.has_perm(...)` ya lo resuelve así).
 
-- superusuarios: staff (acceden a /admin/), gestionan organizaciones y las
-  cuentas Admin de cada una. No son necesariamente `is_superuser=True` de
-  Django — el alcance real lo dan estos permisos, no un bypass total.
+- superusuarios: staff (acceden a /admin/ y a la sección "Plataforma" del
+  Admin Panel — ver `common.permissions.IsPlatformSuperuser`), gestionan
+  organizaciones (incl. sus límites de uso) y las cuentas de cualquier
+  organización, los tokens de comunicación entre los propios microservicios
+  del proyecto, y ven estadísticas/salud generales del sistema. No son
+  necesariamente `is_superuser=True` de Django para estos permisos Django
+  estándar — pero las vistas de alcance realmente global (que devuelven
+  datos de TODAS las organizaciones a la vez, no sólo la propia) exigen
+  además `is_superuser=True` real (`IsPlatformSuperuser`), porque
+  `organizations.view_organization`/`change_organization` y
+  `users.view_user`/etc. son los MISMOS permisos que ya tiene
+  `administradores` para su propia organización — el permiso Django por sí
+  solo no alcanza para distinguir "toda la plataforma" de "mi organización".
 - administradores: sólo desde el Admin Panel (React); gestionan usuarios,
-  equipos y permisos (grupos) de su propia organización, y configuran el
-  chatbot (menú + horarios + mensajes predeterminados) y el catálogo de
-  etiquetas de conversación (por organización y por equipo).
-- encargados_difusion / analistas_datos: grupos creados de antemano; sus
-  funciones (campañas de difusión; reportes de conversaciones/agentes/
-  contactos) dependen de apps que todavía no existen (Fase 7+/9) — quedan
-  sin permisos reales hasta que se construyan esas vistas.
-- operadores: de sólo lectura sobre equipos, horario hábil y el catálogo de
-  etiquetas por ahora — aplicar/quitar etiquetas de una conversación, las
-  observaciones de resolución y el chat interno entre operadores son
-  Fase 4/5, todavía no implementadas (ver sección 11 de
-  docs/CONTEXTO_PROYECTO.md).
+  equipos y permisos (grupos) de su propia organización, configuran el
+  chatbot (menú + horarios + mensajes predeterminados), el catálogo de
+  etiquetas de conversación (por organización y por equipo) y la api key/
+  estado de cada canal de mensajería (WhatsApp/Messenger/Instagram/Webchat).
+- encargados_difusion / analistas_datos / operadores: NINGÚN permiso sobre
+  Core — para estos tres grupos, Core es sólo la API de autenticación
+  (login, recuperar usuario/contraseña por DNI, "mi perfil") que van a usar
+  sus propios microservicios/paneles cuando existan (Operators Desk,
+  Analytics, campañas de difusión — Fase 4/5/7/9, ver sección 11 de
+  docs/CONTEXTO_PROYECTO.md); no tienen ninguna pantalla de configuración
+  en el Admin Panel de Core.
 """
 
 GROUP_PERMISSIONS: dict[str, list[str]] = {
@@ -69,15 +78,12 @@ GROUP_PERMISSIONS: dict[str, list[str]] = {
         "tags.change_etiqueta",
         "tags.delete_etiqueta",
         "tags.view_etiqueta",
+        "channels.view_canal",
+        "channels.change_canal",
     ],
     "encargados_difusion": [],
     "analistas_datos": [],
-    "operadores": [
-        "organizations.view_organization",
-        "teams.view_team",
-        "business_hours.view_horarioatencion",
-        "tags.view_etiqueta",
-    ],
+    "operadores": [],
 }
 
 # Grupos que un Admin de organización NO puede asignar a otros usuarios desde

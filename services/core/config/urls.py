@@ -18,4 +18,6 @@ urlpatterns = [
     path("api/core/", include("menu.urls")),
     path("api/core/", include("bot_settings.urls")),
     path("api/core/", include("tags.urls")),
+    path("api/core/", include("channels.urls")),
+    path("api/core/", include("platform_admin.urls")),
 ]

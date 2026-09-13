@@ -2,7 +2,9 @@ import { type FormEvent, useState } from "react";
 import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
 
 import { useAuth } from "../auth/AuthContext";
+import { isPlatformSuperuser } from "../auth/permissions";
 import { ApiError } from "../api/client";
+import type { Me } from "../types";
 
 function formatearFechaHora(iso: string): string {
   try {
@@ -10,6 +12,13 @@ function formatearFechaHora(iso: string): string {
   } catch {
     return iso;
   }
+}
+
+// El superusuario de plataforma no tiene permiso para ver el menú de ninguna organización en
+// particular (ver `App.tsx::Home`, mismo criterio) — no puede aterrizar en "/menu" como todo el
+// resto de las cuentas.
+function landingPorDefecto(me: Me): string {
+  return isPlatformSuperuser(me) ? "/plataforma/organizaciones" : "/menu";
 }
 
 export default function LoginPage() {
@@ -22,7 +31,7 @@ export default function LoginPage() {
   const [submitting, setSubmitting] = useState(false);
 
   if (me) {
-    const from = (location.state as { from?: string } | null)?.from || "/menu";
+    const from = (location.state as { from?: string } | null)?.from || landingPorDefecto(me);
     return <Navigate to={from} replace />;
   }
 
@@ -31,8 +40,8 @@ export default function LoginPage() {
     setError(null);
     setSubmitting(true);
     try {
-      await login(email, password);
-      navigate("/menu", { replace: true });
+      const meNuevo = await login(email, password);
+      navigate(landingPorDefecto(meNuevo), { replace: true });
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
         setError("Email o contraseña incorrectos.");

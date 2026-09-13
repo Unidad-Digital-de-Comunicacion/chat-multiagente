@@ -7,9 +7,9 @@ import type { Me } from "../types";
 interface AuthState {
   me: Me | null;
   loading: boolean;
-  login: (email: string, password: string) => Promise<void>;
+  login: (email: string, password: string) => Promise<Me>;
   logout: () => void;
-  refreshMe: () => Promise<void>;
+  refreshMe: () => Promise<Me | null>;
 }
 
 const AuthContext = createContext<AuthState | undefined>(undefined);
@@ -18,12 +18,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [me, setMe] = useState<Me | null>(null);
   const [loading, setLoading] = useState(true);
 
-  async function loadMe() {
+  async function loadMe(): Promise<Me | null> {
     try {
       const data = await api.get<Me>("/api/core/users/me/");
       setMe(data);
+      return data;
     } catch {
       setMe(null);
+      return null;
     } finally {
       setLoading(false);
     }
@@ -37,10 +39,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  async function login(email: string, password: string) {
+  async function login(email: string, password: string): Promise<Me> {
     const data = await api.post<{ access: string; refresh: string }>("/api/auth/login/", { email, password });
     setTokens(data);
-    await loadMe();
+    // `setMe` de acá adentro es async (no se ve reflejado en el `me` del contexto hasta el
+    // próximo render) — devolvemos el valor recién cargado para que quien llama a `login`
+    // (ej. `LoginPage`, para decidir a dónde navegar) no dependa de un closure viejo.
+    const nuevoMe = await loadMe();
+    if (!nuevoMe) throw new Error("No se pudo cargar el perfil después de iniciar sesión.");
+    return nuevoMe;
   }
 
   function logout() {

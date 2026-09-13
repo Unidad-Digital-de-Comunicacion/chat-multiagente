@@ -7,7 +7,7 @@ from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from common.permissions import StrictDjangoModelPermissions, require_perm
+from common.permissions import StrictDjangoModelPermissions, require_organization, require_perm
 from common.viewsets import OrganizationScopedModelViewSet
 
 from .models import MenuOpcion
@@ -48,7 +48,7 @@ class MenuOpcionViewSet(OrganizationScopedModelViewSet):
         directos de ese padre después del drag-and-drop."""
         require_perm(request, "menu.change_menuopcion")
 
-        organization_id = request.user.organization_id
+        organization_id = require_organization(request)
         parent_id = request.data.get("parent_id")
         orden = request.data.get("orden")
         if not isinstance(orden, list) or not orden:

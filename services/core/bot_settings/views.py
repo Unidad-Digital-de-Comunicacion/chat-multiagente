@@ -1,7 +1,7 @@
 from rest_framework.generics import RetrieveUpdateAPIView
 from rest_framework.permissions import IsAuthenticated
 
-from common.permissions import StrictDjangoModelPermissions
+from common.permissions import StrictDjangoModelPermissions, require_organization
 
 from .models import BotMessages
 from .serializers import BotMessagesSerializer
@@ -19,5 +19,6 @@ class BotMessagesView(RetrieveUpdateAPIView):
     permission_classes = [IsAuthenticated, StrictDjangoModelPermissions]
 
     def get_object(self):
-        obj, _ = BotMessages.objects.get_or_create(organization_id=self.request.user.organization_id)
+        organization_id = require_organization(self.request)
+        obj, _ = BotMessages.objects.get_or_create(organization_id=organization_id)
         return obj

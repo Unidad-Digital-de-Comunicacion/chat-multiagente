@@ -70,6 +70,50 @@ class UserViewSetTests(TestCase):
         self.assertEqual(response.status_code, 404)
         self.assertTrue(User.objects.filter(pk=self.admin_b.id).exists())
 
+    def test_eliminar_un_usuario_es_un_soft_delete(self):
+        url = reverse("user-detail", args=[self.operador_a.id])
+        response = authenticated_client(self.admin_a).delete(url)
+        self.assertEqual(response.status_code, 204)
+        self.operador_a.refresh_from_db()
+        self.assertIsNotNone(self.operador_a.deleted_at)
+        self.assertFalse(self.operador_a.is_active)
+        self.assertTrue(User.objects.filter(pk=self.operador_a.id).exists())  # nunca se borra la fila
+
+    def test_un_usuario_eliminado_no_aparece_en_el_listado_por_default(self):
+        authenticated_client(self.admin_a).delete(reverse("user-detail", args=[self.operador_a.id]))
+        response = authenticated_client(self.admin_a).get(self.list_url)
+        emails = {u["email"] for u in response.data["results"]}
+        self.assertNotIn(self.operador_a.email, emails)
+
+    def test_incluir_eliminados_los_trae_de_vuelta_en_el_listado(self):
+        authenticated_client(self.admin_a).delete(reverse("user-detail", args=[self.operador_a.id]))
+        response = authenticated_client(self.admin_a).get(self.list_url, {"incluir_eliminados": "1"})
+        emails = {u["email"] for u in response.data["results"]}
+        self.assertIn(self.operador_a.email, emails)
+
+    def test_admin_puede_restaurar_un_usuario_eliminado_de_su_organizacion(self):
+        authenticated_client(self.admin_a).delete(reverse("user-detail", args=[self.operador_a.id]))
+        response = authenticated_client(self.admin_a).post(reverse("user-restaurar", args=[self.operador_a.id]))
+        self.assertEqual(response.status_code, 200, response.data)
+        self.operador_a.refresh_from_db()
+        self.assertIsNone(self.operador_a.deleted_at)
+        self.assertTrue(self.operador_a.is_active)
+
+    def test_admin_no_puede_restaurar_un_usuario_de_otra_organizacion(self):
+        otro_usuario_b = make_user(self.org_b, groups=["operadores"], email="otro@org-b.test")
+        authenticated_client(self.admin_b).delete(reverse("user-detail", args=[otro_usuario_b.id]))
+        response = authenticated_client(self.admin_a).post(reverse("user-restaurar", args=[otro_usuario_b.id]))
+        self.assertEqual(response.status_code, 404)
+
+    def test_un_usuario_eliminado_no_puede_loguearse(self):
+        self.operador_a.set_password("Contrasena-123")
+        self.operador_a.save()
+        authenticated_client(self.admin_a).delete(reverse("user-detail", args=[self.operador_a.id]))
+        response = self.client.post(
+            reverse("auth-login"), {"email": self.operador_a.email, "password": "Contrasena-123"},
+        )
+        self.assertEqual(response.status_code, 401)
+
     def test_admin_crea_usuario_queda_en_su_propia_organizacion(self):
         payload = {"email": "nuevo@org-a.test", "password": "Contrasena-123"}
         response = authenticated_client(self.admin_a).post(self.list_url, payload)
@@ -373,3 +417,91 @@ class LoginViewTests(TestCase):
         user = make_user(org)
         response = self.client.post(reverse("auth-login"), {"email": user.email, "password": "incorrecta"})
         self.assertEqual(response.status_code, 401)
+
+
+class PlatformUserViewSetTests(TestCase):
+    """Sección "Plataforma" del Admin Panel: usuarios de TODAS las
+    organizaciones, sólo para el superusuario real (`IsPlatformSuperuser`)
+    — un Admin de organización (mismos permisos Django `users.*` para la
+    suya propia) no puede entrar acá."""
+
+    def setUp(self):
+        self.org_a = make_organization(name="Org A", slug="org-a")
+        self.org_b = make_organization(name="Org B", slug="org-b")
+        self.superusuario = make_user(
+            None, groups=["superusuarios"], email="superusuario@plataforma.test",
+            is_staff=True, is_superuser=True,
+        )
+        self.admin_a = make_user(self.org_a, groups=["administradores"])
+        self.operador_b = make_user(self.org_b, groups=["operadores"])
+        self.list_url = reverse("plataforma-usuario-list")
+
+    def test_superusuario_ve_usuarios_de_todas_las_organizaciones(self):
+        response = authenticated_client(self.superusuario).get(self.list_url)
+        self.assertEqual(response.status_code, 200, response.data)
+        emails = {u["email"] for u in response.data["results"]}
+        self.assertIn(self.admin_a.email, emails)
+        self.assertIn(self.operador_b.email, emails)
+        self.assertIn(self.superusuario.email, emails)
+
+    def test_filtra_por_organizacion(self):
+        response = authenticated_client(self.superusuario).get(self.list_url, {"organization": self.org_a.id})
+        emails = {u["email"] for u in response.data["results"]}
+        self.assertEqual(emails, {self.admin_a.email})
+
+    def test_admin_de_organizacion_no_puede_entrar(self):
+        response = authenticated_client(self.admin_a).get(self.list_url)
+        self.assertEqual(response.status_code, 403)
+
+    def test_superusuario_puede_crear_un_usuario_en_cualquier_organizacion(self):
+        payload = {
+            "email": "nuevo@org-b.test", "password": "Contrasena-123", "organization": self.org_b.id,
+        }
+        response = authenticated_client(self.superusuario).post(self.list_url, payload)
+        self.assertEqual(response.status_code, 201, response.data)
+        nuevo = User.objects.get(email="nuevo@org-b.test")
+        self.assertEqual(nuevo.organization_id, self.org_b.id)
+
+    def test_superusuario_puede_resetear_la_contrasena_de_cualquier_usuario(self):
+        url = reverse("plataforma-usuario-reset-password", args=[self.admin_a.id])
+        response = authenticated_client(self.superusuario).post(url)
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertIn("password_temporal", response.data)
+        self.admin_a.refresh_from_db()
+        self.assertTrue(self.admin_a.must_change_password)
+
+    def test_eliminar_un_usuario_es_un_soft_delete(self):
+        url = reverse("plataforma-usuario-detail", args=[self.operador_b.id])
+        response = authenticated_client(self.superusuario).delete(url)
+        self.assertEqual(response.status_code, 204)
+        self.operador_b.refresh_from_db()
+        self.assertIsNotNone(self.operador_b.deleted_at)
+        self.assertFalse(self.operador_b.is_active)
+        self.assertTrue(User.objects.filter(pk=self.operador_b.id).exists())
+
+    def test_un_usuario_eliminado_no_aparece_en_el_listado_por_default(self):
+        authenticated_client(self.superusuario).delete(reverse("plataforma-usuario-detail", args=[self.operador_b.id]))
+        response = authenticated_client(self.superusuario).get(self.list_url)
+        emails = {u["email"] for u in response.data["results"]}
+        self.assertNotIn(self.operador_b.email, emails)
+
+    def test_incluir_eliminados_los_trae_de_vuelta(self):
+        authenticated_client(self.superusuario).delete(reverse("plataforma-usuario-detail", args=[self.operador_b.id]))
+        response = authenticated_client(self.superusuario).get(self.list_url, {"incluir_eliminados": "1"})
+        emails = {u["email"] for u in response.data["results"]}
+        self.assertIn(self.operador_b.email, emails)
+
+    def test_superusuario_puede_restaurar_un_usuario_de_cualquier_organizacion(self):
+        authenticated_client(self.superusuario).delete(reverse("plataforma-usuario-detail", args=[self.operador_b.id]))
+        response = authenticated_client(self.superusuario).post(
+            reverse("plataforma-usuario-restaurar", args=[self.operador_b.id]),
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        self.operador_b.refresh_from_db()
+        self.assertIsNone(self.operador_b.deleted_at)
+        self.assertTrue(self.operador_b.is_active)
+
+    def test_admin_no_puede_eliminar_usuarios_por_esta_ruta(self):
+        url = reverse("plataforma-usuario-detail", args=[self.operador_b.id])
+        response = authenticated_client(self.admin_a).delete(url)
+        self.assertEqual(response.status_code, 403)

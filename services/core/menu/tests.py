@@ -167,3 +167,14 @@ class MenuOpcionReordenarTests(TestCase):
             self.url, {"parent_id": None, "orden": [nodo.id]}, format="json",
         )
         self.assertEqual(response.status_code, 403)
+
+    def test_superusuario_de_plataforma_no_puede_reordenar(self):
+        superusuario = make_user(
+            None, groups=["superusuarios"], email="superusuario@plataforma.test",
+            is_staff=True, is_superuser=True,
+        )
+        nodo = MenuOpcion.objects.create(organization=self.org, texto="A", tipo=MenuOpcion.Tipo.TERMINAR)
+        response = authenticated_client(superusuario).post(
+            self.url, {"parent_id": None, "orden": [nodo.id]}, format="json",
+        )
+        self.assertEqual(response.status_code, 403)

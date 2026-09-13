@@ -62,6 +62,14 @@ class User(AbstractBaseUser, PermissionsMixin):
                    "elegir una propia antes de dejarlo usar el resto del panel.",
     )
 
+    deleted_at = models.DateTimeField(
+        null=True, blank=True,
+        help_text="Soft delete: null = no está eliminado. Se marca (nunca se borra la fila) al "
+                   "eliminar el usuario a mano o al eliminar su organización entera (`common."
+                   "soft_delete`) — recuperable con la action `restaurar` de `UserViewSet`/"
+                   "`PlatformUserViewSet`, o desde /admin/.",
+    )
+
     objects = UserManager()
 
     USERNAME_FIELD = "email"

@@ -15,14 +15,39 @@ interface Campo {
   variables?: string[];
 }
 
-const CAMPOS_TEXTO: Campo[] = [
+// Se usan siempre, tenga el menú activado o no — el mensaje de bienvenida se manda antes de que la
+// conversación quede libre para operadores y el de despedida al cerrarla, con o sin árbol de menú
+// en el medio.
+const CAMPOS_SIEMPRE: Campo[] = [
   {
     name: "mensaje_bienvenida",
     label: "Mensaje de bienvenida (primer contacto)",
-    help: "Se manda una sola vez, la primera vez que el contacto escribe, antes del menú.",
+    help: "Se manda una sola vez, la primera vez que el contacto escribe — antes del menú, o si el " +
+      "menú está desactivado, antes de que la conversación quede libre para que la tome un operador.",
     multiline: true,
     variables: ["nombre"],
   },
+  {
+    name: "mensaje_despedida",
+    label: "Mensaje de despedida",
+    help: 'Lo manda cualquier opción de tipo "Terminar" del árbol de menú, o el cierre de la ' +
+      "conversación si el menú está desactivado.",
+    multiline: true,
+    variables: ["nombre"],
+  },
+  {
+    name: "mensaje_operador_toma",
+    label: "Saludo del operador al tomar la conversación",
+    help: 'Se le sugiere al operador al marcar una conversación como "tomada". Acá {nombre} es el '
+      + "nombre del OPERADOR, no el del contacto (a diferencia de los demás campos). Es sólo "
+      + "configuración por ahora: aplicarlo de verdad es parte del Operators Desk (Fase 4/5).",
+    multiline: true,
+    variables: ["nombre"],
+  },
+];
+
+// Sólo se usan con el árbol de menú activado.
+const CAMPOS_MENU: Campo[] = [
   {
     name: "saludo_inicial",
     label: "Saludo del menú principal",
@@ -36,13 +61,6 @@ const CAMPOS_TEXTO: Campo[] = [
     help: "Encabezado al entrar a un submenú.",
     multiline: true,
     variables: ["area", "nombre"],
-  },
-  {
-    name: "mensaje_despedida",
-    label: "Mensaje de despedida",
-    help: 'Lo manda cualquier opción de tipo "Terminar" del árbol de menú.',
-    multiline: true,
-    variables: ["nombre"],
   },
   {
     name: "derivacion_texto",
@@ -63,19 +81,44 @@ const CAMPOS_TEXTO: Campo[] = [
     multiline: true,
     variables: ["nombre"],
   },
-  {
-    name: "mensaje_operador_toma",
-    label: "Saludo del operador al tomar la conversación",
-    help: 'Se le sugiere al operador al marcar una conversación como "tomada". Acá {nombre} es el '
-      + "nombre del OPERADOR, no el del contacto (a diferencia de los demás campos). Es sólo "
-      + "configuración por ahora: aplicarlo de verdad es parte del Operators Desk (Fase 4/5).",
-    multiline: true,
-    variables: ["nombre"],
-  },
 ];
 
 const EJEMPLO = { area: "Ventas", nombre: "Juan" };
 const EJEMPLO_OPERADOR = { nombre: "Marina (operadora)" };
+
+function CampoInput({
+  campo, mensajes, canEdit, onChange,
+}: {
+  campo: Campo;
+  mensajes: BotMessages;
+  canEdit: boolean;
+  onChange: (name: keyof BotMessages, value: string) => void;
+}) {
+  return (
+    <label>
+      {campo.label}
+      {campo.multiline ? (
+        <MessageEditor
+          rows={3}
+          disabled={!canEdit}
+          value={String(mensajes[campo.name] ?? "")}
+          placeholder={mensajes.valores_efectivos[campo.name] ?? ""}
+          variables={campo.variables ?? []}
+          onChange={(v) => onChange(campo.name, v)}
+        />
+      ) : (
+        <input
+          maxLength={campo.name === "derivacion_texto" ? 24 : undefined}
+          disabled={!canEdit}
+          value={String(mensajes[campo.name] ?? "")}
+          placeholder={mensajes.valores_efectivos[campo.name] ?? ""}
+          onChange={(e) => onChange(campo.name, e.target.value)}
+        />
+      )}
+      <span className="text-muted field-help">{campo.help}</span>
+    </label>
+  );
+}
 
 export default function BotMessagesPage() {
   const { me } = useAuth();
@@ -105,7 +148,7 @@ export default function BotMessagesPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  function setCampo(name: keyof BotMessages, value: string | number) {
+  function setCampo(name: keyof BotMessages, value: string | number | boolean) {
     setMensajes((prev) => prev && { ...prev, [name]: value });
   }
 
@@ -116,6 +159,7 @@ export default function BotMessagesPage() {
     setSaving(true);
     try {
       const body = {
+        menu_activo: mensajes.menu_activo,
         mensaje_bienvenida: mensajes.mensaje_bienvenida,
         saludo_inicial: mensajes.saludo_inicial,
         saludo_area: mensajes.saludo_area,
@@ -161,30 +205,49 @@ export default function BotMessagesPage() {
 
       <div className="messages-layout">
         <form onSubmit={handleSubmit} className="form-stack card messages-main">
-          {CAMPOS_TEXTO.map((campo) => (
-            <label key={campo.name}>
-              {campo.label}
-              {campo.multiline ? (
-                <MessageEditor
-                  rows={3}
-                  disabled={!canEdit}
-                  value={String(mensajes[campo.name] ?? "")}
-                  placeholder={mensajes.valores_efectivos[campo.name] ?? ""}
-                  variables={campo.variables ?? []}
-                  onChange={(v) => setCampo(campo.name, v)}
-                />
-              ) : (
-                <input
-                  maxLength={campo.name === "derivacion_texto" ? 24 : undefined}
-                  disabled={!canEdit}
-                  value={String(mensajes[campo.name] ?? "")}
-                  placeholder={mensajes.valores_efectivos[campo.name] ?? ""}
-                  onChange={(e) => setCampo(campo.name, e.target.value)}
-                />
-              )}
-              <span className="text-muted field-help">{campo.help}</span>
-            </label>
+          <div>
+            <div className="field-label">Modo de atención</div>
+            <div className="button-group">
+              <button
+                type="button"
+                disabled={!canEdit}
+                className={"btn-toggle" + (mensajes.menu_activo ? " btn-toggle-active" : "")}
+                onClick={() => setCampo("menu_activo", true)}
+              >
+                Usar menú del bot
+              </button>
+              <button
+                type="button"
+                disabled={!canEdit}
+                className={"btn-toggle" + (!mensajes.menu_activo ? " btn-toggle-active" : "")}
+                onClick={() => setCampo("menu_activo", false)}
+              >
+                Directo a operadores
+              </button>
+            </div>
+            <span className="text-muted field-help">
+              {mensajes.menu_activo
+                ? "El bot saluda, muestra el menú y deriva según la opción elegida — los mensajes de abajo se " +
+                  "usan en cada paso."
+                : "El bot no muestra el árbol de menú: sólo manda la bienvenida y, entre ella y la despedida, " +
+                  "la conversación queda directamente en la bandeja sin asignar para que cualquier operador la " +
+                  "tome, sin pasar antes por una derivación."}
+              {" "}La bienvenida, la despedida y el saludo del operador se usan siempre, con o sin menú.
+            </span>
+          </div>
+
+          {CAMPOS_SIEMPRE.map((campo) => (
+            <CampoInput key={campo.name} campo={campo} mensajes={mensajes} canEdit={canEdit} onChange={setCampo} />
           ))}
+
+          <div>
+            <div className="field-label">Sólo con el menú activado</div>
+            <div className={mensajes.menu_activo ? undefined : "messages-fields-inactive"}>
+              {CAMPOS_MENU.map((campo) => (
+                <CampoInput key={campo.name} campo={campo} mensajes={mensajes} canEdit={canEdit} onChange={setCampo} />
+              ))}
+            </div>
+          </div>
 
           <label>
             Segundos para volver a mostrar el menú tras una respuesta
@@ -224,24 +287,35 @@ export default function BotMessagesPage() {
         <aside className="messages-side">
           <PhoneFrame title="Vista previa">
             <BotBubble caption="Primer contacto">{renderMarkup(efectivo("mensaje_bienvenida"))}</BotBubble>
-            <BotBubble caption="Menú principal">{renderMarkup(efectivo("saludo_inicial"))}</BotBubble>
-            <BotBubble caption='Al entrar a un submenú (ej. "Ventas")'>
-              {renderMarkup(aplicarVariables(efectivo("saludo_area"), EJEMPLO))}
-            </BotBubble>
-            <BotBubble caption="Al pedir un operador">
-              {renderMarkup(aplicarVariables(efectivo("derivacion_mensaje"), EJEMPLO))}
-            </BotBubble>
-            {mensajes.derivacion_texto && <Pill>{mensajes.derivacion_texto || "Hablar con un operador"}</Pill>}
-            <BotBubble caption="Al terminar la conversación">{renderMarkup(efectivo("mensaje_despedida"))}</BotBubble>
-            {mensajes.minutos_inactividad_cierre > 0 ? (
-              <BotBubble caption={`Si no escribe por ${mensajes.minutos_inactividad_cierre} min`}>
-                {renderMarkup(efectivo("mensaje_cierre_inactividad"))}
-              </BotBubble>
+            {mensajes.menu_activo ? (
+              <>
+                <BotBubble caption="Menú principal">{renderMarkup(efectivo("saludo_inicial"))}</BotBubble>
+                <BotBubble caption='Al entrar a un submenú (ej. "Ventas")'>
+                  {renderMarkup(aplicarVariables(efectivo("saludo_area"), EJEMPLO))}
+                </BotBubble>
+                <BotBubble caption="Al pedir un operador">
+                  {renderMarkup(aplicarVariables(efectivo("derivacion_mensaje"), EJEMPLO))}
+                </BotBubble>
+                {mensajes.derivacion_texto && <Pill>{mensajes.derivacion_texto || "Hablar con un operador"}</Pill>}
+                {mensajes.minutos_inactividad_cierre > 0 ? (
+                  <BotBubble caption={`Si no escribe por ${mensajes.minutos_inactividad_cierre} min`}>
+                    {renderMarkup(efectivo("mensaje_cierre_inactividad"))}
+                  </BotBubble>
+                ) : (
+                  <div className="wa-bubble-caption">Cierre por inactividad: desactivado</div>
+                )}
+              </>
             ) : (
-              <div className="wa-bubble-caption">Cierre por inactividad: desactivado</div>
+              <div className="wa-bubble-caption">
+                Estado intermedio: sin menú, la conversación queda directo en la bandeja sin asignar para que
+                cualquier operador la tome, sin pasar antes por una derivación.
+              </div>
             )}
             <BotBubble caption='Al tomar la conversación (lo escribe el operador, no el bot)'>
               {renderMarkup(aplicarVariables(efectivo("mensaje_operador_toma"), EJEMPLO_OPERADOR))}
+            </BotBubble>
+            <BotBubble caption="Al terminar la conversación">
+              {renderMarkup(efectivo("mensaje_despedida"))}
             </BotBubble>
           </PhoneFrame>
         </aside>

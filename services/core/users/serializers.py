@@ -71,9 +71,10 @@ class UserSerializer(serializers.ModelSerializer):
         model = User
         fields = [
             "id", "email", "first_name", "last_name", "dni", "avatar", "avatar_thumbnail",
-            "groups", "group_names", "organization", "is_active", "date_joined", "must_change_password",
+            "groups", "group_names", "organization", "is_active", "deleted_at", "date_joined",
+            "must_change_password",
         ]
-        read_only_fields = ["id", "organization", "date_joined", "must_change_password"]
+        read_only_fields = ["id", "organization", "deleted_at", "date_joined", "must_change_password"]
 
     def get_group_names(self, obj):
         return list(obj.groups.values_list("name", flat=True))
@@ -86,6 +87,56 @@ class UserSerializer(serializers.ModelSerializer):
 
     def validate_dni(self, value):
         return _validar_dni_unico(value, self.instance)
+
+
+class PlatformUserSerializer(UserSerializer):
+    """La usa `PlatformUserViewSet` (sección "Plataforma" del Admin Panel,
+    `common.permissions.IsPlatformSuperuser`): a diferencia de
+    `UserSerializer` (que usa el `UserViewSet` de cada Admin de
+    organización, con `organization` de sólo lectura porque el ViewSet la
+    fija sola a la propia), acá `organization` es editable — el
+    superusuario elige a qué organización pertenece cada usuario, o lo deja
+    en `null` para otra cuenta de plataforma. `organization_name` es sólo
+    para no obligar al Admin Panel a cruzar el listado de usuarios con el
+    de organizaciones nada más que para mostrar el nombre en la tabla."""
+
+    organization_name = serializers.SerializerMethodField()
+
+    class Meta(UserSerializer.Meta):
+        fields = UserSerializer.Meta.fields + ["organization_name"]
+        read_only_fields = ["id", "deleted_at", "date_joined", "must_change_password"]
+
+    def get_organization_name(self, obj):
+        return obj.organization.name if obj.organization_id else None
+
+
+class PlatformUserCreateSerializer(serializers.ModelSerializer):
+    """Alta de un usuario desde la sección "Plataforma" — igual que
+    `UserCreateSerializer` pero con `organization` en el body (no lo fija
+    un ViewSet org-scoped, acá no existe tal cosa)."""
+
+    password = serializers.CharField(write_only=True, validators=[validate_password])
+    groups = serializers.PrimaryKeyRelatedField(many=True, queryset=Group.objects.all(), required=False)
+
+    class Meta:
+        model = User
+        fields = ["id", "email", "first_name", "last_name", "dni", "password", "groups", "organization", "is_active"]
+
+    def validate_groups(self, groups):
+        return _validar_grupos_asignables(self.context.get("request"), groups)
+
+    def validate_dni(self, value):
+        return _validar_dni_unico(value, None)
+
+    def create(self, validated_data):
+        password = validated_data.pop("password")
+        groups = validated_data.pop("groups", [])
+        user = User(**validated_data)
+        user.set_password(password)
+        user.save()
+        if groups:
+            user.groups.set(groups)
+        return user
 
 
 class UserCreateSerializer(serializers.ModelSerializer):

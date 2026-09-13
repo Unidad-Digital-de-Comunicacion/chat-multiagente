@@ -5,6 +5,9 @@ from .models import Organization
 
 @admin.register(Organization)
 class OrganizationAdmin(admin.ModelAdmin):
-    list_display = ["name", "slug", "plan", "connection_limit", "is_active", "created_at"]
+    list_display = [
+        "name", "slug", "plan", "connection_limit", "user_limit", "monthly_conversation_limit",
+        "is_active", "created_at",
+    ]
     prepopulated_fields = {"slug": ("name",)}
     search_fields = ["name", "slug"]
