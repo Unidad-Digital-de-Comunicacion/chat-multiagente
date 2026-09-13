@@ -749,6 +749,169 @@ input, select, textarea {
      acá para no taparlos por accidente. */
   font-size: 0.85rem;
   font-weight: 600;
+  text-align: center;
+  white-space: nowrap;
+}
+
+/* ---- Edición en línea de una etiqueta (alta y edición, sin modal) ----
+   Cada campo es una columna (vista previa, nombre, color de fondo, color
+   de fuente, acciones), alineadas entre todas las filas para que se lean
+   como una tabla en vez de un renglón de controles sueltos. */
+.tag-edit-row {
+  display: flex;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 1.5rem;
+  padding: 0.6rem 0.75rem;
+  background: #f7f8fb;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  position: relative;
+}
+
+.tag-edit-col {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  flex-shrink: 0;
+}
+
+/* Mismo ancho en el encabezado (`TagListHeader`) y en cada fila, para que
+   las columnas queden alineadas entre sí como una tabla — con margen de
+   sobra para que ni la etiqueta de la columna (ej. "Color de fondo") ni un
+   nombre de etiqueta largo lleguen a partirse en dos líneas o pisar la
+   columna de al lado. */
+.tag-edit-col-preview {
+  width: 150px;
+  /* La columna tiene un ancho fijo (para alinear con el resto de filas),
+     pero la etiqueta adentro no se estira a llenarla — se achica o agranda
+     sola según el largo del nombre, y queda centrada en la columna. */
+  align-items: center;
+}
+
+.tag-edit-col-name {
+  width: 220px;
+}
+
+.tag-edit-col-color {
+  width: 130px;
+}
+
+.tag-edit-col-font {
+  width: 130px;
+}
+
+.field-label-sm {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.tag-list-header {
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  padding: 0 0.75rem 0.35rem;
+}
+
+.tag-list-header .field-label-sm {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.tag-edit-name {
+  width: 100%;
+}
+
+.tag-edit-actions {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.tag-save-btn {
+  padding: 0.55rem 1.2rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.tag-edit-error {
+  flex-basis: 100%;
+}
+
+/* Botón de color: muestra el color actual como swatch; abre un popover
+   con el picker nativo + un campo de texto para el hexadecimal. */
+.color-picker {
+  position: relative;
+}
+
+.color-swatch-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  cursor: pointer;
+  padding: 0;
+}
+
+.color-picker-popover {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 20;
+  margin-top: 0.3rem;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+  padding: 0.5rem;
+}
+
+.color-picker-popover input[type="color"] {
+  width: 36px;
+  height: 32px;
+  padding: 2px;
+  cursor: pointer;
+}
+
+.color-hex-input {
+  width: 90px;
+  font-family: monospace;
+  text-transform: uppercase;
+}
+
+/* Botones de color de fuente: cada uno se pinta con el color que
+   representa (blanco/negro) y muestra una "A" del color contrario para
+   que se lea qué texto va a salir — el activo se resalta con un anillo. */
+.font-color-options {
+  display: flex;
+  gap: 0.35rem;
+}
+
+.font-swatch {
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  /* Fondo neutro (gris 50%) para los dos botones — lo que cambia entre
+     ellos es el color de la "A" (`color`, por style inline), que es
+     justamente lo que representa cada opción. */
+  background: rgba(128, 128, 128, 0.5);
+  font-weight: 900;
+  font-size: 0.9rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.font-swatch-active {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
 }
 
 /* ---- Mini almanaque (días excepcionales) ---- */

@@ -548,33 +548,12 @@ function ExceptionsEditor({ canEdit }: { canEdit: boolean }) {
           (acá o en el almanaque) para cargarle un feriado, asueto u horario reducido propio de tu organización —
           pisa el horario semanal sólo para esa fecha puntual.
         </p>
-        <label className="inline-label">
-          Día <input type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} />
-        </label>
-        {error && <div className="form-error">{error}</div>}
-
-        {dia && (
-          <>
-            {canEdit && (
-              <div className="toolbar">
-                <button className="btn btn-primary" onClick={guardar} disabled={saving}>
-                  {saving ? "Guardando…" : "Guardar"}
-                </button>
-              </div>
-            )}
-            {dia.compartido && (
-              <div className="hint-box">
-                Este día es <strong>{labelTipo(dia.tipo)}</strong> según el catálogo nacional
-                {dia.descripcion && (
-                  <>
-                    : <strong>{dia.descripcion}</strong>
-                  </>
-                )}
-                . Si lo modificás y guardás, queda como una excepción propia de tu organización para esta fecha.
-              </div>
-            )}
-            <div className="field-label">Tipo de día</div>
-            <div className="button-group">
+        <div className="toolbar">
+          <label className="inline-label">
+            Día <input type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} />
+          </label>
+          {dia && (
+            <div className="button-group" style={{ margin: 0 }}>
               {TIPOS_DIA.map((t) => (
                 <button
                   key={t.value}
@@ -589,6 +568,23 @@ function ExceptionsEditor({ canEdit }: { canEdit: boolean }) {
                 </button>
               ))}
             </div>
+          )}
+        </div>
+        {error && <div className="form-error">{error}</div>}
+
+        {dia && (
+          <>
+            {dia.compartido && (
+              <div className="hint-box">
+                Este día es <strong>{labelTipo(dia.tipo)}</strong> según el catálogo nacional
+                {dia.descripcion && (
+                  <>
+                    : <strong>{dia.descripcion}</strong>
+                  </>
+                )}
+                . Si lo modificás y guardás, queda como una excepción propia de tu organización para esta fecha.
+              </div>
+            )}
 
             {dia.tipo !== "NORMAL" && (
               <label>
@@ -600,6 +596,14 @@ function ExceptionsEditor({ canEdit }: { canEdit: boolean }) {
                   onChange={(e) => actualizarDia({ descripcion: e.target.value })}
                 />
               </label>
+            )}
+
+            {canEdit && (
+              <div className="toolbar" style={{ margin: "1.5rem 0" }}>
+                <button className="btn btn-primary" onClick={guardar} disabled={saving}>
+                  {saving ? "Guardando…" : "Guardar"}
+                </button>
+              </div>
             )}
 
             {dia.tipo === "HORARIO_REDUCIDO" && (

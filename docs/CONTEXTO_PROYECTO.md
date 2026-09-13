@@ -622,7 +622,15 @@ son templates Django con SSO, esa idea se descartó a favor de una sola UI en el
   administradores, sólo `view_etiqueta` para operadores (para cuando la Fase 4/5 les permita
   aplicarlas). `?team=<id>` filtra el catálogo por equipo. El color se valida como hexadecimal
   (`#RRGGBB`). Admin Panel: página "Etiquetas" (`frontend/admin-panel/src/pages/TagsPage.tsx`) con
-  dos grupos — generales y de equipo.
+  dos grupos — generales y de equipo, edición 100% en línea (sin modal: cada fila es su propio
+  formulario, un encabezado de columnas por grupo en vez de repetir la etiqueta de cada campo por
+  fila), selector de color con swatch + hex a mano, y color de fuente (blanco/negro) con vista
+  previa en la propia letra. **Colores por default del proyecto para una etiqueta nueva**:
+  `color="#3454D1"` (el primario de la marca) y `color_texto="#FFFFFF"` — mismo valor en los 3
+  lugares donde se puede crear una etiqueta sin elegir color a mano: `Etiqueta.color`/`color_texto`
+  (alta directa por API/admin/shell), `tags/defaults.py::COLOR_EQUIPO_DEFAULT` (etiquetas de equipo
+  autogeneradas) y el estado inicial de `TagCreateRow` en el Admin Panel — si se cambia la
+  preferencia, actualizar los tres para que no queden inconsistentes entre sí.
 
 ### Fase 3 — Channel Gateway + integración WhatsApp
 - Embedded Signup, recepción y verificación de webhooks (`X-Hub-Signature-256`), envío de

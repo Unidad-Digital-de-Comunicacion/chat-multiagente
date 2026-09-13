@@ -52,7 +52,13 @@ class Etiqueta(models.Model):
         help_text="Sólo lo usan las 7 etiquetas de sistema, para identificarlas de forma estable.",
     )
     nombre = models.CharField(max_length=50)
-    color = models.CharField(max_length=7, default="#6B7280", validators=[_validar_color])
+    # Mismo default en los 3 lugares donde se puede crear una etiqueta sin
+    # elegir color a mano — acá (alta directa por API/admin/shell),
+    # `defaults.COLOR_EQUIPO_DEFAULT` (etiquetas de equipo autogeneradas) y
+    # el estado inicial de `TagCreateRow` en el Admin Panel — es la
+    # preferencia de color por default del proyecto para etiquetas nuevas,
+    # no cambiarla en un solo lugar sin actualizar los otros dos.
+    color = models.CharField(max_length=7, default="#3454D1", validators=[_validar_color])
     color_texto = models.CharField(
         max_length=7, default="#FFFFFF", validators=[_validar_color],
         help_text="Color de la fuente sobre `color` — blanco o negro, para que el texto se lea bien "

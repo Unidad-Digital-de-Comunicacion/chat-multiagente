@@ -1,10 +1,11 @@
-import { type FormEvent, useEffect, useState } from "react";
+import { type FormEvent, useEffect, useRef, useState } from "react";
 
 import { api, ApiError } from "../api/client";
-import Modal from "../components/Modal";
 import { useAuth } from "../auth/AuthContext";
 import { hasPerm } from "../auth/permissions";
 import type { Etiqueta, Paginated } from "../types";
+
+const HEX_RE = /^#[0-9A-Fa-f]{6}$/;
 
 export default function TagsPage() {
   const { me } = useAuth();
@@ -14,8 +15,7 @@ export default function TagsPage() {
 
   const [tags, setTags] = useState<Etiqueta[] | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [showCreate, setShowCreate] = useState(false);
-  const [editing, setEditing] = useState<Etiqueta | null>(null);
+  const [creating, setCreating] = useState(false);
 
   async function load() {
     try {
@@ -50,8 +50,8 @@ export default function TagsPage() {
     <div>
       <div className="page-header">
         <h2>Etiquetas de conversación</h2>
-        {canCreate && (
-          <button className="btn btn-primary" onClick={() => setShowCreate(true)}>
+        {canCreate && !creating && (
+          <button className="btn btn-primary" onClick={() => setCreating(true)}>
             + Nueva etiqueta
           </button>
         )}
@@ -64,108 +64,173 @@ export default function TagsPage() {
         Operators Desk (todavía no implementado).
       </p>
 
-      <TagGroup
-        title="Generales de la organización"
-        tags={generales}
-        canEdit={canEdit}
-        canDelete={canDelete}
-        onEdit={setEditing}
-        onDelete={eliminar}
-      />
-      <TagGroup
-        title="De equipo (una por cada equipo, automática)"
-        tags={deEquipo}
-        canEdit={canEdit}
-        canDelete={canDelete}
-        onEdit={setEditing}
-        onDelete={eliminar}
-      />
+      <div className="card" style={{ marginBottom: "1rem" }}>
+        <h3 className="section-title-sm">Generales de la organización</h3>
+        <div className="tag-list">
+          {(generales.length > 0 || creating) && <TagListHeader />}
+          {creating && (
+            <TagCreateRow
+              onCancel={() => setCreating(false)}
+              onSaved={() => {
+                setCreating(false);
+                load();
+              }}
+            />
+          )}
+          {generales.length === 0 && !creating && <p className="text-muted">Sin etiquetas todavía.</p>}
+          {generales.map((t) => (
+            <TagRow key={t.id} tag={t} canEdit={canEdit} canDelete={canDelete} onSaved={load} onDelete={() => eliminar(t)} />
+          ))}
+        </div>
+      </div>
 
-      {showCreate && (
-        <TagFormModal
-          onClose={() => setShowCreate(false)}
-          onSaved={() => {
-            setShowCreate(false);
-            load();
-          }}
-        />
-      )}
-      {editing && (
-        <TagFormModal
-          tag={editing}
-          onClose={() => setEditing(null)}
-          onSaved={() => {
-            setEditing(null);
-            load();
-          }}
-        />
-      )}
+      <div className="card" style={{ marginBottom: "1rem" }}>
+        <h3 className="section-title-sm">De equipo (una por cada equipo, automática)</h3>
+        <div className="tag-list">
+          {deEquipo.length === 0 ? (
+            <p className="text-muted">Sin etiquetas todavía.</p>
+          ) : (
+            <>
+              <TagListHeader />
+              {deEquipo.map((t) => (
+                <TagRow key={t.id} tag={t} canEdit={canEdit} canDelete={canDelete} onSaved={load} onDelete={() => eliminar(t)} />
+              ))}
+            </>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
 
-function TagGroup({
-  title, tags, canEdit, canDelete, onEdit, onDelete,
+/** Encabezado de columnas — una sola vez por grupo (generales / de equipo),
+ * en vez de repetir la etiqueta de cada campo en cada fila. */
+function TagListHeader() {
+  return (
+    <div className="tag-edit-row tag-list-header">
+      <div className="tag-edit-col tag-edit-col-preview">
+        <span className="field-label-sm">Vista previa</span>
+      </div>
+      <div className="tag-edit-col tag-edit-col-name">
+        <span className="field-label-sm">Nombre</span>
+      </div>
+      <div className="tag-edit-col tag-edit-col-color">
+        <span className="field-label-sm">Color de fondo</span>
+      </div>
+      <div className="tag-edit-col tag-edit-col-font">
+        <span className="field-label-sm">Color de fuente</span>
+      </div>
+      <div className="tag-edit-col tag-edit-col-actions">
+        <span className="field-label-sm">&nbsp;</span>
+      </div>
+    </div>
+  );
+}
+
+/** Campos compartidos entre la fila de una etiqueta existente (siempre
+ * editable, sin botón "Editar" de por medio) y la fila de alta de una
+ * etiqueta nueva. */
+function TagFields({
+  nombre, setNombre, color, setColor, colorTexto, setColorTexto, protegida, protegidaTitle, autoFocus,
 }: {
-  title: string;
-  tags: Etiqueta[];
-  canEdit: boolean;
-  canDelete: boolean;
-  onEdit: (t: Etiqueta) => void;
-  onDelete: (t: Etiqueta) => void;
+  nombre: string;
+  setNombre: (v: string) => void;
+  color: string;
+  setColor: (v: string) => void;
+  colorTexto: string;
+  setColorTexto: (v: string) => void;
+  protegida: boolean;
+  protegidaTitle?: string;
+  autoFocus?: boolean;
 }) {
   return (
-    <div className="card" style={{ marginBottom: "1rem" }}>
-      <h3 className="section-title-sm">{title}</h3>
-      {tags.length === 0 ? (
-        <p className="text-muted">Sin etiquetas todavía.</p>
-      ) : (
-        <div className="tag-list">
-          {tags.map((t) => {
-            const protegida = t.es_sistema || t.team !== null;
-            return (
-              <div key={t.id} className="tag-chip-row">
-                <span className="tag-chip" style={{ background: t.color, color: t.color_texto }}>
-                  {t.nombre}
-                </span>
-                {t.es_sistema && <span className="badge">sistema</span>}
-                {t.team !== null && <span className="badge">equipo</span>}
-                {(canEdit || (canDelete && !protegida)) && (
-                  <span className="table-actions">
-                    {canEdit && (
-                      <button className="btn btn-ghost btn-sm" onClick={() => onEdit(t)}>
-                        Editar
-                      </button>
-                    )}
-                    {canDelete && !protegida && (
-                      <button className="btn btn-ghost btn-sm btn-danger" onClick={() => onDelete(t)}>
-                        Eliminar
-                      </button>
-                    )}
-                  </span>
-                )}
-              </div>
-            );
-          })}
+    <>
+      <div className="tag-edit-col tag-edit-col-preview">
+        <span className="tag-chip" style={{ background: color, color: colorTexto }}>
+          {nombre || "Etiqueta"}
+        </span>
+      </div>
+
+      <div className="tag-edit-col tag-edit-col-name">
+        <input
+          className="tag-edit-name"
+          required
+          autoFocus={autoFocus}
+          value={nombre}
+          disabled={protegida}
+          placeholder="Nombre"
+          title={protegida ? protegidaTitle : undefined}
+          onChange={(e) => setNombre(e.target.value)}
+        />
+      </div>
+
+      <div className="tag-edit-col tag-edit-col-color">
+        <ColorPickerButton value={color} onChange={setColor} label="Color de fondo" />
+      </div>
+
+      <div className="tag-edit-col tag-edit-col-font">
+        <div className="font-color-options" role="group" aria-label="Color de la fuente">
+          <button
+            type="button"
+            className={"font-swatch" + (colorTexto === "#FFFFFF" ? " font-swatch-active" : "")}
+            style={{ color: "#FFFFFF" }}
+            onClick={() => setColorTexto("#FFFFFF")}
+            title="Fuente blanca"
+            aria-label="Fuente blanca"
+          >
+            A
+          </button>
+          <button
+            type="button"
+            className={"font-swatch" + (colorTexto === "#000000" ? " font-swatch-active" : "")}
+            style={{ color: "#000000" }}
+            onClick={() => setColorTexto("#000000")}
+            title="Fuente negra"
+            aria-label="Fuente negra"
+          >
+            A
+          </button>
         </div>
-      )}
-    </div>
+      </div>
+    </>
   );
 }
 
-function TagFormModal({
-  tag, onClose, onSaved,
+/** Fila de una etiqueta existente — SIEMPRE editable en la lista, sin
+ * botón "Editar" de por medio: se cambia el nombre/color ahí mismo y se
+ * confirma con "Guardar". */
+function TagRow({
+  tag, canEdit, canDelete, onSaved, onDelete,
 }: {
-  tag?: Etiqueta;
-  onClose: () => void;
+  tag: Etiqueta;
+  canEdit: boolean;
+  canDelete: boolean;
   onSaved: () => void;
+  onDelete: () => void;
 }) {
-  const protegida = !!tag && (tag.es_sistema || tag.team !== null);
-  const [nombre, setNombre] = useState(tag?.nombre ?? "");
-  const [color, setColor] = useState(tag?.color ?? "#3454D1");
-  const [colorTexto, setColorTexto] = useState(tag?.color_texto ?? "#FFFFFF");
+  const protegida = tag.es_sistema || tag.team !== null;
+  const [nombre, setNombre] = useState(tag.nombre);
+  const [color, setColor] = useState(tag.color);
+  const [colorTexto, setColorTexto] = useState(tag.color_texto);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+
+  if (!canEdit) {
+    return (
+      <div className="tag-chip-row">
+        <span className="tag-chip" style={{ background: tag.color, color: tag.color_texto }}>
+          {tag.nombre}
+        </span>
+        {tag.es_sistema && <span className="badge">sistema</span>}
+        {tag.team !== null && <span className="badge">equipo</span>}
+        {canDelete && !protegida && (
+          <button className="btn btn-ghost btn-sm btn-danger" onClick={onDelete}>
+            Eliminar
+          </button>
+        )}
+      </div>
+    );
+  }
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -174,8 +239,7 @@ function TagFormModal({
     try {
       const body: Record<string, unknown> = { color, color_texto: colorTexto };
       if (!protegida) body.nombre = nombre;
-      if (tag) await api.patch(`/api/core/etiquetas/${tag.id}/`, body);
-      else await api.post("/api/core/etiquetas/", body);
+      await api.patch(`/api/core/etiquetas/${tag.id}/`, body);
       onSaved();
     } catch (err) {
       if (err instanceof ApiError && err.data && typeof err.data === "object") {
@@ -189,58 +253,158 @@ function TagFormModal({
   }
 
   return (
-    <Modal title={tag ? `Editar "${tag.nombre}"` : "Nueva etiqueta"} onClose={onClose}>
-      <form onSubmit={handleSubmit} className="form-stack">
-        <label>
-          Nombre
-          <input
-            required
-            value={nombre}
-            disabled={protegida}
-            onChange={(e) => setNombre(e.target.value)}
-          />
-          {protegida && (
-            <span className="text-muted field-help">
-              {tag?.es_sistema
-                ? "Es una etiqueta de sistema: sólo se le puede cambiar el color."
-                : "Es la etiqueta de un equipo: se renombra sola si renombrás el equipo, sólo se le puede cambiar el color."}
-            </span>
+    <form onSubmit={handleSubmit} className="tag-edit-row">
+      <TagFields
+        nombre={nombre}
+        setNombre={setNombre}
+        color={color}
+        setColor={setColor}
+        colorTexto={colorTexto}
+        setColorTexto={setColorTexto}
+        protegida={protegida}
+        protegidaTitle={
+          tag.es_sistema
+            ? "Etiqueta de sistema: sólo se le puede cambiar el color."
+            : "Etiqueta de equipo: se renombra sola si renombrás el equipo."
+        }
+      />
+      <div className="tag-edit-col tag-edit-col-actions">
+        <div className="tag-edit-actions">
+          <button className="btn btn-primary btn-sm tag-save-btn" type="submit" disabled={submitting}>
+            <span aria-hidden="true">✓</span> {submitting ? "Guardando…" : "Guardar"}
+          </button>
+          {canDelete && !protegida && (
+            <button type="button" className="btn btn-ghost btn-sm btn-danger" onClick={onDelete}>
+              Eliminar
+            </button>
           )}
-        </label>
-        <label>
-          Color de fondo
-          <input type="color" value={color} onChange={(e) => setColor(e.target.value)} />
-        </label>
-        <div>
-          <div className="field-label">Color de la fuente</div>
-          <div className="button-group">
-            <button
-              type="button"
-              className={"btn-toggle" + (colorTexto === "#FFFFFF" ? " btn-toggle-active" : "")}
-              onClick={() => setColorTexto("#FFFFFF")}
-            >
-              Blanco
-            </button>
-            <button
-              type="button"
-              className={"btn-toggle" + (colorTexto === "#000000" ? " btn-toggle-active" : "")}
-              onClick={() => setColorTexto("#000000")}
-            >
-              Negro
-            </button>
-          </div>
         </div>
-        <div>
-          <div className="field-label">Vista previa</div>
-          <span className="tag-chip" style={{ background: color, color: colorTexto }}>
-            {nombre || "Etiqueta"}
-          </span>
+      </div>
+      {error && <div className="form-error tag-edit-error">{error}</div>}
+    </form>
+  );
+}
+
+/** Fila de alta de una etiqueta nueva — sólo generales, siempre `team=None`. */
+function TagCreateRow({
+  onCancel, onSaved,
+}: {
+  onCancel: () => void;
+  onSaved: () => void;
+}) {
+  const [nombre, setNombre] = useState("");
+  const [color, setColor] = useState("#3454D1");
+  const [colorTexto, setColorTexto] = useState("#FFFFFF");
+  const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setSubmitting(true);
+    try {
+      await api.post("/api/core/etiquetas/", { nombre, color, color_texto: colorTexto });
+      onSaved();
+    } catch (err) {
+      if (err instanceof ApiError && err.data && typeof err.data === "object") {
+        setError(Object.values(err.data as Record<string, string[]>).flat().join(" "));
+      } else {
+        setError("No se pudo guardar.");
+      }
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="tag-edit-row">
+      <TagFields
+        nombre={nombre}
+        setNombre={setNombre}
+        color={color}
+        setColor={setColor}
+        colorTexto={colorTexto}
+        setColorTexto={setColorTexto}
+        protegida={false}
+        autoFocus
+      />
+      <div className="tag-edit-col tag-edit-col-actions">
+        <div className="tag-edit-actions">
+          <button className="btn btn-primary btn-sm tag-save-btn" type="submit" disabled={submitting}>
+            <span aria-hidden="true">✓</span> {submitting ? "Guardando…" : "Guardar"}
+          </button>
+          <button type="button" className="btn btn-ghost btn-sm" onClick={onCancel}>
+            Cancelar
+          </button>
         </div>
-        {error && <div className="form-error">{error}</div>}
-        <button className="btn btn-primary" type="submit" disabled={submitting}>
-          {submitting ? "Guardando…" : "Guardar"}
-        </button>
-      </form>
-    </Modal>
+      </div>
+      {error && <div className="form-error tag-edit-error">{error}</div>}
+    </form>
+  );
+}
+
+/** Botón que muestra el color actual como swatch; al clickear abre un
+ * popover con el selector nativo (visual) y un campo de texto para cargar
+ * el hexadecimal a mano — las dos formas quedan sincronizadas. */
+function ColorPickerButton({
+  value, onChange, label,
+}: {
+  value: string;
+  onChange: (hex: string) => void;
+  label: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [hexInput, setHexInput] = useState(value);
+  const wrapRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => setHexInput(value), [value]);
+
+  useEffect(() => {
+    if (!open) return;
+    function onDocClick(e: MouseEvent) {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
+  }, [open]);
+
+  function applyHex(raw: string) {
+    let v = raw.trim();
+    if (v && !v.startsWith("#")) v = "#" + v;
+    if (HEX_RE.test(v)) onChange(v.toUpperCase());
+    else setHexInput(value);
+  }
+
+  return (
+    <div className="color-picker" ref={wrapRef}>
+      <button
+        type="button"
+        className="color-swatch-btn"
+        style={{ background: value }}
+        onClick={() => setOpen((o) => !o)}
+        aria-label={`${label}: ${value}`}
+        title={`${label}: ${value}`}
+      />
+      {open && (
+        <div className="color-picker-popover">
+          <input type="color" value={value} onChange={(e) => onChange(e.target.value.toUpperCase())} />
+          <input
+            type="text"
+            className="color-hex-input"
+            value={hexInput}
+            onChange={(e) => setHexInput(e.target.value)}
+            onBlur={() => applyHex(hexInput)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                applyHex(hexInput);
+              }
+            }}
+            placeholder="#RRGGBB"
+            maxLength={7}
+          />
+        </div>
+      )}
+    </div>
   );
 }
