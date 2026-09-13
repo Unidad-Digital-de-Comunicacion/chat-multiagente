@@ -13,12 +13,27 @@ cp .env.example .env   # completar secretos locales
 docker compose up --build
 ```
 
-Servicios expuestos: Core (Django+DRF) en `:8001`, Channel Gateway en `:8002`,
-Conversation Engine en `:8003`, Operators Desk en `:8004`, Analytics en
-`:8005` (los últimos cuatro son stubs de Fase 0 — sólo `/health`). Webchat
-(`:8006`) es opcional: `docker compose --profile webchat up`.
+Servicios expuestos: Core (Django+DRF) en `:8001`, Admin Panel (React) en
+`:3000`, Channel Gateway en `:8002`, Conversation Engine en `:8003`,
+Operators Desk en `:8004`, Analytics en `:8005` (estos cuatro son stubs de
+Fase 0 — sólo `/health`). Webchat (`:8006`) es opcional:
+`docker compose --profile webchat up`.
+
+Para tener datos de prueba (organización, usuarios, equipos y un árbol de
+menú de 2 niveles), correr una vez:
+
+```bash
+docker compose run --rm --entrypoint python core manage.py seed_ucd_demo
+```
 
 Estado del código: **Fase 0** (esqueleto + contenedores) y **Fase 1**
-(organizaciones, usuarios/roles, equipos, horarios/días excepcionales y
-árbol de menú en Core) implementadas. Ver sección 10 del documento de
-contexto para lo que sigue.
+(organizaciones, usuarios/grupos de permisos, equipos, login con
+recuperación de usuario/contraseña por DNI y bloqueo por IP, perfil personal
+con avatar recortable) implementadas, más buena parte de **Fase 2**
+(horarios/días excepcionales, árbol de menú, mensajes predeterminados del
+bot y catálogo de etiquetas de conversación, con su UI en el Admin Panel —
+vista previa tipo chat, editor de formato/emojis, calendario de feriados,
+selector rápido de rango horario). Ver sección 9 (convenciones/seguridad) y
+sección 10 (estado por fase) del documento de contexto para el detalle y lo
+que sigue — incluida la parte de etiquetas/observaciones/chat interno que
+queda explícitamente para la Fase 4/5 (Conversation Engine/Operators Desk).

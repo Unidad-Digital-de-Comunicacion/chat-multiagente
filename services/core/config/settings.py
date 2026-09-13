@@ -40,6 +40,8 @@ INSTALLED_APPS = [
     "teams",
     "business_hours",
     "menu",
+    "bot_settings",
+    "tags",
 ]
 
 AUTH_USER_MODEL = "users.User"
@@ -110,7 +112,7 @@ USE_TZ = True
 
 STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
-MEDIA_URL = "media/"
+MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "mediafiles"
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
@@ -146,8 +148,29 @@ REST_FRAMEWORK = {
         "anon": "20/minute",
         "user": "300/minute",
         "login": "10/minute",
+        "password_reset": "5/hour",
+        "username_reset": "5/hour",
     },
 }
+
+# --------------------------------------------------------------------------- #
+# Email: recuperación de contraseña. Backend "console" en dev/tests — el
+# link de reset queda impreso en los logs del contenedor `core`, no se manda
+# a ningún lado de verdad, hasta que se configure un SMTP real. Cambiar
+# EMAIL_BACKEND a "django.core.mail.backends.smtp.EmailBackend" y completar
+# EMAIL_HOST/PORT/USER/PASSWORD/USE_TLS cuando haya un proveedor real.
+# --------------------------------------------------------------------------- #
+EMAIL_BACKEND = os.environ.get("EMAIL_BACKEND", "django.core.mail.backends.console.EmailBackend")
+EMAIL_HOST = os.environ.get("EMAIL_HOST", "")
+EMAIL_PORT = int(os.environ.get("EMAIL_PORT", "587"))
+EMAIL_HOST_USER = os.environ.get("EMAIL_HOST_USER", "")
+EMAIL_HOST_PASSWORD = os.environ.get("EMAIL_HOST_PASSWORD", "")
+EMAIL_USE_TLS = _env_bool("EMAIL_USE_TLS", True)
+DEFAULT_FROM_EMAIL = os.environ.get("DEFAULT_FROM_EMAIL", "no-responder@chatplatform.local")
+
+# URL pública del Admin Panel (React) — para armar el link de
+# /restablecer-contrasena/<uid>/<token> que se manda por mail.
+FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:3000")
 
 # --------------------------------------------------------------------------- #
 # JWT (RS256): Core firma con la clave privada; todos los servicios (FastAPI

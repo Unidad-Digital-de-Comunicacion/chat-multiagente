@@ -7,18 +7,23 @@ from .models import User
 @admin.register(User)
 class UserAdmin(DjangoUserAdmin):
     ordering = ["email"]
-    list_display = ["email", "organization", "role", "is_active", "is_staff"]
-    list_filter = ["organization", "role", "is_active", "is_staff"]
+    list_display = ["email", "organization", "grupos", "is_active", "is_staff"]
+    list_filter = ["organization", "groups", "is_active", "is_staff"]
     search_fields = ["email", "first_name", "last_name"]
+    filter_horizontal = ["groups", "user_permissions"]
     fieldsets = (
         (None, {"fields": ("email", "password")}),
         ("Datos personales", {"fields": ("first_name", "last_name")}),
-        ("Organización y rol", {"fields": ("organization", "role")}),
+        ("Organización", {"fields": ("organization",)}),
         ("Permisos", {"fields": ("is_active", "is_staff", "is_superuser", "groups", "user_permissions")}),
     )
     add_fieldsets = (
         (None, {
             "classes": ("wide",),
-            "fields": ("email", "organization", "role", "password1", "password2"),
+            "fields": ("email", "organization", "groups", "password1", "password2"),
         }),
     )
+
+    @admin.display(description="Grupos")
+    def grupos(self, obj):
+        return ", ".join(obj.groups.values_list("name", flat=True)) or "—"

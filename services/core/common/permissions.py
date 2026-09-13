@@ -1,39 +1,42 @@
-"""Permisos DRF compartidos por rol.
+"""Permisos DRF basados enteramente en el sistema de permisos de Django
+(grupos + `Permission`), no en un campo `role` ni en nombres de grupo a
+mano: cada vista queda atada al permiso `app_label.accion_modelo` real de su
+propio modelo (sección de permisos en docs/CONTEXTO_PROYECTO.md).
 
-Roles disponibles (ver users.models.User.Role): admin, difusion, operador,
-data_manager. Un superusuario de plataforma (sin organización) pasa siempre,
-para poder operar soporte/administración cross-tenant desde /admin/.
+Un superusuario real de Django (`is_superuser=True`) sigue pasando siempre
+cualquier chequeo (`user.has_perm` lo resuelve así); los usuarios del grupo
+"superusuarios" de la plataforma NO son necesariamente `is_superuser=True`
+— su alcance real son los permisos que les asigna
+`users.group_permissions.GROUP_PERMISSIONS`, para que quede demostrado que
+el propio sistema de permisos (no un bypass) es lo que los habilita.
 """
-from rest_framework.permissions import BasePermission
+from rest_framework.exceptions import PermissionDenied
+from rest_framework.permissions import DjangoModelPermissions
 
 
-class HasRole(BasePermission):
-    allowed_roles: tuple = ()
+class StrictDjangoModelPermissions(DjangoModelPermissions):
+    """Igual que `DjangoModelPermissions` de DRF, pero además exige el
+    permiso `view_<modelo>` para leer (GET/HEAD) — por defecto DRF sólo
+    protege las escrituras y deja la lectura abierta a cualquier
+    autenticado, que es exactamente lo que no queremos: "que no vean entre
+    las opciones funciones que tienen restringidas" aplica también a leer,
+    no sólo a escribir."""
 
-    def has_permission(self, request, view):
-        user = request.user
-        if not (user and user.is_authenticated):
-            return False
-        if user.is_superuser:
-            return True
-        return user.role in self.allowed_roles
-
-    @classmethod
-    def for_roles(cls, *roles):
-        return type("HasRoleDynamic", (cls,), {"allowed_roles": roles})
-
-
-class IsOrgAdmin(HasRole):
-    """Sólo el rol Admin gestiona usuarios, equipos, horarios y menú de su
-    organización (ver Fase 1 en docs/CONTEXTO_PROYECTO.md)."""
-
-    allowed_roles = ("admin",)
+    perms_map = {
+        "GET": ["%(app_label)s.view_%(model_name)s"],
+        "OPTIONS": [],
+        "HEAD": ["%(app_label)s.view_%(model_name)s"],
+        "POST": ["%(app_label)s.add_%(model_name)s"],
+        "PUT": ["%(app_label)s.change_%(model_name)s"],
+        "PATCH": ["%(app_label)s.change_%(model_name)s"],
+        "DELETE": ["%(app_label)s.delete_%(model_name)s"],
+    }
 
 
-class IsOrgAdminOrReadOnly(IsOrgAdmin):
-    SAFE_METHODS = ("GET", "HEAD", "OPTIONS")
-
-    def has_permission(self, request, view):
-        if request.method in self.SAFE_METHODS:
-            return bool(request.user and request.user.is_authenticated)
-        return super().has_permission(request, view)
+def require_perm(request, perm: str) -> None:
+    """Para usar dentro de una `@action` u otra vista que no pasa por el
+    despacho automático de `StrictDjangoModelPermissions` (porque no mapea
+    1 a 1 a add/change/delete/view de un único modelo). `perm` en formato
+    "app_label.codename", ej. "menu.change_menuopcion"."""
+    if not (request.user and request.user.is_authenticated and request.user.has_perm(perm)):
+        raise PermissionDenied(f"Te falta el permiso requerido: {perm}")

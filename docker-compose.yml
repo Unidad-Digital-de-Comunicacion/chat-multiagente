@@ -62,8 +62,17 @@ services:
       - DB_PASSWORD=${POSTGRES_PASSWORD}
       - JWT_PRIVATE_KEY_PATH=${JWT_PRIVATE_KEY_PATH}
       - JWT_PUBLIC_KEY_PATH=${JWT_PUBLIC_KEY_PATH}
+      - EMAIL_BACKEND=${EMAIL_BACKEND}
+      - EMAIL_HOST=${EMAIL_HOST}
+      - EMAIL_PORT=${EMAIL_PORT}
+      - EMAIL_HOST_USER=${EMAIL_HOST_USER}
+      - EMAIL_HOST_PASSWORD=${EMAIL_HOST_PASSWORD}
+      - EMAIL_USE_TLS=${EMAIL_USE_TLS}
+      - DEFAULT_FROM_EMAIL=${DEFAULT_FROM_EMAIL}
+      - FRONTEND_URL=${FRONTEND_URL}
     volumes:
       - jwt_keys:/app/keys
+      - media_files:/app/mediafiles
     ports:
       - "8001:80"
     depends_on:
@@ -176,6 +185,25 @@ services:
       - "8006:8000"
     profiles: ["webchat"] # no arranca por defecto: docker compose --profile webchat up
 
+  admin-panel:
+    build:
+      context: ./frontend/admin-panel
+      args:
+        - VITE_CORE_API_URL=${ADMIN_PANEL_CORE_API_URL:-http://localhost:8001}
+    ports:
+      - "3000:80"
+    depends_on:
+      core:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
+        reservations:
+          memory: 64M
+
 volumes:
   pgdata:
   jwt_keys:
+  media_files:

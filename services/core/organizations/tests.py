@@ -2,14 +2,13 @@ from django.test import TestCase
 from django.urls import reverse
 
 from common.test_utils import authenticated_client, make_organization, make_user
-from users.models import User
 
 
 class MyOrganizationViewTests(TestCase):
     def setUp(self):
         self.org = make_organization()
-        self.admin = make_user(self.org, role=User.Role.ADMIN)
-        self.operador = make_user(self.org, role=User.Role.OPERADOR)
+        self.admin = make_user(self.org, groups=["administradores"])
+        self.operador = make_user(self.org, groups=["operadores"])
         self.otra_org = make_organization(name="Otra org", slug="otra-org")
         self.url = reverse("organization-me")
 

@@ -13,6 +13,59 @@ from .models import DiaExcepcional, HorarioAtencion
 logger = logging.getLogger("business_hours")
 
 HORIZONTE_DIAS = 60
+GRANULARIDAD_MIN = 30
+HORA_GRILLA_INICIO = dt.time(7, 0)
+HORA_GRILLA_FIN = dt.time(22, 0)
+
+
+def generar_slots_grilla():
+    """Horas (`datetime.time`, como 'HH:MM') de la grilla visual del panel de
+    administración, cada GRANULARIDAD_MIN minutos."""
+    slots = []
+    actual = dt.datetime.combine(dt.date.min, HORA_GRILLA_INICIO)
+    fin = dt.datetime.combine(dt.date.min, HORA_GRILLA_FIN)
+    while actual < fin:
+        slots.append(actual.time())
+        actual += dt.timedelta(minutes=GRANULARIDAD_MIN)
+    return slots
+
+
+def expandir_rango_a_horas(hora_inicio, hora_fin):
+    """Horas de inicio de cada slot de GRANULARIDAD_MIN cubiertas por
+    [hora_inicio, hora_fin) — para pre-pintar la grilla a partir de un rango
+    ya guardado."""
+    horas = []
+    actual = dt.datetime.combine(dt.date.min, hora_inicio)
+    fin = dt.datetime.combine(dt.date.min, hora_fin)
+    while actual < fin:
+        horas.append(actual.time())
+        actual += dt.timedelta(minutes=GRANULARIDAD_MIN)
+    return horas
+
+
+def merge_horas_a_rangos(horas):
+    """A partir de horas de inicio de slot pintadas en la grilla, arma rangos
+    [(inicio, fin), ...] contiguos — para convertir la selección del panel en
+    filas de HorarioAtencion."""
+    horas = sorted(set(horas))
+    if not horas:
+        return []
+    rangos = []
+    inicio = horas[0]
+    anterior = horas[0]
+    paso = dt.timedelta(minutes=GRANULARIDAD_MIN)
+    for h in horas[1:]:
+        esperado = (dt.datetime.combine(dt.date.min, anterior) + paso).time()
+        if h == esperado:
+            anterior = h
+        else:
+            fin = (dt.datetime.combine(dt.date.min, anterior) + paso).time()
+            rangos.append((inicio, fin))
+            inicio = h
+            anterior = h
+    fin = (dt.datetime.combine(dt.date.min, anterior) + paso).time()
+    rangos.append((inicio, fin))
+    return rangos
 
 
 def _rangos_del_dia(organization_id, fecha):

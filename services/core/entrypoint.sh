@@ -39,6 +39,9 @@ python manage.py generate_jwt_keys
 echo "entrypoint: aplicando migraciones..."
 python manage.py migrate --noinput
 
+echo "entrypoint: sincronizando grupos de permisos..."
+python manage.py setup_groups
+
 echo "entrypoint: recolectando estáticos..."
 python manage.py collectstatic --noinput
 

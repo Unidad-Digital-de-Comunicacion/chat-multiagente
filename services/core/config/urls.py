@@ -16,4 +16,6 @@ urlpatterns = [
     path("api/core/", include("teams.urls")),
     path("api/core/", include("business_hours.urls")),
     path("api/core/", include("menu.urls")),
+    path("api/core/", include("bot_settings.urls")),
+    path("api/core/", include("tags.urls")),
 ]

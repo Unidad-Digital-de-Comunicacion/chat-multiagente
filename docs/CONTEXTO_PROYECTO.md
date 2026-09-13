@@ -436,18 +436,98 @@ guardan cifrados en la base de `channel-gateway`, no en variables de entorno.
 
 ## 9. Convenciones transversales
 
-- **Autenticación**: Core (Django) emite JWT (`djangorestframework-simplejwt`) con `org_id` y
-  `rol` en el payload. Todos los servicios FastAPI validan ese mismo JWT (clave pública o
-  compartida vía `JWT_PUBLIC_KEY_URL`/secreto compartido — definir uno al implementar Fase 1).
+- **Autenticación**: Core (Django) emite JWT (`djangorestframework-simplejwt`, RS256) con `org_id`
+  y `grupos` (lista, no un `rol` singular) en el payload. Todos los servicios FastAPI validan ese
+  mismo JWT contra la clave pública publicada en `/api/auth/jwks/`.
 - **Scoping multi-tenant**: cada request autenticado trae `org_id` en el token; todo query
-  filtra por ese `org_id`. En Django, usar un manager/mixin (`OrganizationScopedQuerySet`) para no
-  repetir el filtro a mano en cada vista.
+  filtra por ese `org_id`. En Django, `common.viewsets.OrganizationScopedModelViewSet` lo hace
+  solo para no repetir el filtro a mano en cada vista.
+- **Autorización (permisos)**: no hay un campo `role` en `User` — los permisos vienen enteramente
+  de grupos de Django (`user.groups`, M2M: un usuario puede estar en más de uno a la vez). Cada
+  ViewSet de Core usa `common.permissions.StrictDjangoModelPermissions` (una `DjangoModelPermissions`
+  extendida para que GET también exija `view_<modelo>`, no sólo las escrituras), así "cada vista
+  tiene su permiso correspondiente" sin excepciones; las `@action` que no mapean 1 a 1 a un CRUD
+  (`tree`, `reordenar`, `grilla`) llaman a `common.permissions.require_perm(request, "app.codename")`
+  a mano. Los 5 grupos y qué permiso Django tiene cada uno están en
+  `services/core/users/group_permissions.py` (única fuente de verdad, la usan tanto el management
+  command `setup_groups` como los tests):
+
+  | Grupo | Alcance |
+  |---|---|
+  | `superusuarios` | Staff de plataforma (`/admin/`, no necesariamente `is_superuser` de Django). Gestiona organizaciones y las cuentas Admin de cada una. |
+  | `administradores` | Sólo desde el Admin Panel (React). Gestiona usuarios, equipos y permisos (grupos) de su propia organización, y configura el chatbot (menú + horarios + mensajes) y el catálogo de etiquetas de conversación (por organización y por equipo, colores incluidos). |
+  | `encargados_difusion` | Todavía no funcional — arma/gestiona/envía campañas de difusión, templates y listas, ve estadísticas de envíos. Sin permisos reales hasta que exista esa app. |
+  | `analistas_datos` | Todavía no funcional — ve/gestiona reportes de conversaciones, agentes y contactos, exporta CSV. Depende de Analytics (Fase 7). |
+  | `operadores` | Pertenecen a equipos. Sólo lectura por ahora de equipos, horario hábil y el catálogo de etiquetas (`tags.view_etiqueta`). Ver/responder chats sin asignar o de sus equipos/a ellos mismos, aplicar/quitar etiquetas de una conversación, respuestas predefinidas, observaciones obligatorias al resolver/pausar y derivar son Fase 4/5, todavía no implementado (ver sección 11). |
+
+  El frontend nunca decide qué mostrar/ocultar mirando un nombre de rol o de grupo: `GET
+  /api/core/users/me/` devuelve `permissions` (la lista real de `user.get_all_permissions()`) y
+  `groups` (para mostrar la etiqueta), y el Admin Panel arma la UI a partir de esa lista
+  (`frontend/admin-panel/src/auth/permissions.ts::hasPerm`) — la fuente de verdad de "qué se
+  puede hacer" es siempre el backend, nunca un `if (rol === "admin")` en React.
+- **Seguridad del login** (`authentication` app):
+  - **Bloqueo por IP**: 3 fallas de login seguidas desde la misma IP la bloquean 12hs
+    (`authentication.models.LoginLockout`, un registro por IP — no por cuenta). La IP se lee de
+    `X-Forwarded-For` (`authentication.utils.get_client_ip`), no de `REMOTE_ADDR`, porque nginx
+    hace de proxy delante de gunicorn. Un login exitoso resetea el contador. `POST
+    /api/auth/login/` devuelve 429 con `blocked_until` mientras dure el bloqueo. Como no depende
+    de ninguna organización (una IP puede tocar cuentas de cualquier org), el desbloqueo se
+    gestiona desde `/admin/` (grupo `superusuarios`, acción "Desbloquear" en `LoginLockoutAdmin`),
+    no desde el Admin Panel de una organización puntual.
+  - **Recuperar contraseña**: `POST /api/auth/password-reset/` (siempre responde el mismo mensaje
+    genérico, exista o no la cuenta, para no filtrar qué emails están registrados) manda un link
+    con un token de un solo uso (`PasswordResetTokenGenerator` de Django) a
+    `{FRONTEND_URL}/restablecer-contrasena/<uid>/<token>`; `POST /api/auth/password-reset-confirm/`
+    lo valida y cambia la contraseña. El email sale por `EMAIL_BACKEND` — en dev es el backend
+    "console" (el link queda en `docker compose logs core`, no se manda de verdad); para producción
+    hay que pasar a `EMAIL_BACKEND=...smtp.EmailBackend` y completar `EMAIL_HOST`/`EMAIL_HOST_USER`/etc.
+  - **Recuperar usuario**: como acá el "usuario" es directamente el email (no hay un `username`
+    separado), `User.dni` (opcional, único) es el dato que permite recuperarlo:
+    `POST /api/auth/username-reset/` recibe un DNI y, si coincide con una cuenta, le manda **a esa
+    cuenta** su propio email registrado (nunca lo devuelve en la respuesta) — mismo patrón
+    anti-enumeración que el reset de contraseña, mensaje genérico siempre. `/olvide-usuario` en el
+    Admin Panel es el formulario correspondiente.
+  - **Perfil personal**: todo usuario edita sus propios `first_name`/`last_name`/`email`/`dni`/
+    `avatar` con `PATCH /api/core/users/me/` (`MyProfileSerializer` — nunca toca grupos ni
+    organización, eso sigue siendo sólo de un Admin vía `UserSerializer`). El avatar se sube ya
+    recortado en cuadrado desde un editor de centrado/zoom sin librerías externas
+    (`frontend/admin-panel/src/components/AvatarCropper.tsx`: arrastrar para centrar, control de
+    zoom, recorte final con `<canvas>`); Core genera con Pillow una miniatura de 150x150
+    (`User._regenerar_avatar_thumbnail`, campo `avatar_thumbnail`) para no bajar la imagen completa
+    en listados (tabla de Usuarios, avatar del topbar) — la imagen grande sólo se pide en la propia
+    página de perfil. Reemplazar el avatar borra el archivo anterior en vez de acumular huérfanos.
+  - **Reset de contraseña por un Admin**: `POST /api/core/users/{id}/reset-password/`
+    (`users.change_user`, scopeado a la propia organización igual que cualquier otro detalle del
+    ViewSet) genera una contraseña temporal aleatoria y la devuelve **una sola vez** en la
+    respuesta — no se guarda en texto plano en ningún lado — para que el Admin se la pase al
+    usuario por otro medio. Marca `User.must_change_password=True`; el Admin Panel lo obliga a
+    pasar por `/cambiar-contrasena` (`POST /api/core/users/me/cambiar-password/`, pide la actual)
+    antes de dejarlo usar el resto del panel (`ProtectedRoute` redirige si `me.must_change_password`).
+- **Archivos servidos por Core (`/media/`)**: `avatar`/`avatar_thumbnail` (y cualquier `ImageField`/
+  `FileField` futuro) se devuelven como **URL absoluta** (`request.build_absolute_uri`), nunca la
+  ruta relativa de `FieldFile.url` — el Admin Panel corre en otro origen/puerto que Core
+  (`VITE_CORE_API_URL`), así que una ruta relativa se resolvería contra el propio Admin Panel y
+  rompería la imagen. Ojo con nginx delante de gunicorn: `proxy_set_header Host $host;` **no**
+  incluye el puerto (a diferencia de `$http_host`), así que Django terminaba viendo el request como
+  si hubiera llegado a `localhost` sin puerto y armaba URLs rotas (`http://localhost/media/...` en
+  vez de `http://localhost:8001/media/...`) — arreglado en `services/core/docker/nginx.conf` usando
+  `$http_host`. `MEDIA_URL` también tiene que tener `/` inicial (`"/media/"`, no `"media/"`) para que
+  `build_absolute_uri` resuelva contra la raíz del host y no contra el path del request actual.
+  Aparte, `/app/mediafiles` (avatares subidos por usuarios) tiene que estar en un volumen nombrado
+  (`media_files:` en `docker-compose.yml`), no sólo en la capa escribible del contenedor — a
+  diferencia de `/app/staticfiles` (se regenera solo con `collectstatic` en cada arranque,
+  `entrypoint.sh`), un avatar subido no se puede regenerar si se pierde al recrear el contenedor.
 - **Contratos entre servicios**: OpenAPI autogenerado (DRF + FastAPI). Antes de que un servicio
   FastAPI consuma un endpoint de Core que no existe todavía, crearlo primero en Core (Core nunca
   debe ser bloqueado por otro servicio).
 - **Testing**: cada servicio con su propia suite (`pytest`/`pytest-django`). Los tests portados de
   `garzamorada/chatbot` se migran junto con el código como red de seguridad del refactor
-  multi-tenant — no se descartan.
+  multi-tenant — no se descartan. La suite de Core ya cubre aislamiento multi-tenant, permisos por
+  grupo, el árbol de menú, horarios/días excepcionales y el login (incluido el bloqueo por IP y el
+  reset de contraseña) — correrla con `docker compose run --rm --entrypoint python core manage.py test`.
+  Ojo al testear cosas basadas en throttling (`ScopedRateThrottle`): el cache de Django no se
+  resetea entre tests como la base de datos, así que hay que limpiarlo a mano
+  (`django.core.cache.cache.clear()`) en el `setUp` de esos tests o un test contamina al siguiente.
 - **Migraciones de base**: Django usa sus migraciones nativas contra el esquema `core`. Los
   servicios FastAPI con tablas propias usan Alembic contra su propio esquema.
 - **Nombres**: en código, inglés (`Organization`, `Team`, `MenuOption`) aunque el dominio y los
@@ -474,6 +554,19 @@ y los tests del servicio tocado en verde. No avanzar a la fase siguiente sin est
 - Endpoints DRF de alta/edición de usuarios y equipos, con permisos por rol (solo Admin gestiona).
 - Admin Panel (React): pantalla de login + ABM de usuarios/equipos.
 
+**Implementado** (con algunos cambios respecto al enunciado original, ver sección 9):
+- `role` terminó siendo grupos de Django (M2M, sección 9) en vez de un campo único — un usuario
+  puede estar en más de un grupo. Los 5 grupos y sus permisos: `users/group_permissions.py`.
+- Login: además del camino feliz, tiene bloqueo por IP (3 fallas → 12hs), recuperar contraseña por
+  email (token de un solo uso), pantalla informativa de "recuperar usuario", reset de contraseña
+  por un Admin (contraseña temporal + `must_change_password` obligatorio en el próximo ingreso) —
+  todo detallado en la sección 9.
+- Admin Panel: ABM de usuarios con selector de grupos (checkboxes, no un `<select>` de un solo
+  rol) y botón "Resetear contraseña"; ABM de equipos.
+- Organización de demo **UCD** (`python manage.py seed_ucd_demo`, idempotente): 3 equipos, un
+  usuario por cada uno de los primeros 3 grupos y 5 agentes repartidos en los equipos — útil para
+  probar el sistema de permisos de punta a punta sin cargar datos a mano.
+
 ### Fase 2 — Portar menú y horarios (multi-tenant)
 - Traer `MenuOpcion`, `HorarioAtencion`, `DiaExcepcional`, `Conversacion`, `ConversacionLog`,
   `horarios.py`, `defaults.py`, `feriados_client.py` desde `garzamorada/chatbot` a `services/core`.
@@ -482,6 +575,48 @@ y los tests del servicio tocado en verde. No avanzar a la fase siguiente sin est
 - Portar el editor visual del árbol y la grilla de horarios (templates Django), filtrados por
   organización. Enlazarlos desde el Admin Panel (SSO/redirect con el mismo JWT/sesión).
 - Endpoint `GET /api/core/teams/{id}/horario-habil/`.
+
+**Implementado** — el editor visual del árbol y la grilla de horarios se rehicieron en React (no
+son templates Django con SSO, esa idea se descartó a favor de una sola UI en el Admin Panel):
+- **Menú**: árbol con reordenar/reparentar por drag-and-drop (mismo concepto que
+  `chatbot_menu.js`/`_menu_tree.html` del repo origen), acción `reordenar` en el back. Cada
+  opción de tipo Respuesta se edita con `MessageEditor` (barra de negrita/itálica/tachado/
+  monoespaciado + selector de emojis + botones para insertar variables — mismo concepto que
+  `chatbot_wa_editor.js` del repo origen, sintaxis neutra de la sección 4.1.2 en vez de la
+  literal de WhatsApp). A la derecha del árbol y en cada modal de edición hay una vista previa
+  tipo chat (`components/WhatsAppPreview.tsx`, mockup genérico de teléfono + burbujas): la del
+  costado es **navegable** (clickeás una opción como lo haría un contacto real, entra a
+  submenús, muestra la respuesta/derivación/despedida).
+- **Horarios semanal**: grilla pintable por click-y-arrastre igual que `lista_horarios.html`,
+  más un panel a la derecha con la vista previa de los 7 días (resumen de rangos horarios) —
+  clickear un día ahí resalta su columna en la grilla. Además del pintado por click-y-arrastre
+  (bueno para horarios irregulares), hay un selector rápido de rango (día + desde + hasta +
+  "Marcar horario"/"Marcar cerrado") para no tener que arrastrar celda por celda en tramos largos y
+  regulares — combinable con "Copiar Lunes a Martes-Viernes".
+- **Días excepcionales**: en vez de un rango desde/hasta, se edita **un día específico** por vez
+  (input de fecha o clickeando el almanaque a la derecha); el tipo de día es una botonera
+  (Normal/Horario reducido/Feriado/Asueto) en vez de un `<select>`. El catálogo compartido de
+  feriados nacionales se sincroniza solo al entrar a la sección (año actual + siguiente,
+  `POST /api/core/dias-excepcionales/sincronizar-feriados/`) — antes había que correr el
+  management command a mano. Si el día seleccionado ya es un feriado del catálogo compartido, el
+  editor lo muestra (tipo + qué se celebra) con una nota de que guardar crea una excepción propia
+  de la organización para esa fecha. Debajo del almanaque, listado de próximos días no laborables.
+  El horario reducido de un día puntual tiene el mismo selector rápido de rango que la grilla
+  semanal (desde/hasta + Marcar horario/Marcar cerrado).
+- **Mensajes predeterminados** (`bot_settings` app, nueva — no estaba en el enunciado original de
+  esta fase pero es parte natural de "configurar el chatbot"): un `BotMessages` por organización
+  con los 7 textos del bot (bienvenida, saludos, despedida, derivación, cierre por inactividad) +
+  2 parámetros numéricos. Mismos `MessageEditor` + vista previa tipo chat que el menú.
+- **Catálogo de etiquetas de conversación** (`tags` app, nueva — sólo la parte de configuración;
+  ver el resto de la consigna, deferido, en la Fase 4/5 de abajo): modelo `Etiqueta` con
+  `organization` obligatoria y `team` opcional (vacío = etiqueta general de la organización, cargado
+  = sólo de ese equipo). Las 7 etiquetas de estado que pide la consigna (`pendiente`, `asignada`,
+  `tomada`, `en_proceso`, `en_pausa`, `rechazado`, `resuelto`) se autogeneran por organización la
+  primera vez que se lista el catálogo (`es_sistema=True`, identificadas por `codigo`) — no se
+  pueden borrar ni renombrar, sólo recolorear; el resto de las etiquetas (generales o por equipo)
+  las administra un Admin sin esa restricción (`tags.add_/change_/delete_/view_etiqueta`;
+  `operadores` sólo lectura, para cuando la Fase 4/5 les permita aplicarlas). `?team=<id>` filtra
+  el catálogo por equipo. `EtiquetaSerializer` valida el color como hexadecimal (`#RRGGBB`).
 
 ### Fase 3 — Channel Gateway + integración WhatsApp
 - Embedded Signup, recepción y verificación de webhooks (`X-Hub-Signature-256`), envío de
@@ -498,11 +633,28 @@ y los tests del servicio tocado en verde. No avanzar a la fase siguiente sin est
 - `OperatorSession`, asignación round-robin dentro del `Team` indicado por el nodo `DERIVACION`.
 - WebSocket para entrega en tiempo real.
 - Límite de conexiones simultáneas por organización (consultando el plan en Core).
+- **Chat interno entre operadores** (pedido explícito, todavía no implementado): operadores pueden
+  abrir chats internos entre ellos en paralelo a las conversaciones con usuarios finales, **sin
+  pasar por las APIs de canal** (WhatsApp/etc.) — es mensajería 1:1 puramente interna. Encaja acá
+  por el WebSocket ya resuelto en esta fase (misma infraestructura de tiempo real que la entrega de
+  mensajes de conversaciones, pero un tipo de mensaje/canal distinto que nunca sale hacia Channel
+  Gateway). Requiere su propio modelo de mensajes internos (remitente/destinatario u
+  organización+lista de operadores, sin `Conversacion`/`Contacto` de por medio).
 
 ### Fase 5 — Operators Desk Service + Operators Desk Web
 - BFF que compone Core (historial/tags/datos transaccionales) + Conversation Engine (asignación/
   tiempo real) para la bandeja y el hilo de conversación.
 - Frontend React: bandeja, hilo, responder/derivar/etiquetar/cerrar.
+- **Etiquetas sobre una conversación** (pedido explícito, todavía no implementado — la
+  configuración del catálogo ya existe en Core desde Fase 2/`tags`, ver arriba): un operador agrega
+  y quita etiquetas (del catálogo general o de su equipo) de una conversación puntual. Necesita una
+  tabla puente `ConversacionEtiqueta` (conversación × etiqueta, quién la puso y cuándo) en el
+  esquema de este servicio o de Conversation Engine, según dónde termine viviendo `Conversacion`.
+- **Observaciones de resolución** (pedido explícito, todavía no implementado): un operador puede
+  dejar una observación de texto libre en cualquier momento para dar contexto a otros operadores.
+  Es **obligatorio** cargar una observación al resolver una conversación en forma positiva o
+  negativa, o al ponerla en pausa — el back debe rechazar esas tres transiciones de estado sin un
+  texto de observación no vacío (regla de negocio en el propio servicio, no una validación de UI).
 
 ### Fase 6 — App móvil Android
 - Mismo contrato de API que Operators Desk Service (sección 3.2): login, bandeja, hilo, acciones.

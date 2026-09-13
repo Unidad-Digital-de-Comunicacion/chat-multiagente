@@ -2,7 +2,6 @@ from django.test import TestCase
 from django.urls import reverse
 
 from common.test_utils import authenticated_client, make_organization, make_user
-from users.models import User
 
 from .models import Team
 
@@ -11,8 +10,8 @@ class TeamViewSetTests(TestCase):
     def setUp(self):
         self.org_a = make_organization(name="Org A", slug="org-a")
         self.org_b = make_organization(name="Org B", slug="org-b")
-        self.admin_a = make_user(self.org_a, role=User.Role.ADMIN)
-        self.operador_a = make_user(self.org_a, role=User.Role.OPERADOR)
+        self.admin_a = make_user(self.org_a, groups=["administradores"])
+        self.operador_a = make_user(self.org_a, groups=["operadores"])
         self.team_a = Team.objects.create(organization=self.org_a, name="Ventas")
         self.team_b = Team.objects.create(organization=self.org_b, name="Ventas")
         self.list_url = reverse("team-list")
@@ -34,7 +33,23 @@ class TeamViewSetTests(TestCase):
         self.assertEqual(equipo.organization_id, self.org_a.id)
 
     def test_no_puede_agregar_miembro_de_otra_organizacion(self):
-        miembro_ajeno = make_user(self.org_b, role=User.Role.OPERADOR)
+        miembro_ajeno = make_user(self.org_b, groups=["operadores"])
         url = reverse("team-detail", args=[self.team_a.id])
         response = authenticated_client(self.admin_a).patch(url, {"members": [miembro_ajeno.id]})
         self.assertEqual(response.status_code, 400)
+
+    def test_admin_no_puede_ver_ni_editar_un_equipo_de_otra_organizacion_por_id(self):
+        # Mismo permiso Django (`teams.view_team`/`change_team`) en ambos
+        # admins — el bloqueo tiene que venir del scoping por organización.
+        url = reverse("team-detail", args=[self.team_b.id])
+        self.assertEqual(authenticated_client(self.admin_a).get(url).status_code, 404)
+        response = authenticated_client(self.admin_a).patch(url, {"name": "Hackeado"})
+        self.assertEqual(response.status_code, 404)
+        self.team_b.refresh_from_db()
+        self.assertEqual(self.team_b.name, "Ventas")
+
+    def test_admin_no_puede_borrar_un_equipo_de_otra_organizacion_por_id(self):
+        url = reverse("team-detail", args=[self.team_b.id])
+        response = authenticated_client(self.admin_a).delete(url)
+        self.assertEqual(response.status_code, 404)
+        self.assertTrue(Team.objects.filter(pk=self.team_b.id).exists())
