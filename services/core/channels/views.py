@@ -1,8 +1,14 @@
+import secrets
+
 from common.permissions import StrictDjangoModelPermissions, require_perm
 from common.viewsets import OrganizationScopedModelViewSet
+from platform_admin.service_auth import IsChannelGatewayService, ServiceTokenAuthentication
 from rest_framework.decorators import action
+from rest_framework.exceptions import ValidationError
+from rest_framework.generics import get_object_or_404
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.views import APIView
 
 from .defaults import asegurar_canales
 from .health import verificar_conexion
@@ -33,10 +39,11 @@ class CanalViewSet(OrganizationScopedModelViewSet):
     def get_permissions(self):
         # `StrictDjangoModelPermissions` mapea POST -> `channels.add_canal`,
         # que ningún grupo tiene a propósito (los 4 canales son fijos). Para
-        # la action `verificar` el permiso correcto es `change_canal`, y ya
-        # se pide a mano en el propio método — acá sólo hace falta estar
-        # autenticado para no chocar con esa regla que no aplica.
-        if self.action == "verificar":
+        # las actions `verificar`/`regenerar_webhook_secret` el permiso
+        # correcto es `change_canal`, y ya se pide a mano en el propio
+        # método — acá sólo hace falta estar autenticado para no chocar con
+        # esa regla que no aplica.
+        if self.action in ("verificar", "regenerar_webhook_secret"):
             return [IsAuthenticated()]
         return super().get_permissions()
 
@@ -55,3 +62,43 @@ class CanalViewSet(OrganizationScopedModelViewSet):
         canal = self.get_object()
         verificar_conexion(canal)
         return Response(self.get_serializer(canal).data)
+
+    @action(detail=True, methods=["post"], url_path="regenerar-webhook-secret")
+    def regenerar_webhook_secret(self, request, pk=None):
+        """Rota el secreto de webhook de este canal (mismo criterio que
+        `platform_admin.ServiceTokenViewSet.generar`) — invalida el valor
+        anterior, así que hay que volver a pegarlo en la configuración del
+        webhook de Meta después de esto. No aplica a Webchat."""
+        require_perm(request, "channels.change_canal")
+        canal = self.get_object()
+        if canal.tipo not in Canal.TIPOS_CON_WEBHOOK_META:
+            raise ValidationError("Este canal no usa webhook.")
+        canal.webhook_secret = secrets.token_urlsafe(24)
+        canal.save(update_fields=["webhook_secret"])
+        return Response(self.get_serializer(canal).data)
+
+
+class InternalCanalConfigView(APIView):
+    """Único lugar donde `api_key`/`webhook_secret` salen de Core en texto
+    plano — sólo lo puede llamar Channel Gateway, autenticado con su
+    `ServiceToken` interno (`platform_admin.service_auth`), nunca con el JWT
+    de un usuario humano. Busca por `uuid` (no por `id` autoincremental)
+    porque ese uuid es lo único que Meta manda de vuelta en la URL cuando
+    llega un webhook (`webhook_url` en `CanalSerializer`) — es la única
+    pista que tiene Channel Gateway para saber a qué organización/canal
+    corresponde una request entrante, o con qué api_key mandar un mensaje
+    saliente."""
+
+    authentication_classes = [ServiceTokenAuthentication]
+    permission_classes = [IsChannelGatewayService]
+
+    def get(self, request, canal_uuid):
+        canal = get_object_or_404(Canal, uuid=canal_uuid)
+        return Response({
+            "organization_id": canal.organization_id,
+            "tipo": canal.tipo,
+            "api_key": canal.api_key,
+            "telefono_id": canal.telefono_id,
+            "webhook_secret": canal.webhook_secret,
+            "activo": canal.activo,
+        })

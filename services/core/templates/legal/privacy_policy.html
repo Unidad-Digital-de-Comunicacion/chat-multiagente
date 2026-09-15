@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="es-AR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Política de Privacidad — UCD Chat</title>
+  <style>
+    :root { color-scheme: light; }
+    body {
+      margin: 0;
+      background: #f4f5f7;
+      color: #1f2430;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      line-height: 1.6;
+    }
+    .wrap {
+      max-width: 760px;
+      margin: 0 auto;
+      padding: 3rem 1.25rem 5rem;
+    }
+    header {
+      margin-bottom: 2.5rem;
+    }
+    h1 {
+      font-size: 1.85rem;
+      margin: 0 0 0.35rem;
+      color: #14213d;
+    }
+    .updated {
+      color: #5a6472;
+      font-size: 0.9rem;
+    }
+    h2 {
+      font-size: 1.15rem;
+      margin-top: 2.25rem;
+      color: #14213d;
+      border-bottom: 1px solid #e1e4ea;
+      padding-bottom: 0.4rem;
+    }
+    p, li { color: #333c4d; }
+    ul { padding-left: 1.25rem; }
+    li { margin-bottom: 0.4rem; }
+    .card {
+      background: #fff;
+      border: 1px solid #e1e4ea;
+      border-radius: 10px;
+      padding: 2rem 2.25rem;
+      box-shadow: 0 1px 3px rgba(20, 33, 61, 0.06);
+    }
+    .placeholder {
+      background: #fff6db;
+      border: 1px dashed #e0b400;
+      border-radius: 4px;
+      padding: 0 0.3rem;
+    }
+    footer {
+      margin-top: 2.5rem;
+      font-size: 0.85rem;
+      color: #7a8290;
+      text-align: center;
+    }
+    a { color: #3454d1; }
+    @media (max-width: 480px) {
+      .card { padding: 1.5rem 1.25rem; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1>Política de Privacidad</h1>
+      <div class="updated">Última actualización: 14 de septiembre de 2026</div>
+    </header>
+
+    <div class="card">
+      <p>
+        Esta Política de Privacidad describe cómo <span class="placeholder">[RAZÓN SOCIAL DE LA EMPRESA]</span>
+        ("nosotros", "la Plataforma") recopila, usa, comparte y protege la información de las personas que se
+        comunican a través de los canales de mensajería integrados a este servicio (WhatsApp, Messenger e
+        Instagram), así como la de los usuarios operadores y administradores que usan el panel de
+        administración. Aplica a todo el tráfico que procesan las APIs de este dominio
+        (<code>api.udcchat.com.ar</code>) y su servicio de mensajería asociado
+        (<code>webhooks.udcchat.com.ar</code>).
+      </p>
+
+      <h2>1. Quiénes somos</h2>
+      <p>
+        Responsable del tratamiento de los datos: <span class="placeholder">[RAZÓN SOCIAL]</span>, CUIT
+        <span class="placeholder">[CUIT]</span>, con domicilio en <span class="placeholder">[DIRECCIÓN LEGAL]</span>.
+        Contacto para consultas de privacidad: <a href="mailto:privacidad@udcchat.com.ar">privacidad@udcchat.com.ar</a>.
+      </p>
+
+      <h2>2. Qué información recopilamos</h2>
+      <p>Según cómo interactúes con la Plataforma, podemos recopilar:</p>
+      <ul>
+        <li><strong>De contactos que escriben por WhatsApp, Messenger o Instagram:</strong> identificador
+          de la cuenta que usa cada red (número de teléfono en WhatsApp, PSID en Messenger, IGSID en
+          Instagram), nombre de perfil público si la plataforma lo provee, el contenido de los mensajes
+          enviados y recibidos, y la fecha/hora de cada interacción.</li>
+        <li><strong>De usuarios del panel de administración (operadores, administradores):</strong> nombre,
+          email, y las acciones que realizan dentro del sistema (a qué equipo derivaron una conversación,
+          qué etiquetas aplicaron, etc.).</li>
+        <li><strong>Datos técnicos:</strong> dirección IP y user-agent al usar el panel de administración, con
+          fines de seguridad (por ejemplo, bloqueo temporal tras varios intentos de inicio de sesión fallidos).</li>
+      </ul>
+      <p>No recopilamos datos sensibles (salud, religión, orientación política, etc.) salvo que un contacto
+        los incluya voluntariamente en el texto de un mensaje — en ese caso se tratan con el mismo nivel de
+        confidencialidad que el resto de la conversación y no se usan para ningún fin distinto de responder
+        esa consulta.</p>
+
+      <h2>3. Con qué finalidad usamos estos datos</h2>
+      <ul>
+        <li>Brindar el servicio de atención al cliente por chat: recibir, enrutar y responder mensajes,
+          derivarlos al equipo/operador correspondiente y mantener un historial de la conversación.</li>
+        <li>Verificar la identidad de quien escribe (evitar suplantación) y la autenticidad de cada mensaje
+          entrante (verificación de firma de los webhooks de Meta).</li>
+        <li>Generar estadísticas internas de uso (volumen de conversaciones, tiempos de respuesta) — siempre
+          agregadas, nunca para perfilar a una persona en particular.</li>
+        <li>Cumplir obligaciones legales y de seguridad de la información.</li>
+      </ul>
+
+      <h2>4. Con quién compartimos esta información</h2>
+      <p>
+        Los mensajes que enviamos y recibimos por WhatsApp/Messenger/Instagram necesariamente pasan por la
+        infraestructura de <strong>Meta Platforms, Inc.</strong> (dueña de esas plataformas), sujeta a su
+        propia
+        <a href="https://www.facebook.com/privacy/policy/" target="_blank" rel="noopener">Política de
+        Privacidad</a>. No vendemos ni cedemos datos de contactos a terceros con fines publicitarios. Podemos
+        compartir información con proveedores que operan la infraestructura técnica del servicio (hosting,
+        base de datos) únicamente en la medida necesaria para prestarlo, bajo obligaciones de
+        confidencialidad equivalentes a las de este documento.
+      </p>
+
+      <h2>5. Dónde se almacenan y por cuánto tiempo</h2>
+      <p>
+        Los datos se almacenan en la base de datos de la Plataforma, con acceso restringido a personal
+        autorizado de la organización que corresponda a cada conversación (aislamiento multi-organización:
+        una empresa nunca puede ver los datos de otra). Conservamos el historial de conversaciones mientras
+        la cuenta de la organización esté activa, o hasta que se solicite su eliminación conforme a la
+        sección 7.
+      </p>
+
+      <h2>6. Seguridad</h2>
+      <ul>
+        <li>Todo el tráfico entre estos dominios y sus clientes viaja cifrado (HTTPS/TLS).</li>
+        <li>Cada mensaje entrante desde Meta se valida con la firma criptográfica del webhook
+          (<code>X-Hub-Signature-256</code>) antes de procesarse — se descarta cualquier request que no
+          pueda verificarse como proveniente de Meta.</li>
+        <li>Las credenciales de acceso a cada canal de mensajería se guardan cifradas y nunca se exponen
+          por ninguna API.</li>
+        <li>El acceso al panel de administración requiere autenticación, y las sesiones se bloquean
+          temporalmente tras varios intentos fallidos de inicio de sesión.</li>
+      </ul>
+
+      <h2>7. Tus derechos</h2>
+      <p>
+        De acuerdo con la Ley 25.326 de Protección de Datos Personales de la República Argentina (y, para
+        usuarios de otras jurisdicciones, la normativa de protección de datos que corresponda), podés
+        solicitar en cualquier momento:
+      </p>
+      <ul>
+        <li><strong>Acceso:</strong> saber qué datos tuyos tenemos.</li>
+        <li><strong>Rectificación:</strong> corregir datos inexactos.</li>
+        <li><strong>Eliminación (Data Deletion):</strong> pedir que borremos tu historial de conversación y
+          tus datos de contacto. Al recibir una solicitud de borrado válida, eliminamos los datos
+          identificados dentro de un plazo razonable y confirmamos por el mismo medio de contacto.</li>
+        <li><strong>Oposición:</strong> oponerte a un uso puntual de tus datos.</li>
+      </ul>
+      <p>
+        Para ejercer cualquiera de estos derechos, escribinos a
+        <a href="mailto:privacidad@udcchat.com.ar">privacidad@udcchat.com.ar</a> indicando el canal por el
+        que nos contactaste (WhatsApp/Messenger/Instagram) y el número/usuario correspondiente, para poder
+        identificar tu conversación. La Agencia de Acceso a la Información Pública, en su carácter de
+        órgano de control de la Ley 25.326, tiene la atribución de atender las denuncias y reclamos que
+        interpongan quienes resulten afectados en sus derechos por incumplimiento de las normas vigentes en
+        materia de protección de datos personales.
+      </p>
+
+      <h2>8. Menores de edad</h2>
+      <p>
+        Este servicio está pensado para la atención al cliente de personas adultas. No solicitamos
+        intencionalmente datos de menores de edad; si detectamos que se compartieron datos de un menor sin
+        el consentimiento correspondiente, los eliminamos a pedido de quien ejerza su representación legal.
+      </p>
+
+      <h2>9. Cambios a esta política</h2>
+      <p>
+        Podemos actualizar este documento cuando cambien nuestras prácticas o la normativa aplicable. La
+        fecha de "Última actualización" en la parte superior refleja la versión vigente.
+      </p>
+
+      <h2>10. Contacto</h2>
+      <p>
+        <span class="placeholder">[RAZÓN SOCIAL]</span> — <a href="mailto:privacidad@udcchat.com.ar">privacidad@udcchat.com.ar</a>
+      </p>
+    </div>
+
+    <footer>
+      Este texto es un borrador inicial pensado para cumplir con los requisitos de Meta (Messenger/Instagram
+      Platform) y la Ley 25.326 — reemplazar los campos resaltados con los datos reales de la empresa y
+      hacerlo revisar por un abogado antes de darlo por definitivo.
+    </footer>
+  </div>
+</body>
+</html>

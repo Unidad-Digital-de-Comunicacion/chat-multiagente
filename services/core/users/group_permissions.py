@@ -26,13 +26,20 @@ todos sus grupos (`user.has_perm(...)` ya lo resuelve así).
   chatbot (menú + horarios + mensajes predeterminados), el catálogo de
   etiquetas de conversación (por organización y por equipo) y la api key/
   estado de cada canal de mensajería (WhatsApp/Messenger/Instagram/Webchat).
-- encargados_difusion / analistas_datos / operadores: NINGÚN permiso sobre
-  Core — para estos tres grupos, Core es sólo la API de autenticación
-  (login, recuperar usuario/contraseña por DNI, "mi perfil") que van a usar
-  sus propios microservicios/paneles cuando existan (Operators Desk,
-  Analytics, campañas de difusión — Fase 4/5/7/9, ver sección 11 de
-  docs/CONTEXTO_PROYECTO.md); no tienen ninguna pantalla de configuración
-  en el Admin Panel de Core.
+- encargados_difusion / analistas_datos: NINGÚN permiso sobre Core — para
+  estos dos grupos, Core es sólo la API de autenticación (login, recuperar
+  usuario/contraseña por DNI, "mi perfil") que van a usar sus propios
+  microservicios/paneles cuando existan (Analytics, campañas de difusión —
+  Fase 7/9, ver sección 11 de docs/CONTEXTO_PROYECTO.md); no tienen ninguna
+  pantalla de configuración en el Admin Panel de Core.
+- operadores: ve y gestiona `conversations.Conversacion` de su propia
+  organización (bandeja sin asignar, tomar/responder/cerrar una
+  conversación) desde `frontend/operators-desk-web` — versión MVP de lo que
+  documentaba la sección 11 como Operators Desk Service (Fase 4/5), armada
+  directo contra Core en vez de como un BFF aparte (ver "Cola de mensajes"
+  en docs/CONTEXTO_PROYECTO.md). Sin permisos de administración de ningún
+  tipo (usuarios/equipos/menú/etc.) — eso sigue siendo sólo de
+  `administradores`.
 """
 
 GROUP_PERMISSIONS: dict[str, list[str]] = {
@@ -80,10 +87,15 @@ GROUP_PERMISSIONS: dict[str, list[str]] = {
         "tags.view_etiqueta",
         "channels.view_canal",
         "channels.change_canal",
+        "conversations.view_conversacion",
+        "conversations.change_conversacion",
     ],
     "encargados_difusion": [],
     "analistas_datos": [],
-    "operadores": [],
+    "operadores": [
+        "conversations.view_conversacion",
+        "conversations.change_conversacion",
+    ],
 }
 
 # Grupos que un Admin de organización NO puede asignar a otros usuarios desde

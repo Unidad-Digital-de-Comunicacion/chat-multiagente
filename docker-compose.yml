@@ -70,6 +70,8 @@ services:
       - EMAIL_USE_TLS=${EMAIL_USE_TLS}
       - DEFAULT_FROM_EMAIL=${DEFAULT_FROM_EMAIL}
       - FRONTEND_URL=${FRONTEND_URL}
+      - CHANNEL_GATEWAY_PUBLIC_URL=${CHANNEL_GATEWAY_PUBLIC_URL}
+      - CHANNEL_GATEWAY_INTERNAL_URL=${CHANNEL_GATEWAY_INTERNAL_URL:-http://channel-gateway:8000}
     volumes:
       - jwt_keys:/app/keys
       - media_files:/app/mediafiles
@@ -105,6 +107,7 @@ services:
       - META_APP_ID=${META_APP_ID}
       - META_APP_SECRET=${META_APP_SECRET}
       - META_WEBHOOK_VERIFY_TOKEN=${META_WEBHOOK_VERIFY_TOKEN}
+      - CORE_SERVICE_TOKEN=${CORE_SERVICE_TOKEN}
     ports:
       - "8002:8000"
     healthcheck:
@@ -202,6 +205,49 @@ services:
           memory: 256M
         reservations:
           memory: 64M
+
+  # Cloudflare Tunnel: expone un dominio propio hacia adentro de esta red de
+  # docker-compose sin IP pública ni abrir puertos en el router — hace falta
+  # para que Meta pueda llamar de verdad a los webhooks de Channel Gateway
+  # (sección 4.2/9 de docs/CONTEXTO_PROYECTO.md: `webhook_url` hoy apunta a
+  # `http://localhost:8002`, que Meta no puede alcanzar). Modo "remotely-
+  # managed" (el más simple: un solo token, todo el ruteo hostname -> servicio
+  # se configura en el dashboard de Cloudflare Zero Trust, no acá) — ver el
+  # README de la imagen (https://hub.docker.com/r/cloudflare/cloudflared)
+  # para el modo alternativo con `config.yml` + `credentials.json` si en
+  # algún momento hace falta manejar el ruteo desde el propio repo.
+  #
+  # No arranca por defecto (mismo patrón que `webchat`): `docker compose
+  # --profile tunnel up -d cloudflared`. Setup, una vez, en el dashboard de
+  # Cloudflare Zero Trust (Networks > Tunnels > Create a tunnel > Cloudflared):
+  #   1. Crear el túnel, copiar el token que da el paso "Install and run a
+  #      connector" (el comando `cloudflared tunnel run --token eyJ...`, sólo
+  #      el valor de --token) y pegarlo en `.env` como CLOUDFLARE_TUNNEL_TOKEN.
+  #   2. En "Public Hostname", agregar el dominio propio (ej.
+  #      webhooks.midominio.com) apuntando a `http://channel-gateway:8000`
+  #      (el nombre del servicio en esta red de docker-compose, no localhost
+  #      ni una IP — cloudflared vive adentro de la misma red y resuelve DNS
+  #      de docker-compose).
+  #   3. Actualizar `CHANNEL_GATEWAY_PUBLIC_URL` en `.env` al dominio nuevo
+  #      (ej. https://webhooks.midominio.com) para que `Canal.webhook_url`
+  #      en el Admin Panel muestre la URL pública real, no localhost.
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      - TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN}
+    depends_on:
+      channel-gateway:
+        condition: service_healthy
+    profiles: ["tunnel"] # no arranca por defecto: docker compose --profile tunnel up
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 128M
+        reservations:
+          memory: 32M
 
 volumes:
   pgdata:

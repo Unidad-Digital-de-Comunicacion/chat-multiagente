@@ -5,6 +5,12 @@ export default defineConfig({
   plugins: [react()],
   server: {
     port: 3000,
+    // El subdominio público del túnel de Cloudflare que apunta a este
+    // servicio (docker-compose.yml, servicio `cloudflared`) — sin esto,
+    // Vite rechaza con 403 "Blocked request" cualquier request cuyo header
+    // Host no sea localhost, así llegue detrás de un túnel HTTPS legítimo
+    // o no.
+    allowedHosts: ["admin.udcchat.com.ar"],
     // Docker Desktop en Windows no siempre propaga los eventos de
     // filesystem del bind mount (`docker-compose.override.yml` monta
     // `./frontend/admin-panel:/app`) al watcher nativo de Vite (chokidar) —

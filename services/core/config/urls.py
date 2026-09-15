@@ -2,6 +2,8 @@ from django.contrib import admin
 from django.http import JsonResponse
 from django.urls import include, path
 
+from .views import privacy_policy
+
 
 def health(_request):
     return JsonResponse({"status": "ok"})
@@ -9,6 +11,7 @@ def health(_request):
 
 urlpatterns = [
     path("health", health),
+    path("politica-de-privacidad/", privacy_policy, name="privacy-policy"),
     path("admin/", admin.site.urls),
     path("api/auth/", include("authentication.urls")),
     path("api/core/", include("organizations.urls")),
@@ -20,4 +23,5 @@ urlpatterns = [
     path("api/core/", include("tags.urls")),
     path("api/core/", include("channels.urls")),
     path("api/core/", include("platform_admin.urls")),
+    path("api/core/", include("conversations.urls")),
 ]

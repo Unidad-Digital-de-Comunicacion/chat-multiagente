@@ -5,6 +5,8 @@ from django.test import TestCase
 from django.urls import reverse
 
 from common.test_utils import authenticated_client, make_organization, make_user
+from platform_admin.models import ServiceToken
+from rest_framework.test import APIClient
 
 from .models import Canal
 
@@ -61,6 +63,20 @@ class CanalViewSetTests(TestCase):
         self.assertTrue(response.data["api_key_configurada"])
         canal.refresh_from_db()
         self.assertEqual(canal.api_key, "secreta-1234")
+
+    def test_api_key_larga_como_un_token_real_de_whatsapp_se_guarda_entera(self):
+        # Reproduce un DataError real: un token de sistema de la Cloud API
+        # de WhatsApp puede superar los 255 caracteres que alcanzaban para
+        # un Page Access Token de Messenger — `api_key` es `TextField` desde
+        # que esto se detectó en vivo, no `CharField(max_length=255)`.
+        authenticated_client(self.admin_a).get(self.list_url)
+        canal = Canal.objects.get(organization=self.org_a, tipo="WHATSAPP")
+        url = reverse("canal-detail", args=[canal.id])
+        token_largo = "EAA" + "x" * 300
+        response = authenticated_client(self.admin_a).patch(url, {"api_key": token_largo})
+        self.assertEqual(response.status_code, 200, response.data)
+        canal.refresh_from_db()
+        self.assertEqual(canal.api_key, token_largo)
 
     def test_admin_puede_activar_un_canal(self):
         authenticated_client(self.admin_a).get(self.list_url)
@@ -183,3 +199,117 @@ class CanalVerificarConexionTests(TestCase):
         self.whatsapp.refresh_from_db()
         self.assertTrue(self.whatsapp.ultimo_chequeo_ok)
         self.assertIsNotNone(self.whatsapp.ultimo_chequeo_at)
+
+
+class CanalWebhookTests(TestCase):
+    """`webhook_url`/`webhook_secret` (nuevos en `CanalSerializer`, para que
+    Channel Gateway tenga con qué verificar un webhook entrante) y la action
+    `regenerar-webhook-secret`."""
+
+    def setUp(self):
+        self.org = make_organization()
+        self.admin = make_user(self.org, groups=["administradores"])
+        self.operador = make_user(self.org, groups=["operadores"])
+        authenticated_client(self.admin).get(reverse("canal-list"))  # autogenera los 4
+        self.messenger = Canal.objects.get(organization=self.org, tipo="MESSENGER")
+        self.webchat = Canal.objects.get(organization=self.org, tipo="WEBCHAT")
+
+    def test_los_canales_meta_traen_webhook_url_y_secret(self):
+        response = authenticated_client(self.admin).get(reverse("canal-detail", args=[self.messenger.id]))
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertTrue(response.data["webhook_url"].endswith(f"/webhooks/messenger/{self.messenger.uuid}/"))
+        self.assertEqual(response.data["webhook_secret"], self.messenger.webhook_secret)
+        self.assertTrue(response.data["webhook_secret"])
+
+    def test_webchat_no_tiene_webhook(self):
+        response = authenticated_client(self.admin).get(reverse("canal-detail", args=[self.webchat.id]))
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertIsNone(response.data["webhook_url"])
+        self.assertIsNone(response.data["webhook_secret"])
+
+    def test_admin_puede_regenerar_el_secreto(self):
+        anterior = self.messenger.webhook_secret
+        url = reverse("canal-regenerar-webhook-secret", args=[self.messenger.id])
+        response = authenticated_client(self.admin).post(url)
+        self.assertEqual(response.status_code, 200, response.data)
+        self.messenger.refresh_from_db()
+        self.assertNotEqual(self.messenger.webhook_secret, anterior)
+        self.assertEqual(response.data["webhook_secret"], self.messenger.webhook_secret)
+
+    def test_operador_no_puede_regenerar(self):
+        url = reverse("canal-regenerar-webhook-secret", args=[self.messenger.id])
+        response = authenticated_client(self.operador).post(url)
+        self.assertEqual(response.status_code, 403)
+
+    def test_no_se_puede_regenerar_el_de_webchat(self):
+        url = reverse("canal-regenerar-webhook-secret", args=[self.webchat.id])
+        response = authenticated_client(self.admin).post(url)
+        self.assertEqual(response.status_code, 400)
+
+
+class InternalCanalConfigViewTests(TestCase):
+    """`GET /api/core/internal/canales/<uuid>/` — el único lugar donde
+    `api_key` sale de Core en texto plano, y sólo para Channel Gateway
+    autenticado con su `ServiceToken` (`platform_admin.service_auth`)."""
+
+    def setUp(self):
+        self.org = make_organization()
+        self.admin = make_user(self.org, groups=["administradores"])
+        authenticated_client(self.admin).get(reverse("canal-list"))  # autogenera los 4
+        self.messenger = Canal.objects.get(organization=self.org, tipo="MESSENGER")
+        self.messenger.api_key = "page-access-token-secreto"
+        self.messenger.save(update_fields=["api_key"])
+        self.url = reverse("internal-canal-config", args=[self.messenger.uuid])
+        self.token = ServiceToken.objects.create(
+            servicio=ServiceToken.Servicio.CHANNEL_GATEWAY, token="token-de-gateway", activo=True,
+        )
+
+    def _get(self, token=None, header_scheme="Service-Token"):
+        client = APIClient()
+        if token is not None:
+            client.credentials(HTTP_AUTHORIZATION=f"{header_scheme} {token}")
+        return client.get(self.url)
+
+    def test_channel_gateway_puede_leer_la_config_con_su_token(self):
+        response = self._get(token="token-de-gateway")
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data["api_key"], "page-access-token-secreto")
+        self.assertEqual(response.data["webhook_secret"], self.messenger.webhook_secret)
+        self.assertEqual(response.data["organization_id"], self.org.id)
+        self.assertEqual(response.data["tipo"], "MESSENGER")
+
+    def test_token_invalido_es_rechazado(self):
+        response = self._get(token="no-es-el-token-correcto")
+        self.assertEqual(response.status_code, 401)
+
+    def test_token_inactivo_es_rechazado(self):
+        self.token.activo = False
+        self.token.save(update_fields=["activo"])
+        response = self._get(token="token-de-gateway")
+        self.assertEqual(response.status_code, 401)
+
+    def test_token_de_otro_servicio_no_alcanza(self):
+        ServiceToken.objects.create(
+            servicio=ServiceToken.Servicio.CONVERSATION_ENGINE, token="token-de-otro-servicio", activo=True,
+        )
+        response = self._get(token="token-de-otro-servicio")
+        self.assertEqual(response.status_code, 403)
+
+    def test_sin_autenticacion_no_se_puede_entrar(self):
+        response = self._get(token=None)
+        self.assertEqual(response.status_code, 401)
+
+    def test_un_usuario_humano_con_jwt_no_puede_entrar(self):
+        # Autenticado como usuario real (admin) pero sin `ServiceToken` en
+        # `request.auth` -> falla el permiso, no la autenticación (403, no
+        # 401) — mismo criterio que cualquier otro 403 de este proyecto.
+        response = authenticated_client(self.admin).get(self.url)
+        self.assertEqual(response.status_code, 403)
+
+    def test_uuid_inexistente_da_404(self):
+        import uuid
+        otro_url = reverse("internal-canal-config", args=[uuid.uuid4()])
+        client = APIClient()
+        client.credentials(HTTP_AUTHORIZATION="Service-Token token-de-gateway")
+        response = client.get(otro_url)
+        self.assertEqual(response.status_code, 404)

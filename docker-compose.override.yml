@@ -44,6 +44,12 @@ services:
     # escucha adentro en el 80 sólo en este modo dev.
     build:
       target: build
+    environment:
+      # En la imagen final (Dockerfile) esto es un build ARG porque Vite lo
+      # incrusta en build-time — acá en cambio corre `vite dev`, que lee
+      # `import.meta.env.VITE_*` de una env var de verdad en cada arranque
+      # del proceso, no en build-time (no hay build en este modo).
+      - VITE_CORE_API_URL=${ADMIN_PANEL_CORE_API_URL:-http://localhost:8001}
     volumes:
       - ./frontend/admin-panel:/app
       - admin_panel_node_modules:/app/node_modules

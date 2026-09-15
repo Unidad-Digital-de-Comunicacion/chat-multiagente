@@ -14,6 +14,7 @@ export default function ChannelsPage() {
   const [error, setError] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [verifyingId, setVerifyingId] = useState<number | null>(null);
+  const [webhookId, setWebhookId] = useState<number | null>(null);
 
   async function load() {
     try {
@@ -60,9 +61,9 @@ export default function ChannelsPage() {
         <h2>Canales</h2>
       </div>
       <p className="text-muted">
-        Api key y estado de cada canal de mensajería. Es sólo la configuración: la conexión real (recibir/mandar
-        mensajes de verdad) es del Channel Gateway, todavía no implementado — activar un canal acá no lo pone en
-        línea por sí solo.
+        Api key y estado de cada canal de mensajería. Messenger e Instagram ya tienen conexión real a través de
+        Channel Gateway — "Datos del webhook" tiene la URL y el secreto que hay que cargar en la app de Meta para
+        que los mensajes entrantes lleguen. WhatsApp todavía no está conectado.
       </p>
 
       <div className="card">
@@ -113,6 +114,11 @@ export default function ChannelsPage() {
                         {verifyingId === c.id ? "Verificando…" : "Verificar conexión"}
                       </button>
                     )}
+                    {c.webhook_url && (
+                      <button className="btn btn-ghost" onClick={() => setWebhookId(c.id)}>
+                        Datos del webhook
+                      </button>
+                    )}
                   </td>
                 )}
               </tr>
@@ -129,6 +135,13 @@ export default function ChannelsPage() {
             setEditingId(null);
             load();
           }}
+        />
+      )}
+      {webhookId && (
+        <WebhookModal
+          canal={canales.find((c) => c.id === webhookId)!}
+          onClose={() => setWebhookId(null)}
+          onRegenerado={() => load()}
         />
       )}
     </div>
@@ -157,6 +170,69 @@ function EstadoConexion({ canal }: { canal: Canal }) {
       <div className="text-muted small">{fecha}</div>
       <div className="text-muted small">{canal.ultimo_chequeo_detalle}</div>
     </div>
+  );
+}
+
+function WebhookModal({
+  canal, onClose, onRegenerado,
+}: {
+  canal: Canal;
+  onClose: () => void;
+  onRegenerado: () => void;
+}) {
+  const [regenerando, setRegenerando] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function copiar(valor: string) {
+    try {
+      await navigator.clipboard.writeText(valor);
+    } catch {
+      // Sin acceso al portapapeles (ej. contexto no seguro) — el valor
+      // sigue seleccionable a mano en el cuadro de texto, no es fatal.
+    }
+  }
+
+  async function regenerar() {
+    if (!confirm("¿Regenerar el secreto del webhook? El anterior deja de funcionar — hay que volver a pegar el nuevo en la configuración del webhook de Meta.")) return;
+    setRegenerando(true);
+    setError(null);
+    try {
+      await api.post(`/api/core/canales/${canal.id}/regenerar-webhook-secret/`);
+      onRegenerado();
+    } catch {
+      setError("No se pudo regenerar.");
+    } finally {
+      setRegenerando(false);
+    }
+  }
+
+  return (
+    <Modal title={`Webhook — ${canal.tipo_display}`} onClose={onClose}>
+      <p className="text-muted">
+        Pegar esta URL y este secreto en la configuración del webhook de la app de Meta para este canal —
+        Meta manda acá los mensajes entrantes de esta organización puntual.
+      </p>
+      <div className="form-stack">
+        <label>
+          URL de entrada
+          <div className="temp-password-box">{canal.webhook_url}</div>
+        </label>
+        <button className="btn btn-outline" type="button" onClick={() => copiar(canal.webhook_url || "")}>
+          Copiar URL
+        </button>
+        <label>
+          Secreto (verify token)
+          <div className="temp-password-box">{canal.webhook_secret}</div>
+        </label>
+        <button className="btn btn-outline" type="button" onClick={() => copiar(canal.webhook_secret || "")}>
+          Copiar secreto
+        </button>
+        {error && <div className="form-error">{error}</div>}
+        <button className="btn btn-ghost btn-danger" type="button" disabled={regenerando} onClick={regenerar}>
+          {regenerando ? "Regenerando…" : "Regenerar secreto"}
+        </button>
+      </div>
+    </Modal>
   );
 }
 

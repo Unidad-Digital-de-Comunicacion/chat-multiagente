@@ -73,7 +73,7 @@
 | # | Servicio | Carpeta | Stack | Puerto | Rol |
 |---|----------|---------|-------|--------|-----|
 | 1 | **Core Platform Service** | `services/core` | Django + DRF + PostgreSQL | 8001 | Organizaciones, usuarios, roles (Admin/Difusión/Operador/Data Manager), equipos, horarios hábiles (portado), menú árbol (portado), lógica del bot, suscripciones/límite de conexiones, historial, etiquetas, datos transaccionales. Fuente de verdad de todo. |
-| 2 | **Channel Gateway Service** | `services/channel-gateway` | FastAPI + PostgreSQL | 8002 | Embedded Signup de WhatsApp, recepción/verificación de webhooks de Meta, envío de mensajes salientes. Sin lógica de negocio propia. (Messenger/Instagram: mismo servicio, fast-follow). |
+| 2 | **Channel Gateway Service** | `services/channel-gateway` | FastAPI + PostgreSQL | 8002 | Messenger e Instagram YA implementados: recepción/verificación de webhooks de Meta, envío de mensajes salientes vía Graph API. Sin lógica de negocio propia — pide `api_key`/`webhook_secret` a Core por canal (endpoint interno autenticado con `ServiceToken`, ver sección 9). WhatsApp (Embedded Signup + Cloud API) queda pendiente, es más complejo. |
 | 3 | **Conversation Engine** | `services/conversation-engine` | FastAPI + WebSockets + PostgreSQL | 8003 | Post-derivación: asigna operador (round-robin) dentro del equipo indicado por Core, entrega mensajes en tiempo real vía WebSocket, controla el límite de conexiones simultáneas (`OperatorSession`). |
 | 4 | **Operators Desk Service** | `services/operators-desk` | FastAPI + WebSockets + PostgreSQL | 8004 | Backend a medida (BFF) para el **Operators Desk Web** (React): bandeja de chats asignados, hilo de conversación, acciones rápidas (responder/derivar/etiquetar/cerrar). Es la contraparte web de lo que la app Android resuelve en mobile — reutiliza Core (historial/datos) y Conversation Engine (tiempo real/asignación) en vez de duplicar su lógica. |
 | 5 | **Analytics Service** | `services/analytics` | FastAPI + PostgreSQL (solo lectura) | 8005 | Agregaciones y reportes para el rol Data Manager: volumen de conversaciones por canal/equipo/operador, tiempos de respuesta, uso del menú (abandono por nodo). Se conecta a los esquemas de Core/Conversation Engine con un usuario de base de datos **read-only**; no escribe nunca. |
@@ -157,9 +157,36 @@ Operators Desk Web, etc.
 - Endpoint interno: `GET /api/core/teams/{id}/horario-habil/` → `{en_horario: bool, proxima_apertura: datetime|null}` (envuelve `esta_en_horario`/`proxima_apertura` portados).
 
 ### 4.2 `channel_gateway` (FastAPI)
-- `Channel` (organization_id, tipo=whatsapp, phone_number_id, waba_id, token cifrado, estado)
-- `MensajeSaliente` (log simple de envíos, para reintentos/diagnóstico)
-- Endpoints: `POST /webhooks/meta/{channel_uuid}` (verificación de firma + normalización), `POST /channels/whatsapp/embedded-signup/callback`, `POST /messages/send`.
+- Messenger/Instagram: **sin modelos propios todavía** — no guarda su propia copia de `api_key`/
+  `webhook_secret`, los pide a Core en cada request vía `GET /api/core/internal/canales/<uuid>/`
+  (autenticado con `Authorization: Service-Token <token>`, ver sección 9 "Tokens de servicios
+  internos"). El `<uuid>` es el mismo `Canal.uuid` de Core, la única pista que Meta manda de vuelta
+  en la URL cuando llega un webhook. `WhatsApp` (`Channel` con `phone_number_id`/`waba_id`/token
+  cifrado EN SU PROPIA base, `MensajeSaliente` como log de reintentos) queda para cuando se
+  implemente ese canal — no hace falta esa base propia para Messenger/Instagram porque no hay nada
+  del lado de Channel Gateway que sobreviva más allá de un request.
+- Endpoints reales, hoy: `GET/POST /webhooks/{messenger|instagram}/{canal_uuid}` (handshake de
+  verificación + recepción/verificación de firma + normalización), `POST /messages/send` (envío
+  saliente contra la Graph API, usando la `api_key` de ese canal). `POST /webhooks/meta/{channel_
+  uuid}` (WhatsApp, un solo endpoint para los 3 canales) y `POST /channels/whatsapp/embedded-signup/
+  callback` quedan pendientes con WhatsApp.
+  - **Acuse de recibo automático** (`app/webhooks.py::RESPUESTA_AUTOMATICA`): apenas llega un mensaje
+    de texto válido, se contesta con un texto fijo ("Gracias por escribirnos...") usando `meta_client.
+    enviar_texto` — real, no simulado (necesario para que la revisión de permisos `pages_messaging`
+    de Meta tenga una conversación de verdad que grabar, no sólo logs). Fijo y no configurable por
+    organización todavía: cuando exista `POST /api/core/bot/mensaje-entrante/` (Fase 4), esto se
+    reemplaza por el texto real de `BotMessages.mensaje_bienvenida` de cada organización. Si el envío
+    falla (ej. `api_key` vencida), sólo se loguea — Meta ya recibió su 200 igual, para no generar
+    reintentos del mismo webhook.
+  - **`POST /messages/send` requiere autenticación interna** (`app/internal_auth.py::
+    requerir_servicio_interno`, header `Authorization: Service-Token <token>` contra el mismo
+    `CORE_SERVICE_TOKEN` que este servicio ya usa para autenticarse CONTRA Core) — a diferencia de
+    `/webhooks/*` (público a propósito, lo llama Meta), este endpoint sólo debería poder llamarlo
+    OTRO servicio interno (Conversation Engine, Fase 4, todavía no existe). Se agregó después de
+    notar que quedaba expuesto sin auth en el dominio público del túnel de Cloudflare
+    (`webhooks.udcchat.com.ar` reenvía TODO el hostname a `channel-gateway:8000`, no sólo `/webhooks/
+    *` — la regla de ingreso en el dashboard de Cloudflare debería restringirse a ese path si se
+    quiere cerrar esto del todo; ver sección "Cloudflare Tunnel" más abajo).
 
 ### 4.3 `conversation_engine` (FastAPI + WS)
 - `OperatorSession` (organization_id, user_id, canal=web|app, conectado_desde, estado)
@@ -652,27 +679,49 @@ son templates Django con SSO, esa idea se descartó a favor de una sola UI en el
   bienvenida → [menú o nota de "bandeja sin asignar"] → saludo del operador → despedida) —
   aplicarlo de verdad (que Channel Gateway/Conversation Engine salgan del flujo del bot) es
   Fase 3/4, todavía no implementado.
-- **Canales de mensajería** (`channels` app, nueva — sólo la parte de configuración; la app se
-  llama `channels` pero el modelo es `Canal`, cuidado con el módulo de terceros `django-channels`
-  si algún día se instala, no debería chocar porque no está en requirements pero mantenerlo en
-  mente): api key y estado (activo/inactivo) de los 4 canales que documenta la sección 3
-  (WhatsApp/Messenger/Instagram/Webchat). Según la sección 4.4, la conexión real — Embedded Signup,
-  verificación de webhooks, envío — y el token cifrado en su propia base son del Channel Gateway
-  (Fase 3, todavía sin construir); esto vive en Core mientras tanto para no bloquear la pantalla de
-  configuración, mismo criterio que `tags`/`bot_settings`. Un `Canal` por `(organization, tipo)` se
+- **Canales de mensajería** (`channels` app, nueva — la app se llama `channels` pero el modelo es
+  `Canal`, cuidado con el módulo de terceros `django-channels` si algún día se instala, no debería
+  chocar porque no está en requirements pero mantenerlo en mente): api key y estado (activo/
+  inactivo) de los 4 canales que documenta la sección 3 (WhatsApp/Messenger/Instagram/Webchat), MÁS
+  `uuid` y `webhook_secret` (nuevos, ver más abajo). Un `Canal` por `(organization, tipo)` se
   autogenera al listar (`defaults.asegurar_canales`) — no se crean ni se borran por API (ningún
   grupo tiene `add_canal`/`delete_canal` a propósito, `StrictDjangoModelPermissions` los bloquea
   con 403), sólo se edita `api_key`/`activo` de los 4 que ya existen. `api_key` es write-only: la
   API nunca la devuelve, sólo `api_key_configurada` (bool) y `api_key_preview` (últimos 4
   caracteres, ej. `"••••3f9a"`) — alcanza para confirmar que se cargó la correcta sin volver a
-  mostrarla. Cifrado en reposo real es tarea de cuando esto se mude a Channel Gateway; por ahora
-  sólo queda fuera de la respuesta de la API.
+  mostrarla. La copia cifrada en reposo (encriptar `api_key` en la propia base, no sólo ocultarla de
+  la respuesta de la API) sigue pendiente.
+  - **Webhook por canal (`uuid` + `webhook_secret`, Messenger/Instagram/WhatsApp — no Webchat, ver
+    `Canal.TIPOS_CON_WEBHOOK_META`)**: a diferencia de `api_key` (una credencial que el Admin trae
+    de afuera), estas dos las genera CORE al crear el canal (`channels.defaults.asegurar_canales`,
+    `secrets.token_urlsafe(24)`) — Channel Gateway sólo las lee, nunca las crea, mismo criterio que
+    `ServiceToken`. `uuid` (no el `id` autoincremental, para no exponer un correlativo adivinable en
+    una URL pública) arma la URL de entrada del webhook en Channel Gateway:
+    `CanalSerializer.webhook_url` = `f"{CHANNEL_GATEWAY_PUBLIC_URL}/webhooks/{tipo.lower()}/{uuid}/"`
+    (`CHANNEL_GATEWAY_PUBLIC_URL`, nuevo setting en `config/settings.py`, default
+    `http://localhost:8002` en dev). `webhook_secret` SÍ se devuelve completo por la API (única
+    excepción al patrón preview/masked de acá arriba) — el Admin lo tiene que poder copiar entero
+    para pegarlo en la configuración del webhook de la app de Meta; se puede rotar con
+    `POST /api/core/canales/{id}/regenerar-webhook-secret/` (mismo criterio que
+    `ServiceTokenViewSet.generar`, invalida el anterior). Frontend: botón "Datos del webhook" en
+    `ChannelsPage.tsx` (`WebhookModal`) para Messenger/Instagram/WhatsApp, con copiar URL/secreto y
+    regenerar.
+    - **`http://localhost:8002` no es alcanzable por Meta** — para que `webhook_url` sirva de
+      verdad hace falta un dominio propio con HTTPS público apuntando a `channel-gateway:8000`. El
+      servicio `cloudflared` en `docker-compose.yml` (imagen oficial `cloudflare/cloudflared`,
+      perfil `tunnel` — no arranca por defecto, `docker compose --profile tunnel up -d cloudflared`)
+      resuelve esto sin IP pública ni abrir puertos: túnel "remotely-managed" de Cloudflare, un solo
+      `CLOUDFLARE_TUNNEL_TOKEN` en `.env` (se crea en el dashboard de Cloudflare Zero Trust, Networks
+      > Tunnels), el ruteo hostname → servicio se configura ahí mismo (Public Hostname → `http://
+      channel-gateway:8000`), no en este repo. Una vez armado, actualizar `CHANNEL_GATEWAY_PUBLIC_
+      URL` al dominio real para que `webhook_url` deje de mostrar localhost.
   - **Chequeo de salud real** (`POST /api/core/canales/{id}/verificar/`, `channels/health.py`): no
     es un simulacro — para WhatsApp/Messenger/Instagram (los 3 sobre la Graph API de Meta) pega de
     verdad a `GET https://graph.facebook.com/v19.0/me` con la api key cargada y guarda el
     resultado (`ultimo_chequeo_at/ok/detalle`): conectado + nombre de la cuenta, o el mensaje de
-    error real de Meta. No valida permisos de envío, sólo "¿el servidor la acepta y contesta?" — la
-    integración completa sigue siendo Channel Gateway. Webchat no tiene un servidor de terceros que
+    error real de Meta. No valida permisos de envío, sólo "¿el servidor la acepta y contesta?" — el
+    envío/recepción real de mensajes (Messenger/Instagram) es Channel Gateway (sección 4.2), no
+    esto. Webchat no tiene un servidor de terceros que
     consultar (sería el propio Webchat Service, Fase 9, sin construir) — el chequeo ahí devuelve
     `ultimo_chequeo_ok=None` ("No aplica") en vez de intentar una conexión que no existe. Esta
     action tiene su propio `get_permissions()` (sólo pide `IsAuthenticated` + `require_perm`
@@ -780,10 +829,16 @@ son templates Django con SSO, esa idea se descartó a favor de una sola UI en el
     toda la plataforma, no por tenant). `token` es write-only (mismo patrón enmascarado que
     `Canal.api_key`: `token_configurado` + `token_preview`); la action `generar` (POST) genera uno
     seguro al azar (`secrets.token_urlsafe(32)`) y lo devuelve en texto plano UNA sola vez en esa
-    respuesta, igual que `UserViewSet.reset_password`. Es sólo la configuración — hoy los 5
-    microservicios son stubs de Fase 0 (sólo `/health`), nada valida estos tokens todavía; cuando
-    cada uno los consuma de verdad, hace falta además un middleware/vista en Core que los valide en
-    cada request entrante desde esos servicios.
+    respuesta, igual que `UserViewSet.reset_password`. `CHANNEL_GATEWAY` es el primer servicio que
+    lo usa de verdad (los otros 4 siguen siendo sólo configuración, stubs de Fase 0): `platform_
+    admin.service_auth.ServiceTokenAuthentication` (agregada a `DEFAULT_AUTHENTICATION_CLASSES`,
+    junto a `JWTAuthentication` — reacciona sólo al esquema `Authorization: Service-Token <token>`,
+    nunca a `Bearer`, así que no interfiere con el login de usuarios) valida el token contra este
+    modelo (`token` cargado + `activo=True`) y deja el `ServiceToken` ya resuelto en `request.auth`
+    (no hay `User` de Django detrás, `request.user` queda anónimo); `IsChannelGatewayService`
+    exige además que sea justo el de ese servicio. Único consumidor hoy:
+    `channels.views.InternalCanalConfigView` (`GET /api/core/internal/canales/<uuid>/`), el único
+    lugar donde `api_key`/`webhook_secret` de un `Canal` salen de Core en texto plano.
   - **Estadísticas** (`GET /api/core/plataforma/estadisticas/`): conteos reales de lo que Core
     gestiona hoy (organizaciones, usuarios, equipos, canales configurados/activos, desglose por
     organización) — no hay conversaciones que contar todavía, eso es Conversation Engine.
@@ -901,14 +956,14 @@ son templates Django con SSO, esa idea se descartó a favor de una sola UI en el
 - Revisión de que ningún servicio quedó con lógica de negocio que debería estar en Core.
 
 ### Fase 9 (fast-follow, no iniciar sin pedido explícito)
-- Messenger e Instagram en Channel Gateway.
 - Webchat Service completo (hoy es un stub).
 - Push notifications en background (FCM) para la app Android.
 - Editor de menú con capturas de datos / autorespuesta por palabra clave libre.
 
 ## 11. Explícitamente fuera de alcance ahora
 
-No implementar salvo pedido explícito: Messenger, Instagram, Webchat Service (más allá del stub),
+No implementar salvo pedido explícito: WhatsApp en Channel Gateway (Messenger/Instagram ya están,
+ver sección 9/Fase 3), Webchat Service (más allá del stub),
 bus de eventos (Kafka/RabbitMQ), cache distribuida (Redis), búsqueda con Elasticsearch,
 almacenamiento tipo S3, notificaciones push en background, editor de menú con nodos de captura de
 datos o autorespuesta libre, versionado histórico de menús, panel de auditoría dedicado (más allá

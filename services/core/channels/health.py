@@ -14,14 +14,12 @@ from .models import Canal
 GRAPH_API_URL = "https://graph.facebook.com/v19.0/me"
 TIMEOUT_SEGUNDOS = 6
 
-_USA_GRAPH_API = {Canal.Tipo.WHATSAPP, Canal.Tipo.MESSENGER, Canal.Tipo.INSTAGRAM}
-
 
 def verificar_conexion(canal: Canal) -> Canal:
     if not canal.api_key:
         return _guardar(canal, ok=False, detalle="No hay api key cargada.")
 
-    if canal.tipo not in _USA_GRAPH_API:
+    if canal.tipo not in Canal.TIPOS_CON_WEBHOOK_META:
         # Webchat no tiene un servidor de terceros que consultar — el
         # servidor "remoto" sería el propio Webchat Service (Fase 9,
         # todavía no construido), así que no hay nada real que chequear acá.

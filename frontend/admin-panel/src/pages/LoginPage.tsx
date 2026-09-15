@@ -79,6 +79,13 @@ export default function LoginPage() {
           <Link to="/olvide-contrasena">¿Olvidaste tu contraseña?</Link>
         </div>
       </form>
+      <footer className="login-footer text-muted">
+        CUIT: 23-24753209-9 — ALLIEVI ANDRES RAMON
+        <br />
+        Washington 4049 — 1430, Ciudad Autónoma de Buenos Aires
+        <br />
+        +54 9 11 5934-0014 · +54 9 11 7117-8317
+      </footer>
     </div>
   );
 }

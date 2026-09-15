@@ -207,6 +207,8 @@ export interface Canal {
   tipo_display: string;
   api_key_configurada: boolean;
   api_key_preview: string | null;
+  webhook_url: string | null;
+  webhook_secret: string | null;
   activo: boolean;
   ultimo_chequeo_at: string | null;
   ultimo_chequeo_ok: boolean | null;

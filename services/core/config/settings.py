@@ -46,6 +46,7 @@ INSTALLED_APPS = [
     "tags",
     "channels",
     "platform_admin",
+    "conversations",
 ]
 
 AUTH_USER_MODEL = "users.User"
@@ -66,7 +67,9 @@ ROOT_URLCONF = "config.urls"
 TEMPLATES = [
     {
         "BACKEND": "django.template.backends.django.DjangoTemplates",
-        "DIRS": [],
+        # Contenido legal estático (`config/views.py::privacy_policy`) — no
+        # amerita una app Django propia sólo para esto.
+        "DIRS": [BASE_DIR / "templates"],
         "APP_DIRS": True,
         "OPTIONS": {
             "context_processors": [
@@ -138,6 +141,13 @@ CSRF_COOKIE_SECURE = not DEBUG
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": (
         "rest_framework_simplejwt.authentication.JWTAuthentication",
+        # Autenticación de los OTROS microservicios (Channel Gateway, etc.)
+        # contra la API de Core — ver `platform_admin.service_auth`. Global
+        # a propósito (no sólo en las vistas internas) para que un endpoint
+        # cualquiera pueda optar a futuro por aceptar también un
+        # `ServiceToken`; no interfiere con el login de usuarios porque sólo
+        # reacciona al esquema `Service-Token`, nunca a `Bearer`.
+        "platform_admin.service_auth.ServiceTokenAuthentication",
     ),
     "DEFAULT_PERMISSION_CLASSES": (
         "rest_framework.permissions.IsAuthenticated",
@@ -199,6 +209,20 @@ DEFAULT_FROM_EMAIL = os.environ.get("DEFAULT_FROM_EMAIL", "no-responder@chatplat
 # URL pública del Admin Panel (React) — para armar el link de
 # /restablecer-contrasena/<uid>/<token> que se manda por mail.
 FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:3000")
+
+# URL pública de Channel Gateway — para armar `webhook_url` en
+# `channels.CanalSerializer` (la que el Admin pega en la configuración del
+# webhook de Meta). Puerto 8002 en dev (docker-compose); en producción es el
+# dominio público real del servicio, no la URL interna `http://channel-
+# gateway:8000` que usa Core para llamarlo puerta adentro de la red.
+CHANNEL_GATEWAY_PUBLIC_URL = os.environ.get("CHANNEL_GATEWAY_PUBLIC_URL", "http://localhost:8002").rstrip("/")
+
+# URL INTERNA (red de docker-compose) para que Core le pida a Channel
+# Gateway que mande un mensaje saliente (`conversations.channel_gateway_
+# client.enviar_mensaje_saliente`, `POST /messages/send`) — a diferencia de
+# `CHANNEL_GATEWAY_PUBLIC_URL` de acá arriba (la que ve el navegador/Meta),
+# ésta es la que usa Core mismo, puerta adentro de la red de contenedores.
+CHANNEL_GATEWAY_INTERNAL_URL = os.environ.get("CHANNEL_GATEWAY_INTERNAL_URL", "http://channel-gateway:8000").rstrip("/")
 
 # --------------------------------------------------------------------------- #
 # JWT (RS256): Core firma con la clave privada; todos los servicios (FastAPI
