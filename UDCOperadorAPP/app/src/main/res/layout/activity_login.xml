@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Pantalla de login. Todo vertical, uno abajo del otro (LinearLayout),
+    para que se lea de arriba hacia abajo como el código de LoginActivity.java.
+    No hay nada de red acá: es sólo la forma visual de la pantalla.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:gravity="center"
+    android:padding="32dp">
+
+    <!-- Título -->
+    <TextView
+        android:id="@+id/textTitulo"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/login_titulo"
+        android:textSize="24sp"
+        android:textStyle="bold"
+        android:layout_marginBottom="32dp" />
+
+    <!-- Campo de usuario (email) -->
+    <EditText
+        android:id="@+id/editUsuario"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="@string/login_hint_usuario"
+        android:inputType="textEmailAddress"
+        android:layout_marginBottom="16dp" />
+
+    <!-- Campo de contraseña -->
+    <EditText
+        android:id="@+id/editContrasena"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="@string/login_hint_contrasena"
+        android:inputType="textPassword"
+        android:layout_marginBottom="24dp" />
+
+    <!-- Botón de ingresar -->
+    <Button
+        android:id="@+id/botonIngresar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/login_boton_ingresar" />
+
+</LinearLayout>
