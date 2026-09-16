@@ -6,4 +6,13 @@
     <string name="login_hint_usuario">Usuario (email)</string>
     <string name="login_hint_contrasena">Contraseña</string>
     <string name="login_boton_ingresar">Ingresar</string>
+
+    <!-- Bandeja de conversaciones -->
+    <string name="bandeja_sin_asignar">Sin asignar</string>
+    <string name="bandeja_mias">Mías</string>
+
+    <!-- Detalle de conversación -->
+    <string name="conversacion_hint_mensaje">Escribí una respuesta</string>
+    <string name="conversacion_boton_enviar">Enviar</string>
+    <string name="conversacion_boton_cerrar">Cerrar conversación</string>
 </resources>

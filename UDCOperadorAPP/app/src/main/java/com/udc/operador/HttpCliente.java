@@ -1,5 +1,7 @@
 package com.udc.operador;
 
+import android.content.Context;
+
 import org.json.JSONObject;
 
 import java.io.BufferedReader;
@@ -14,12 +16,14 @@ import java.nio.charset.StandardCharsets;
 /**
  * Todo el detalle feo de HttpURLConnection (armar el pedido, mandarlo, leer
  * la respuesta byte a byte) vive acá adentro, una sola vez. El resto de la
- * app (LoginActivity y lo que venga después) sólo llama a
- * {@link #post(String, JSONObject)} y recibe una {@link Respuesta} simple.
+ * app sólo llama a {@link #get}/{@link #post} (sin token, ej. login) o a
+ * {@link #getAutenticado}/{@link #postAutenticado} (con el token guardado
+ * en {@link Sesion}, y refresh automático si venció) y recibe una
+ * {@link Respuesta} simple.
  *
- * IMPORTANTE: igual que antes, esto corre en un hilo aparte del principal
- * — quien llame a `post()` tiene que hacerlo desde un Thread de background,
- * nunca directo desde un click.
+ * IMPORTANTE: esto corre en un hilo aparte del principal — quien llame acá
+ * tiene que hacerlo desde un Thread de background, nunca directo desde un
+ * click.
  */
 public class HttpCliente {
 
@@ -34,23 +38,39 @@ public class HttpCliente {
         }
 
         public boolean esExitosa() {
-            return codigo == 200;
+            return codigo >= 200 && codigo < 300;
         }
     }
 
-    /** Manda un POST con `cuerpoPedido` como JSON y devuelve la respuesta. */
-    public static Respuesta post(String url, JSONObject cuerpoPedido) throws IOException {
-        HttpURLConnection conexion = (HttpURLConnection) new URL(url).openConnection();
-        conexion.setRequestMethod("POST");
-        conexion.setRequestProperty("Content-Type", "application/json");
-        conexion.setDoOutput(true);
+    public static Respuesta get(String url, String token) throws IOException {
+        return pedido("GET", url, null, token);
+    }
 
-        try (OutputStream salida = conexion.getOutputStream()) {
-            salida.write(cuerpoPedido.toString().getBytes(StandardCharsets.UTF_8));
+    public static Respuesta post(String url, JSONObject cuerpoPedido) throws IOException {
+        return pedido("POST", url, cuerpoPedido, null);
+    }
+
+    public static Respuesta post(String url, JSONObject cuerpoPedido, String token) throws IOException {
+        return pedido("POST", url, cuerpoPedido, token);
+    }
+
+    private static Respuesta pedido(String metodo, String url, JSONObject cuerpoPedido, String token) throws IOException {
+        HttpURLConnection conexion = (HttpURLConnection) new URL(url).openConnection();
+        conexion.setRequestMethod(metodo);
+        conexion.setRequestProperty("Content-Type", "application/json");
+        if (token != null) {
+            conexion.setRequestProperty("Authorization", "Bearer " + token);
+        }
+
+        if (cuerpoPedido != null) {
+            conexion.setDoOutput(true);
+            try (OutputStream salida = conexion.getOutputStream()) {
+                salida.write(cuerpoPedido.toString().getBytes(StandardCharsets.UTF_8));
+            }
         }
 
         int codigo = conexion.getResponseCode();
-        InputStream stream = (codigo == 200) ? conexion.getInputStream() : conexion.getErrorStream();
+        InputStream stream = (codigo >= 200 && codigo < 300) ? conexion.getInputStream() : conexion.getErrorStream();
         return new Respuesta(codigo, leerStream(stream));
     }
 
@@ -65,5 +85,48 @@ public class HttpCliente {
             resultado.append(linea);
         }
         return resultado.toString();
+    }
+
+    // --- Pedidos autenticados, con refresh automático (contrato §1) ---
+
+    /**
+     * GET a Core usando el access guardado. Si vino vencido (401), pide uno
+     * nuevo con el refresh guardado y reintenta UNA vez. Si el refresh
+     * también venció, devuelve el 401 tal cual — la pantalla que llamó
+     * decide mandar al login.
+     */
+    public static Respuesta getAutenticado(Context context, String url) throws IOException {
+        Respuesta respuesta = get(url, Sesion.obtenerAccess(context));
+        if (respuesta.codigo == 401 && refrescarAccess(context)) {
+            respuesta = get(url, Sesion.obtenerAccess(context));
+        }
+        return respuesta;
+    }
+
+    public static Respuesta postAutenticado(Context context, String url, JSONObject cuerpoPedido) throws IOException {
+        Respuesta respuesta = post(url, cuerpoPedido, Sesion.obtenerAccess(context));
+        if (respuesta.codigo == 401 && refrescarAccess(context)) {
+            respuesta = post(url, cuerpoPedido, Sesion.obtenerAccess(context));
+        }
+        return respuesta;
+    }
+
+    /** Pide un access nuevo con el refresh guardado. false si el refresh también venció. */
+    private static boolean refrescarAccess(Context context) throws IOException {
+        String refresh = Sesion.obtenerRefresh(context);
+        if (refresh == null) {
+            return false;
+        }
+        try {
+            JSONObject cuerpo = new JSONObject().put("refresh", refresh);
+            Respuesta respuesta = post(Config.BASE_URL + "/api/auth/refresh/", cuerpo);
+            if (!respuesta.esExitosa()) {
+                return false;
+            }
+            Sesion.guardarAccess(context, new JSONObject(respuesta.cuerpo).getString("access"));
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
     }
 }
