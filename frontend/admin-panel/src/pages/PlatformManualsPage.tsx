@@ -9,6 +9,7 @@ export default function PlatformManualsPage() {
 
   async function copiarToken() {
     const token = getAccessToken();
+
     if (!token) return;
     await navigator.clipboard.writeText(token);
     setCopiado(true);
@@ -18,6 +19,7 @@ export default function PlatformManualsPage() {
   async function bajarManual() {
     setError(null);
     setDownloading(true);
+
     try {
       await downloadFile("/api/core/plataforma/manual/", "manual-admin-panel.pdf");
     } catch (err) {

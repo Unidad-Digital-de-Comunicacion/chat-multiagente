@@ -157,27 +157,42 @@ Operators Desk Web, etc.
 - Endpoint interno: `GET /api/core/teams/{id}/horario-habil/` → `{en_horario: bool, proxima_apertura: datetime|null}` (envuelve `esta_en_horario`/`proxima_apertura` portados).
 
 ### 4.2 `channel_gateway` (FastAPI)
-- Messenger/Instagram: **sin modelos propios todavía** — no guarda su propia copia de `api_key`/
-  `webhook_secret`, los pide a Core en cada request vía `GET /api/core/internal/canales/<uuid>/`
-  (autenticado con `Authorization: Service-Token <token>`, ver sección 9 "Tokens de servicios
-  internos"). El `<uuid>` es el mismo `Canal.uuid` de Core, la única pista que Meta manda de vuelta
-  en la URL cuando llega un webhook. `WhatsApp` (`Channel` con `phone_number_id`/`waba_id`/token
-  cifrado EN SU PROPIA base, `MensajeSaliente` como log de reintentos) queda para cuando se
-  implemente ese canal — no hace falta esa base propia para Messenger/Instagram porque no hay nada
-  del lado de Channel Gateway que sobreviva más allá de un request.
-- Endpoints reales, hoy: `GET/POST /webhooks/{messenger|instagram}/{canal_uuid}` (handshake de
-  verificación + recepción/verificación de firma + normalización), `POST /messages/send` (envío
-  saliente contra la Graph API, usando la `api_key` de ese canal). `POST /webhooks/meta/{channel_
-  uuid}` (WhatsApp, un solo endpoint para los 3 canales) y `POST /channels/whatsapp/embedded-signup/
-  callback` quedan pendientes con WhatsApp.
-  - **Acuse de recibo automático** (`app/webhooks.py::RESPUESTA_AUTOMATICA`): apenas llega un mensaje
-    de texto válido, se contesta con un texto fijo ("Gracias por escribirnos...") usando `meta_client.
-    enviar_texto` — real, no simulado (necesario para que la revisión de permisos `pages_messaging`
-    de Meta tenga una conversación de verdad que grabar, no sólo logs). Fijo y no configurable por
-    organización todavía: cuando exista `POST /api/core/bot/mensaje-entrante/` (Fase 4), esto se
-    reemplaza por el texto real de `BotMessages.mensaje_bienvenida` de cada organización. Si el envío
-    falla (ej. `api_key` vencida), sólo se loguea — Meta ya recibió su 200 igual, para no generar
-    reintentos del mismo webhook.
+- WhatsApp/Messenger/Instagram: **sin modelos propios** — no guarda su propia copia de `api_key`/
+  `telefono_id`/`webhook_secret`, los pide a Core en cada request vía `GET /api/core/internal/
+  canales/<uuid>/` (autenticado con `Authorization: Service-Token <token>`, ver sección 9 "Tokens
+  de servicios internos"). El `<uuid>` es el mismo `Canal.uuid` de Core.
+- Endpoints reales, hoy: `GET/POST /webhooks/{whatsapp|messenger|instagram}/{canal_uuid}` (handshake
+  de verificación + recepción/verificación de firma + normalización), `POST /messages/send` (envío
+  saliente contra la Graph API/Cloud API, usando la `api_key`/`telefono_id` de ese canal — protegido
+  con `Service-Token`, ver más abajo). `POST /channels/whatsapp/embedded-signup/callback` (Embedded
+  Signup) sigue pendiente.
+  - **Meta sólo deja UNA Callback URL por app, no una por canal** — un detalle real del dashboard
+    de Meta que el diseño original (tres URLs, una por tipo) no tenía en cuenta. En la práctica, si
+    el Admin usa la URL de Messenger para las tres suscripciones (Página/Instagram/WhatsApp
+    Business Account), un evento de Instagram real puede llegar a la URL "de Messenger". Por eso el
+    tipo de la URL (`canal_tipo_url`) NUNCA se usa para rechazar un payload — el tipo real sale del
+    campo `payload["object"]` (`"page"`/`"instagram"`/`"whatsapp_business_account"`), y si no
+    coincide con el canal de la URL, se busca el canal "hermano" de la misma organización vía
+    `GET /api/core/internal/canales/organizacion/<organization_id>/<tipo>/` (`channels.views.
+    InternalCanalPorOrganizacionView`, mismo esquema de auth). El handshake `GET` no necesita esto
+    (Meta no manda ningún indicador de tipo ahí) — sólo verifica el secreto del canal de la URL, sea
+    cual sea. El Admin Panel (`ChannelsPage.tsx`, modal "Datos del webhook") avisa esto explícitamente:
+    usar la misma URL/secreto para las tres suscripciones en el dashboard de Meta.
+  - **Menú real, no un acuse de recibo fijo**: cada mensaje de texto normalizado (incluida una
+    respuesta de lista/botón nativo de WhatsApp, normalizada al mismo `id` que si se hubiera tipeado
+    el número) se manda a `POST /api/core/bot/mensaje-entrante/` (`core_client.
+    enviar_mensaje_entrante`) — Core recorre el árbol de `MenuOpcion` de verdad (ver
+    `conversations.menu_engine` en la sección 9) y devuelve las acciones (`enviar_texto`/
+    `mostrar_menu`) para ejecutar. Si Core no contesta, no se manda nada — el mensaje ya quedó
+    recibido y logueado del lado de Meta (200), no hace falta reintentar.
+  - **Selección nativa por canal (sección 4.1.1)**: `meta_client.enviar_menu_por_canal` decide el
+    widget según `canal.tipo` y la cantidad de opciones — WhatsApp con 1-3 opciones manda
+    `interactive.type=button`, con 4-10 manda `interactive.type=list` (`body` = el texto CON el
+    listado numerado, no sólo el saludo — las opciones tienen que verse como texto además del
+    selector táctil), fuera de ese rango o para Messenger/Instagram (todavía sin su propia
+    traducción a quick replies) cae al texto plano numerado que Core ya arma como fallback
+    universal. Si el envío de una acción falla (ej. `api_key` vencida), sólo se loguea — Meta ya
+    recibió su 200 igual, para no generar reintentos del mismo webhook.
   - **`POST /messages/send` requiere autenticación interna** (`app/internal_auth.py::
     requerir_servicio_interno`, header `Authorization: Service-Token <token>` contra el mismo
     `CORE_SERVICE_TOKEN` que este servicio ya usa para autenticarse CONTRA Core) — a diferencia de

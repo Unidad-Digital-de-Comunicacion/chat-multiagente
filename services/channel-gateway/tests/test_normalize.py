@@ -53,6 +53,37 @@ def test_payload_vacio_no_rompe():
     assert normalizar_mensajes("messenger", {}) == []
 
 
+def test_ignora_eventos_de_postback():
+    # Messenger manda siempre texto plano (sin Button Template ni Generic
+    # Template — se probaron y no funcionaron bien en la práctica, ver
+    # `meta_client`), así que un evento de `postback` (por ejemplo, del
+    # botón "Get Started" de la página) no es una respuesta a un menú
+    # nuestro y se ignora, igual que un delivery receipt.
+    payload = {"entry": [{"messaging": [{
+        "sender": {"id": "PSID123"},
+        "postback": {"title": "Get Started", "payload": "GET_STARTED"},
+    }]}]}
+    assert normalizar_mensajes("messenger", payload) == []
+
+
+def test_respuesta_de_quick_reply_se_normaliza_como_el_payload_elegido():
+    # Instagram es el único que manda quick_replies hoy (Messenger volvió a
+    # texto plano, ver `meta_client`) — la normalización es genérica igual.
+    payload = {"entry": [{"messaging": [{
+        "sender": {"id": "PSID123"},
+        "message": {
+            "mid": "mid.1", "text": "Ventas",
+            "quick_reply": {"payload": "1"},
+        },
+    }]}]}
+    mensajes = normalizar_mensajes("instagram", payload)
+    assert len(mensajes) == 1
+    assert mensajes[0].remitente_id == "PSID123"
+    # El `payload` del quick reply (el `id` de la opción), no el título
+    # visible que el contacto "escribió" al tocarlo.
+    assert mensajes[0].texto == "1"
+
+
 def test_normaliza_un_mensaje_de_whatsapp():
     payload = {
         "entry": [{"id": "WABA_ID", "changes": [{"field": "messages", "value": {
@@ -94,3 +125,28 @@ def test_whatsapp_ignora_mensajes_que_no_son_de_texto():
 def test_whatsapp_ignora_changes_que_no_son_de_mensajes():
     payload = {"entry": [{"changes": [{"field": "message_template_status_update", "value": {}}]}]}
     assert normalizar_mensajes("whatsapp", payload) == []
+
+
+def test_whatsapp_respuesta_de_lista_nativa_se_normaliza_como_el_id_elegido():
+    payload = {
+        "entry": [{"changes": [{"field": "messages", "value": {"messages": [{
+            "from": "5493511234567", "type": "interactive", "timestamp": "1700000000",
+            "interactive": {"type": "list_reply", "list_reply": {"id": "2", "title": "Soporte"}},
+        }]}}]}],
+    }
+    mensajes = normalizar_mensajes("whatsapp", payload)
+    assert len(mensajes) == 1
+    assert mensajes[0].remitente_id == "5493511234567"
+    assert mensajes[0].texto == "2"
+
+
+def test_whatsapp_respuesta_de_boton_nativo_se_normaliza_como_el_id_elegido():
+    payload = {
+        "entry": [{"changes": [{"field": "messages", "value": {"messages": [{
+            "from": "5493511234567", "type": "interactive",
+            "interactive": {"type": "button_reply", "button_reply": {"id": "1", "title": "Ventas"}},
+        }]}}]}],
+    }
+    mensajes = normalizar_mensajes("whatsapp", payload)
+    assert len(mensajes) == 1
+    assert mensajes[0].texto == "1"

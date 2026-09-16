@@ -271,6 +271,10 @@ class HorarioAtencionGrillaTests(TestCase):
         response = authenticated_client(self.admin).post(self.url, {"celdas": ["nope"]}, format="json")
         self.assertEqual(response.status_code, 400)
 
+    def test_celdas_que_no_es_una_lista_falla(self):
+        response = authenticated_client(self.admin).post(self.url, {"celdas": "no-es-una-lista"}, format="json")
+        self.assertEqual(response.status_code, 400)
+
 
 class DiaExcepcionalGrillaTests(TestCase):
     """Editor de rango de días (mismo patrón que
@@ -358,6 +362,10 @@ class DiaExcepcionalGrillaTests(TestCase):
         )
         self.assertEqual(response.status_code, 200, response.data)
         self.assertFalse(DiaExcepcional.objects.filter(organization=self.org, fecha=dt.date(2026, 1, 5)).exists())
+
+    def test_dias_que_no_es_un_objeto_falla(self):
+        response = authenticated_client(self.admin).post(self.url, {"dias": ["2026-01-05"]}, format="json")
+        self.assertEqual(response.status_code, 400)
 
     def test_no_toca_el_catalogo_compartido_de_feriados(self):
         DiaExcepcional.objects.create(organization=None, fecha=dt.date(2026, 1, 5), tipo=DiaExcepcional.Tipo.FERIADO)

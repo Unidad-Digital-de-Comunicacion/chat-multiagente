@@ -46,27 +46,37 @@ function addMinutes(hhmm: string, minutes: number): string {
   const total = h * 60 + m + minutes;
   const hh = Math.floor(total / 60) % 24;
   const mm = total % 60;
+
   return `${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}`;
 }
 
 /** Convierte los slots de media hora pintados de un día en rangos legibles,
  * ej. "09:00-13:00, 14:00-18:00" — o "Cerrado" si no hay ninguno. */
 function resumenDeSlots(slots: string[], marcados: Set<string>): string {
-  const indices = slots.map((s, i) => (marcados.has(s) ? i : -1)).filter((i) => i !== -1);
+  const indices = slots.reduce<number[]>((acc, s, i) => {
+    if (marcados.has(s)) acc.push(i);
+
+    return acc;
+  }, []);
+
   if (indices.length === 0) return "Cerrado";
   const rangos: string[] = [];
   let inicio = indices[0];
   let anterior = indices[0];
+
   for (let i = 1; i < indices.length; i++) {
     if (indices[i] === anterior + 1) {
       anterior = indices[i];
       continue;
     }
+
     rangos.push(`${slots[inicio]}-${addMinutes(slots[anterior], 30)}`);
     inicio = indices[i];
     anterior = indices[i];
   }
+
   rangos.push(`${slots[inicio]}-${addMinutes(slots[anterior], 30)}`);
+
   return rangos.join(", ");
 }
 
@@ -88,6 +98,7 @@ function WeeklyGrid({ canEdit }: { canEdit: boolean }) {
     setSlots(data.slots);
     setSelected(new Set(data.celdas));
     setLoaded(true);
+
     if (data.slots.length) {
       setRangeDesde(data.slots[0]);
       setRangeHasta(addMinutes(data.slots[data.slots.length - 1], 30));
@@ -96,18 +107,23 @@ function WeeklyGrid({ canEdit }: { canEdit: boolean }) {
 
   useEffect(() => {
     load();
+
     const onUp = () => {
       painting.current = false;
     };
+
     window.addEventListener("mouseup", onUp);
+
     return () => window.removeEventListener("mouseup", onUp);
   }, []);
 
   function setCell(k: string, value: boolean) {
     setSelected((prev) => {
       const next = new Set(prev);
+
       if (value) next.add(k);
       else next.delete(k);
+
       return next;
     });
   }
@@ -137,6 +153,7 @@ function WeeklyGrid({ canEdit }: { canEdit: boolean }) {
     if (!rangeDesde || !rangeHasta) return;
     setSelected((prev) => {
       const next = new Set(prev);
+
       if (valor) {
         // "Marcar horario" reemplaza el horario de ESE día por exactamente
         // el rango elegido (no suma) — si no, no habría forma de "reducir"
@@ -144,14 +161,18 @@ function WeeklyGrid({ canEdit }: { canEdit: boolean }) {
         // lo de afuera del nuevo rango quedaría marcado igual.
         slots.forEach((s) => next.delete(key(rangeDia, s)));
       }
+
       slots.forEach((s) => {
         const fin = addMinutes(s, 30);
+
         if (s >= rangeDesde && fin <= rangeHasta) {
           const k = key(rangeDia, s);
+
           if (valor) next.add(k);
           else next.delete(k);
         }
       });
+
       return next;
     });
     setDiaResaltado(rangeDia);
@@ -162,20 +183,24 @@ function WeeklyGrid({ canEdit }: { canEdit: boolean }) {
     const lunesSet = new Set(lunesSeleccionados);
     setSelected((prev) => {
       const next = new Set(prev);
+
       for (let dia = 1; dia <= 6; dia++) {
         if (!incluirFinde && (dia === 5 || dia === 6)) continue;
         slots.forEach((s) => {
           const k = key(dia, s);
+
           if (lunesSet.has(s)) next.add(k);
           else next.delete(k);
         });
       }
+
       return next;
     });
   }
 
   async function guardar() {
     setSaving(true);
+
     try {
       await api.post("/api/core/horarios-atencion/grilla/", { celdas: Array.from(selected) });
       await load();
@@ -222,6 +247,7 @@ function WeeklyGrid({ canEdit }: { canEdit: boolean }) {
                 <select value={rangeHasta} onChange={(e) => setRangeHasta(e.target.value)}>
                   {slots.map((s) => {
                     const fin = addMinutes(s, 30);
+
                     return (
                       <option key={fin} value={fin}>
                         {fin}
@@ -284,6 +310,7 @@ function WeeklyGrid({ canEdit }: { canEdit: boolean }) {
                   <td className="grilla-hora">{slot}</td>
                   {DIA_SEMANA_LABELS.map((_, dia) => {
                     const isSel = selected.has(key(dia, slot));
+
                     return (
                       <td key={dia} className={dia === diaResaltado ? "columna-resaltada" : ""}>
                         <div
@@ -357,11 +384,15 @@ function MiniCalendar({
   const daysInMonth = new Date(year, month + 1, 0).getDate();
 
   const cells: (Date | null)[] = [];
+
   for (let i = 0; i < startOffset; i++) cells.push(null);
+
   for (let d = 1; d <= daysInMonth; d++) cells.push(new Date(year, month, d));
+
   while (cells.length % 7 !== 0) cells.push(null);
 
   const todayIso = toIso(new Date());
+
   const tituloMes = monthDate
     .toLocaleDateString("es-AR", { month: "long", year: "numeric" })
     .replace(/^\w/, (c) => c.toUpperCase());
@@ -387,6 +418,12 @@ function MiniCalendar({
           if (!date) return <div key={i} className="calendar-cell calendar-cell-empty" />;
           const iso = toIso(date);
           const tipo = markers[iso];
+          // SAFETY: `markers` sólo guarda tipos de día excepcional (nunca
+          // "NORMAL"), así que un `tipo` presente siempre es un
+          // `DiaExcepcionalTipo` — `labelTipo` acepta "NORMAL" además sólo
+          // para el <select> del formulario más abajo.
+          const titulo = tipo ? labelTipo(tipo as DiaExcepcionalTipo) : undefined;
+
           return (
             <button
               type="button"
@@ -397,7 +434,7 @@ function MiniCalendar({
                 (iso === todayIso ? " calendar-cell-today" : "") +
                 (tipo ? " calendar-cell-marked calendar-cell-" + tipo.toLowerCase() : "")
               }
-              title={tipo ? labelTipo(tipo as DiaExcepcionalTipo) : undefined}
+              title={titulo}
               onClick={() => onSelectDate(iso)}
             >
               {date.getDate()}
@@ -425,10 +462,12 @@ function ExceptionsEditor({ canEdit }: { canEdit: boolean }) {
 
   async function loadDia(fecha: string) {
     setError(null);
+
     try {
       const data = await api.get<GrillaDias>(`/api/core/dias-excepcionales/grilla/?desde=${fecha}&hasta=${fecha}`);
       setSlots(data.slots);
       setDia(data.dias[0]);
+
       if (data.slots.length) {
         setRangeDesde(data.slots[0]);
         setRangeHasta(addMinutes(data.slots[data.slots.length - 1], 30));
@@ -465,13 +504,17 @@ function ExceptionsEditor({ canEdit }: { canEdit: boolean }) {
       } catch {
         // noop
       }
+
       await loadProximosYMarcadores();
       await loadDia(selectedDate);
     })();
+
     const onUp = () => {
       painting.current = false;
     };
+
     window.addEventListener("mouseup", onUp);
+
     return () => window.removeEventListener("mouseup", onUp);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -486,14 +529,18 @@ function ExceptionsEditor({ canEdit }: { canEdit: boolean }) {
     addMode.current = willAdd;
     painting.current = true;
     const set = new Set(dia.celdas);
-    willAdd ? set.add(slot) : set.delete(slot);
+
+    if (willAdd) set.add(slot);
+    else set.delete(slot);
     actualizarDia({ celdas: Array.from(set) });
   }
 
   function handleMouseEnter(slot: string) {
     if (!canEdit || !painting.current || !dia || dia.tipo === "FERIADO" || dia.tipo === "ASUETO") return;
     const set = new Set(dia.celdas);
-    addMode.current ? set.add(slot) : set.delete(slot);
+
+    if (addMode.current) set.add(slot);
+    else set.delete(slot);
     actualizarDia({ celdas: Array.from(set) });
   }
 
@@ -505,6 +552,7 @@ function ExceptionsEditor({ canEdit }: { canEdit: boolean }) {
     const set = valor ? new Set<string>() : new Set(dia.celdas);
     slots.forEach((s) => {
       const fin = addMinutes(s, 30);
+
       if (s >= rangeDesde && fin <= rangeHasta) {
         if (valor) set.add(s);
         else set.delete(s);
@@ -517,6 +565,7 @@ function ExceptionsEditor({ canEdit }: { canEdit: boolean }) {
     if (!dia) return;
     setSaving(true);
     setError(null);
+
     try {
       await api.post("/api/core/dias-excepcionales/grilla/", {
         dias: { [selectedDate]: { tipo: dia.tipo, celdas: dia.celdas, descripcion: dia.descripcion } },
@@ -532,9 +581,11 @@ function ExceptionsEditor({ canEdit }: { canEdit: boolean }) {
 
   async function eliminar(d: DiaExcepcional) {
     if (d.organization === null) return; // catálogo compartido, no se borra desde acá
+
     if (!confirm(`¿Eliminar la excepción del ${d.fecha}?`)) return;
     await api.delete(`/api/core/dias-excepcionales/${d.id}/`);
     await loadProximosYMarcadores();
+
     if (d.fecha === selectedDate) await loadDia(selectedDate);
   }
 
@@ -625,6 +676,7 @@ function ExceptionsEditor({ canEdit }: { canEdit: boolean }) {
                       <select value={rangeHasta} onChange={(e) => setRangeHasta(e.target.value)}>
                         {slots.map((s) => {
                           const fin = addMinutes(s, 30);
+
                           return (
                             <option key={fin} value={fin}>
                               {fin}
@@ -652,6 +704,7 @@ function ExceptionsEditor({ canEdit }: { canEdit: boolean }) {
                   <tbody>
                     {slots.map((slot) => {
                       const isSel = dia.celdas.includes(slot);
+
                       return (
                         <tr key={slot} className={slot.endsWith(":00") ? "hora-en-punto" : undefined}>
                           <td className="grilla-hora">{slot}</td>

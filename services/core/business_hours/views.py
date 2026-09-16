@@ -17,7 +17,8 @@ from teams.models import Team
 from . import services
 from .models import DiaExcepcional, HorarioAtencion
 from .serializers import (
-    DiaExcepcionalSerializer, HorarioAtencionSerializer, HorarioHabilSerializer,
+    DiaExcepcionalSerializer, GrillaDiaExcepcionalInputSerializer, GrillaHorarioInputSerializer,
+    HorarioAtencionSerializer, HorarioHabilSerializer,
 )
 
 
@@ -49,9 +50,9 @@ class HorarioAtencionViewSet(OrganizationScopedModelViewSet):
 
         require_perm(request, "business_hours.change_horarioatencion")
 
-        celdas = request.data.get("celdas")
-        if not isinstance(celdas, list):
-            raise ValidationError({"celdas": "Se espera una lista de claves 'dia-HH:MM'."})
+        entrada = GrillaHorarioInputSerializer(data=request.data)
+        entrada.is_valid(raise_exception=True)
+        celdas = entrada.validated_data["celdas"]
 
         por_dia = {}
         for celda in celdas:
@@ -185,9 +186,9 @@ class DiaExcepcionalViewSet(OrganizationScopedModelViewSet):
 
         require_perm(request, "business_hours.change_diaexcepcional")
 
-        dias = request.data.get("dias")
-        if not isinstance(dias, dict):
-            raise ValidationError({"dias": "Se espera un objeto {fecha: {tipo, celdas}}."})
+        entrada = GrillaDiaExcepcionalInputSerializer(data=request.data)
+        entrada.is_valid(raise_exception=True)
+        dias = entrada.validated_data["dias"]
 
         tipos_validos = {choice for choice, _ in DiaExcepcional.Tipo.choices} | {"NORMAL"}
         a_borrar = []
@@ -197,10 +198,10 @@ class DiaExcepcionalViewSet(OrganizationScopedModelViewSet):
                 fecha = dt.date.fromisoformat(fecha_str)
             except ValueError:
                 raise ValidationError({"dias": f"Fecha inválida: {fecha_str!r}"})
-            tipo = (datos or {}).get("tipo")
+            tipo = datos.get("tipo")
             if tipo not in tipos_validos:
                 raise ValidationError({"dias": f"Tipo inválido para {fecha_str}: {tipo!r}"})
-            descripcion = ((datos or {}).get("descripcion") or "").strip()[:200]
+            descripcion = (datos.get("descripcion") or "").strip()[:200]
 
             if tipo == "NORMAL":
                 a_borrar.append(fecha)
@@ -208,7 +209,7 @@ class DiaExcepcionalViewSet(OrganizationScopedModelViewSet):
 
             hora_inicio = hora_fin = None
             if tipo == DiaExcepcional.Tipo.HORARIO_REDUCIDO:
-                celdas = (datos or {}).get("celdas") or []
+                celdas = datos.get("celdas") or []
                 try:
                     horas = [dt.datetime.strptime(c, "%H:%M").time() for c in celdas]
                 except ValueError:

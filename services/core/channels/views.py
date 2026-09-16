@@ -11,6 +11,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .defaults import asegurar_canales
+from .embedded_signup import IntercambioFallido, intercambiar_code_por_token
 from .health import verificar_conexion
 from .models import Canal
 from .serializers import CanalSerializer
@@ -43,7 +44,7 @@ class CanalViewSet(OrganizationScopedModelViewSet):
         # correcto es `change_canal`, y ya se pide a mano en el propio
         # método — acá sólo hace falta estar autenticado para no chocar con
         # esa regla que no aplica.
-        if self.action in ("verificar", "regenerar_webhook_secret"):
+        if self.action in ("verificar", "regenerar_webhook_secret", "whatsapp_exchange"):
             return [IsAuthenticated()]
         return super().get_permissions()
 
@@ -77,6 +78,32 @@ class CanalViewSet(OrganizationScopedModelViewSet):
         canal.save(update_fields=["webhook_secret"])
         return Response(self.get_serializer(canal).data)
 
+    @action(detail=True, methods=["post"], url_path="whatsapp-exchange")
+    def whatsapp_exchange(self, request, pk=None):
+        """Embedded Signup de WhatsApp: el SDK de Facebook en el navegador
+        termina el popup de alta y le da al frontend un `code` de un solo
+        uso (para cambiar acá por el `access_token` real) más `phone_
+        number_id`/`waba_id` (esos ya vienen resueltos del propio callback
+        del SDK, no hace falta pedírselos a Meta de nuevo)."""
+        require_perm(request, "channels.change_canal")
+        canal = self.get_object()
+        if canal.tipo != Canal.Tipo.WHATSAPP:
+            raise ValidationError("El Embedded Signup es sólo para WhatsApp.")
+        code = request.data.get("code")
+        if not code:
+            raise ValidationError("Falta el `code` del Embedded Signup.")
+
+        try:
+            access_token = intercambiar_code_por_token(code)
+        except IntercambioFallido as exc:
+            raise ValidationError(exc.detalle)
+
+        canal.api_key = access_token
+        canal.telefono_id = request.data.get("phone_number_id", canal.telefono_id)
+        canal.waba_id = request.data.get("waba_id", canal.waba_id)
+        canal.save(update_fields=["api_key", "telefono_id", "waba_id"])
+        return Response(self.get_serializer(canal).data)
+
 
 class InternalCanalConfigView(APIView):
     """Único lugar donde `api_key`/`webhook_secret` salen de Core en texto
@@ -94,11 +121,37 @@ class InternalCanalConfigView(APIView):
 
     def get(self, request, canal_uuid):
         canal = get_object_or_404(Canal, uuid=canal_uuid)
-        return Response({
-            "organization_id": canal.organization_id,
-            "tipo": canal.tipo,
-            "api_key": canal.api_key,
-            "telefono_id": canal.telefono_id,
-            "webhook_secret": canal.webhook_secret,
-            "activo": canal.activo,
-        })
+        return Response(_serializar_config(canal))
+
+
+class InternalCanalPorOrganizacionView(APIView):
+    """Mismos datos que `InternalCanalConfigView`, pero buscando por
+    `(organization_id, tipo)` en vez de por `uuid` — hace falta porque Meta
+    sólo deja configurar UNA Callback URL por app (no una por tipo de
+    canal): Messenger/Instagram/WhatsApp de una misma organización entregan
+    sus webhooks a la MISMA URL (la del canal que el Admin haya usado para
+    configurar la suscripción en el dashboard de Meta), distinguibles sólo
+    por el campo `object` del payload ("page"/"instagram"/
+    "whatsapp_business_account"), nunca por la URL. Cuando el `object` del
+    payload no coincide con el tipo del canal de la URL, Channel Gateway
+    usa esto para encontrar el canal "hermano" correcto de la misma
+    organización — ver `app/webhooks.py` del lado de Channel Gateway."""
+
+    authentication_classes = [ServiceTokenAuthentication]
+    permission_classes = [IsChannelGatewayService]
+
+    def get(self, request, organization_id, tipo):
+        canal = get_object_or_404(Canal, organization_id=organization_id, tipo=tipo.upper())
+        return Response(_serializar_config(canal))
+
+
+def _serializar_config(canal: Canal) -> dict:
+    return {
+        "organization_id": canal.organization_id,
+        "tipo": canal.tipo,
+        "api_key": canal.api_key,
+        "telefono_id": canal.telefono_id,
+        "waba_id": canal.waba_id,
+        "webhook_secret": canal.webhook_secret,
+        "activo": canal.activo,
+    }

@@ -1,0 +1,10 @@
+# anti-slop-py FastAPI group, layer 1: ready-made Ruff rules.
+# Merge only when `fastapi` is a direct dependency (or on explicit request).
+
+[lint]
+extend-select = [
+    "FAST", # FAST001 redundant response_model, FAST002 non-Annotated Depends,
+            # FAST003 unused path parameter
+    "ASYNC", # blocking I/O (open/sleep/subprocess/...) inside async routes;
+             # the top fastapi-best-practices rule, already implemented
+]

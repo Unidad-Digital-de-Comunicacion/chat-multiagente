@@ -57,10 +57,18 @@ class Conversacion(models.Model):
         "users.User", on_delete=models.SET_NULL, null=True, blank=True, related_name="conversaciones_asignadas",
         help_text="Vacío = en la bandeja sin asignar, cualquier operador de la organización la puede tomar.",
     )
+    bloqueada_hasta = models.DateTimeField(
+        null=True, blank=True,
+        help_text="Mientras esté en el futuro, sólo `operador` puede seguir operando esta "
+                   "conversación (tomarla de nuevo, responder) — otro operador no puede "
+                   "reclamarla hasta que venza. Se pone en +2 minutos al asignarla (por round-robin "
+                   "o a mano) y se renueva en cada `tomar`/`responder`; una vez vencida, cualquier "
+                   "operador la puede reclamar (ver `ConversacionViewSet.tomar`).",
+    )
     team = models.ForeignKey(
         "teams.Team", on_delete=models.SET_NULL, null=True, blank=True, related_name="conversaciones",
-        help_text="Se completa al elegir una opción de menú tipo Derivación. Todavía no filtra la "
-                   "bandeja por equipo (Fase 4/5) — por ahora sólo queda guardado.",
+        help_text="Se completa al elegir una opción de menú tipo Derivación — dispara la asignación "
+                   "round-robin dentro del equipo (`conversations.asignacion.asignar_round_robin`).",
     )
     nodo_menu_actual = models.ForeignKey(
         "menu.MenuOpcion", on_delete=models.SET_NULL, null=True, blank=True, related_name="+",

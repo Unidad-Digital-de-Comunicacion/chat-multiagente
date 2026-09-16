@@ -2,6 +2,12 @@
 // El front nunca decide qué puede hacer cada uno hardcodeando el nombre acá
 // — eso lo resuelve el back vía `Me.permissions`. Esta etiqueta es sólo
 // para mostrar el nombre lindo de un grupo en la UI.
+// Se indexa con nombres de grupo arbitrarios que vienen del back
+// (`GROUP_LABELS[g] ?? g`, con fallback al nombre crudo si no está
+// mapeado) — necesita el índice abierto de `Record<string, string>` a
+// propósito, un tipo con claves literales (`satisfies`) rompería ese
+// indexado dinámico bajo `strict`.
+// oxlint-disable-next-line anti-slop/no-known-value-widening
 export const GROUP_LABELS: Record<string, string> = {
   superusuarios: "Superusuario",
   administradores: "Administrador",
@@ -207,6 +213,8 @@ export interface Canal {
   tipo_display: string;
   api_key_configurada: boolean;
   api_key_preview: string | null;
+  api_key_valor: string | null;
+  telefono_id: string;
   webhook_url: string | null;
   webhook_secret: string | null;
   activo: boolean;

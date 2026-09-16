@@ -1,7 +1,7 @@
 import { type FormEvent, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
-import { api, ApiError } from "../api/client";
+import { api, extraerMensajeDeError } from "../api/client";
 
 export default function ResetPasswordPage() {
   const { uid, token } = useParams<{ uid: string; token: string }>();
@@ -15,20 +15,20 @@ export default function ResetPasswordPage() {
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
+
     if (password !== confirmar) {
       setError("Las contraseñas no coinciden.");
+
       return;
     }
+
     setSubmitting(true);
+
     try {
       await api.post("/api/auth/password-reset-confirm/", { uid, token, new_password: password });
       setOk(true);
     } catch (err) {
-      if (err instanceof ApiError && err.data && typeof err.data === "object") {
-        setError(Object.values(err.data as Record<string, string[]>).flat().join(" "));
-      } else {
-        setError("El link no es válido o ya venció. Pedí uno nuevo.");
-      }
+      setError(extraerMensajeDeError(err) ?? "El link no es válido o ya venció. Pedí uno nuevo.");
     } finally {
       setSubmitting(false);
     }

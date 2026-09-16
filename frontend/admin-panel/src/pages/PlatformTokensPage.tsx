@@ -43,11 +43,14 @@ export default function PlatformTokensPage() {
     ) {
       return;
     }
+
     setGeneratingId(token.id);
+
     try {
       const data = await api.post<{ token: string } & ServiceToken>(
         `/api/core/plataforma/tokens-servicios/${token.id}/generar/`,
       );
+
       setNuevoToken({ servicio: token.servicio_display, token: data.token });
       load();
     } catch (err) {
@@ -58,6 +61,7 @@ export default function PlatformTokensPage() {
   }
 
   if (error) return <div className="empty-state">{error}</div>;
+
   if (!tokens) return <div className="page-loading">Cargando…</div>;
 
   return (

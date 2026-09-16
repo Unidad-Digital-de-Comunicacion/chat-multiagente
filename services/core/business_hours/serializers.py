@@ -43,3 +43,21 @@ class DiaExcepcionalSerializer(serializers.ModelSerializer):
 class HorarioHabilSerializer(serializers.Serializer):
     en_horario = serializers.BooleanField()
     proxima_apertura = serializers.DateTimeField(allow_null=True)
+
+
+class GrillaHorarioInputSerializer(serializers.Serializer):
+    """Body de `HorarioAtencionViewSet.grilla` (POST) — el parseo real de
+    cada clave "dia-HH:MM" sigue pasando a mano en la vista, esto sólo
+    reemplaza el `isinstance(celdas, list)` ad hoc por un parseo real en
+    el borde."""
+
+    celdas = serializers.ListField(child=serializers.CharField(), allow_empty=True)
+
+
+class GrillaDiaExcepcionalInputSerializer(serializers.Serializer):
+    """Body de `DiaExcepcionalViewSet.grilla` (POST) — sólo valida la forma
+    general `{fecha: {...}}`; la validación de cada entrada (tipo válido,
+    horas, etc.) sigue en la vista porque depende de reglas entre campos
+    que no son un simple chequeo de tipo."""
+
+    dias = serializers.DictField(child=serializers.DictField())

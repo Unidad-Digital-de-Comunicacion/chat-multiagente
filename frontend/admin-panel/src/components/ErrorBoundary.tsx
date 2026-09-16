@@ -6,6 +6,11 @@ import { Component, type ErrorInfo, type ReactNode } from "react";
  * navegador. Envuelve toda la app (`main.tsx`) para mostrar al menos un
  * mensaje legible con el error, en vez de una pantalla en blanco. */
 export default class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
+  // La anotación explícita hace falta de verdad acá — sin ella, con
+  // `useDefineForClassFields`, TS infiere el campo como `{ error: null }`
+  // (el tipo literal del inicializador) en vez de tomar el `State` del
+  // genérico de arriba, y `this.state.error` pasa a tipar como `never`.
+  // oxlint-disable-next-line anti-slop/no-known-value-widening
   state: { error: Error | null } = { error: null };
 
   static getDerivedStateFromError(error: Error) {
@@ -37,6 +42,7 @@ export default class ErrorBoundary extends Component<{ children: ReactNode }, { 
         </div>
       );
     }
+
     return this.props.children;
   }
 }

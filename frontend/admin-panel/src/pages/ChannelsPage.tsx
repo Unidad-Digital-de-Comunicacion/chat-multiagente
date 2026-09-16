@@ -1,6 +1,6 @@
 import { type FormEvent, useEffect, useState } from "react";
 
-import { api, ApiError } from "../api/client";
+import { api, ApiError, extraerMensajeDeError } from "../api/client";
 import Modal from "../components/Modal";
 import { useAuth } from "../auth/AuthContext";
 import { hasPerm } from "../auth/permissions";
@@ -15,6 +15,18 @@ export default function ChannelsPage() {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [verifyingId, setVerifyingId] = useState<number | null>(null);
   const [webhookId, setWebhookId] = useState<number | null>(null);
+  const [visibles, setVisibles] = useState<Set<number>>(new Set());
+
+  function alternarVisible(id: number) {
+    setVisibles((prev) => {
+      const next = new Set(prev);
+
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+
+      return next;
+    });
+  }
 
   async function load() {
     try {
@@ -42,6 +54,7 @@ export default function ChannelsPage() {
 
   async function verificar(canal: Canal) {
     setVerifyingId(canal.id);
+
     try {
       await api.post(`/api/core/canales/${canal.id}/verificar/`);
       load();
@@ -53,6 +66,7 @@ export default function ChannelsPage() {
   }
 
   if (error) return <div className="empty-state">{error}</div>;
+
   if (!canales) return <div className="page-loading">Cargando…</div>;
 
   return (
@@ -61,9 +75,9 @@ export default function ChannelsPage() {
         <h2>Canales</h2>
       </div>
       <p className="text-muted">
-        Api key y estado de cada canal de mensajería. Messenger e Instagram ya tienen conexión real a través de
-        Channel Gateway — "Datos del webhook" tiene la URL y el secreto que hay que cargar en la app de Meta para
-        que los mensajes entrantes lleguen. WhatsApp todavía no está conectado.
+        Api key y estado de cada canal de mensajería. Messenger, Instagram y WhatsApp ya tienen conexión real a
+        través de Channel Gateway — "Datos del webhook" tiene la URL y el secreto que hay que cargar en la app de
+        Meta para que los mensajes entrantes lleguen.
       </p>
 
       <div className="card">
@@ -80,10 +94,24 @@ export default function ChannelsPage() {
           <tbody>
             {canales.map((c) => (
               <tr key={c.id}>
-                <td>{c.tipo_display}</td>
+                <td>
+                  {c.tipo_display}
+                  {c.tipo === "WHATSAPP" && (
+                    <div className="text-muted small">
+                      {c.telefono_id ? `Phone Number ID: ${c.telefono_id}` : "Sin Phone Number ID"}
+                    </div>
+                  )}
+                </td>
                 <td>
                   {c.api_key_configurada ? (
-                    <span className="field">{c.api_key_preview}</span>
+                    <>
+                      <span className="field">
+                        {visibles.has(c.id) ? c.api_key_valor : c.api_key_preview}
+                      </span>{" "}
+                      <button className="btn btn-ghost" type="button" onClick={() => alternarVisible(c.id)}>
+                        {visibles.has(c.id) ? "Ocultar" : "Mostrar"}
+                      </button>
+                    </>
                   ) : (
                     <span className="text-muted">Sin configurar</span>
                   )}
@@ -152,6 +180,7 @@ function EstadoConexion({ canal }: { canal: Canal }) {
   if (!canal.ultimo_chequeo_at) {
     return <span className="text-muted">Todavía no se verificó</span>;
   }
+
   if (canal.ultimo_chequeo_ok === null) {
     // Webchat: se "verificó" pero no hay servidor externo que consultar.
     return (
@@ -162,6 +191,7 @@ function EstadoConexion({ canal }: { canal: Canal }) {
   }
 
   const fecha = new Date(canal.ultimo_chequeo_at).toLocaleString("es-AR");
+
   return (
     <div>
       <span className={"badge" + (canal.ultimo_chequeo_ok ? "" : " badge-warning")}>
@@ -196,6 +226,7 @@ function WebhookModal({
     if (!confirm("¿Regenerar el secreto del webhook? El anterior deja de funcionar — hay que volver a pegar el nuevo en la configuración del webhook de Meta.")) return;
     setRegenerando(true);
     setError(null);
+
     try {
       await api.post(`/api/core/canales/${canal.id}/regenerar-webhook-secret/`);
       onRegenerado();
@@ -211,6 +242,12 @@ function WebhookModal({
       <p className="text-muted">
         Pegar esta URL y este secreto en la configuración del webhook de la app de Meta para este canal —
         Meta manda acá los mensajes entrantes de esta organización puntual.
+      </p>
+      <p className="text-muted">
+        Meta sólo deja configurar <strong>una</strong> Callback URL por app, no una por canal — si vas a
+        conectar más de uno (WhatsApp/Messenger/Instagram), usá esta misma URL y este mismo secreto para las
+        tres suscripciones en el dashboard de Meta. El sistema distingue de qué canal es cada mensaje por su
+        contenido, no por cuál de las URLs lo recibió.
       </p>
       <div className="form-stack">
         <label>
@@ -236,6 +273,12 @@ function WebhookModal({
   );
 }
 
+// `telefono_id` sólo se manda para canales WHATSAPP (ver `handleSubmit`).
+interface CanalApiKeyPayload {
+  api_key: string;
+  telefono_id?: string;
+}
+
 function ApiKeyModal({
   canal, onClose, onSaved,
 }: {
@@ -244,6 +287,7 @@ function ApiKeyModal({
   onSaved: () => void;
 }) {
   const [apiKey, setApiKey] = useState("");
+  const [telefonoId, setTelefonoId] = useState(canal.telefono_id || "");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -251,15 +295,15 @@ function ApiKeyModal({
     e.preventDefault();
     setError(null);
     setSubmitting(true);
+
     try {
-      await api.patch(`/api/core/canales/${canal.id}/`, { api_key: apiKey });
+      const body: CanalApiKeyPayload = { api_key: apiKey };
+
+      if (canal.tipo === "WHATSAPP") body.telefono_id = telefonoId;
+      await api.patch(`/api/core/canales/${canal.id}/`, body);
       onSaved();
     } catch (err) {
-      if (err instanceof ApiError && err.data && typeof err.data === "object") {
-        setError(Object.values(err.data as Record<string, string[]>).flat().join(" "));
-      } else {
-        setError("No se pudo guardar.");
-      }
+      setError(extraerMensajeDeError(err) ?? "No se pudo guardar.");
     } finally {
       setSubmitting(false);
     }
@@ -270,8 +314,8 @@ function ApiKeyModal({
       <form onSubmit={handleSubmit} className="form-stack">
         {canal.api_key_configurada && (
           <p className="text-muted">
-            Ya hay una cargada (<span className="field">{canal.api_key_preview}</span>). Escribir una nueva la
-            reemplaza — no se puede volver a ver la anterior.
+            Ya hay una cargada (<span className="field">{canal.api_key_preview}</span> — se puede ver entera con
+            el botón "Mostrar" de la tabla). Escribir una nueva la reemplaza.
           </p>
         )}
         <label>
@@ -279,12 +323,23 @@ function ApiKeyModal({
           <input
             required
             autoFocus
-            type="password"
+            type="text"
             value={apiKey}
             onChange={(e) => setApiKey(e.target.value)}
             placeholder="Pegar la api key del canal"
           />
         </label>
+        {canal.tipo === "WHATSAPP" && (
+          <label>
+            Phone Number ID
+            <input
+              type="text"
+              value={telefonoId}
+              onChange={(e) => setTelefonoId(e.target.value)}
+              placeholder="El phone_number_id de la Cloud API"
+            />
+          </label>
+        )}
         {error && <div className="form-error">{error}</div>}
         <button className="btn btn-primary" type="submit" disabled={submitting}>
           {submitting ? "Guardando…" : "Guardar"}

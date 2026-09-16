@@ -11,7 +11,7 @@ from common.permissions import StrictDjangoModelPermissions, require_organizatio
 from common.viewsets import OrganizationScopedModelViewSet
 
 from .models import MenuOpcion
-from .serializers import MenuOpcionSerializer, MenuOpcionTreeSerializer
+from .serializers import MenuOpcionSerializer, MenuOpcionTreeSerializer, ReordenarInputSerializer
 
 
 class MenuOpcionViewSet(OrganizationScopedModelViewSet):
@@ -49,10 +49,10 @@ class MenuOpcionViewSet(OrganizationScopedModelViewSet):
         require_perm(request, "menu.change_menuopcion")
 
         organization_id = require_organization(request)
-        parent_id = request.data.get("parent_id")
-        orden = request.data.get("orden")
-        if not isinstance(orden, list) or not orden:
-            raise ValidationError({"orden": "Se espera una lista de ids no vacía."})
+        entrada = ReordenarInputSerializer(data=request.data)
+        entrada.is_valid(raise_exception=True)
+        parent_id = entrada.validated_data.get("parent_id")
+        orden = entrada.validated_data["orden"]
 
         parent = None
         if parent_id is not None:

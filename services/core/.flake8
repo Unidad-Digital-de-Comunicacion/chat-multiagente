@@ -1,0 +1,17 @@
+# anti-slop-py (paquete, ver requirements-dev.txt) registra las reglas ASP
+# vía entry points — nada que vendorizar acá. Alcance acotado a propósito:
+# sólo ASP por ahora, sin los códigos extra de Ruff ni mypy estricto.
+#
+# ASP003 (module mocking) queda afuera a propósito: los tests de acá prueban
+# contra el cliente HTTP real de Django/DRF (`authenticated_client(...).
+# post(url)`, cobertura real de URL routing/permisos), no llamando funciones
+# sueltas — Django no tiene un equivalente al `Depends()`/`dependency_
+# overrides` de FastAPI para inyectar un fake por request sin tocar el
+# import. `unittest.mock.patch` en el límite de I/O externo (`requests.get`
+# de feriados/health-checks/embedded-signup, `enviar_mensaje_saliente` hacia
+# Channel Gateway) es la convención estándar de Django para esto, no un
+# atajo — ver services/channel-gateway/app/http_client.py para el caso
+# FastAPI, donde sí existe ese seam y se usó en vez de parchear.
+[flake8]
+select = ASP
+extend-ignore = ASP003

@@ -14,6 +14,7 @@ export default function ForgotUsernamePage() {
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setSubmitting(true);
+
     try {
       await api.post("/api/auth/username-reset/", { dni });
     } catch {

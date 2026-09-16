@@ -6,10 +6,12 @@ sigue sin existir, ver docs/CONTEXTO_PROYECTO.md. Protegido con `internal_
 auth.requerir_servicio_interno` — a diferencia de `/webhooks/*` (a
 propósito público, lo llama Meta), esto sólo debería poder llamarlo OTRO
 servicio interno del proyecto."""
+import httpx
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from .core_client import CanalNoEncontrado, CoreNoDisponible, obtener_canal
+from .http_client import get_http_client
 from .internal_auth import requerir_servicio_interno
 from .meta_client import EnvioFallido, enviar_texto_por_canal
 
@@ -24,10 +26,15 @@ class EnviarMensajeRequest(BaseModel):
     texto: str
 
 
-@router.post("/messages/send", dependencies=[Depends(requerir_servicio_interno)])
-async def enviar_mensaje(body: EnviarMensajeRequest):
+class EnviarMensajeResponse(BaseModel):
+    status: str
+    graph_api_response: dict
+
+
+@router.post("/messages/send", dependencies=[Depends(requerir_servicio_interno)], response_model=EnviarMensajeResponse)
+async def enviar_mensaje(body: EnviarMensajeRequest, client: httpx.AsyncClient = Depends(get_http_client)):
     try:
-        canal = await obtener_canal(body.canal_uuid)
+        canal = await obtener_canal(client, body.canal_uuid)
     except CanalNoEncontrado:
         raise HTTPException(status_code=404, detail="No existe ese canal.")
     except CoreNoDisponible as exc:
@@ -39,7 +46,7 @@ async def enviar_mensaje(body: EnviarMensajeRequest):
         raise HTTPException(status_code=400, detail="El canal está desactivado.")
 
     try:
-        resultado = await enviar_texto_por_canal(canal, body.destinatario_id, body.texto)
+        resultado = await enviar_texto_por_canal(client, canal, body.destinatario_id, body.texto)
     except EnvioFallido as exc:
         raise HTTPException(status_code=502, detail=exc.detalle)
-    return {"status": "ok", "graph_api_response": resultado}
+    return EnviarMensajeResponse(status="ok", graph_api_response=resultado)

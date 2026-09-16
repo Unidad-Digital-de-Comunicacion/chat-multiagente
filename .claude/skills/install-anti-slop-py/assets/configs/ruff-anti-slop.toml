@@ -1,0 +1,17 @@
+# anti-slop-py layer 1: ready-made Ruff rules.
+# Merge these fields into the target repository's Ruff configuration
+# (pyproject.toml under [tool.ruff.*] or ruff.toml); never replace
+# existing selections or settings.
+
+[lint]
+extend-select = [
+    "ANN401", # bans `Any` in parameters and returns (no-unknown-parameters/returns)
+    "PGH003", # bans blanket `# type: ignore` (part of require-safety-comment)
+    "B009",   # bans getattr with a constant name (constant half of no-reflect-get)
+    "B010",   # bans setattr with a constant name
+    "TID251", # banned APIs, listed below (import half of no-module-mocking)
+]
+
+[lint.flake8-tidy-imports.banned-api]
+"unittest.mock.patch".msg = "Module mocking hides real seams; inject the dependency instead (anti-slop no-module-mocking)."
+"typing.Any".msg = "Any erases evidence; declare the owner type or parse at the boundary. Remove this ban if mypy disallow_any_explicit already enforces it."

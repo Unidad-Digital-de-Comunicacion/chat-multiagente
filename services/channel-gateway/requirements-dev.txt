@@ -1,2 +1,4 @@
 -r requirements.txt
 pytest==8.3.3
+flake8==7.3.0
+anti-slop-py==0.1.1

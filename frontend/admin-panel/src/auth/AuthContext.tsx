@@ -22,9 +22,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const data = await api.get<Me>("/api/core/users/me/");
       setMe(data);
+
       return data;
     } catch {
       setMe(null);
+
       return null;
     } finally {
       setLoading(false);
@@ -46,7 +48,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // próximo render) — devolvemos el valor recién cargado para que quien llama a `login`
     // (ej. `LoginPage`, para decidir a dónde navegar) no dependa de un closure viejo.
     const nuevoMe = await loadMe();
+
     if (!nuevoMe) throw new Error("No se pudo cargar el perfil después de iniciar sesión.");
+
     return nuevoMe;
   }
 
@@ -62,6 +66,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
 export function useAuth(): AuthState {
   const ctx = useContext(AuthContext);
+
   if (!ctx) throw new Error("useAuth debe usarse dentro de <AuthProvider>");
+
   return ctx;
 }

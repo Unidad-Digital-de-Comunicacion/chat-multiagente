@@ -72,6 +72,8 @@ services:
       - FRONTEND_URL=${FRONTEND_URL}
       - CHANNEL_GATEWAY_PUBLIC_URL=${CHANNEL_GATEWAY_PUBLIC_URL}
       - CHANNEL_GATEWAY_INTERNAL_URL=${CHANNEL_GATEWAY_INTERNAL_URL:-http://channel-gateway:8000}
+      - META_APP_ID=${META_APP_ID}
+      - META_APP_SECRET=${META_APP_SECRET}
     volumes:
       - jwt_keys:/app/keys
       - media_files:/app/mediafiles

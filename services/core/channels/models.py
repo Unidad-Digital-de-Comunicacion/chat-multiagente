@@ -57,6 +57,13 @@ class Canal(models.Model):
                    "Instagram, ahí el token solo no alcanza para mandar mensajes. No es secreto (es "
                    "un identificador, no una credencial), así que se devuelve tal cual por la API.",
     )
+    waba_id = models.CharField(
+        max_length=64, blank=True, verbose_name="WhatsApp Business Account ID",
+        help_text="Sólo WhatsApp: identifica la cuenta de WhatsApp Business dueña del número — no "
+                   "hace falta para mandar/recibir mensajes (eso usa `telefono_id`), pero lo entrega "
+                   "el Embedded Signup y sirve para futuras operaciones a nivel de cuenta (plantillas, "
+                   "info del negocio). Tampoco es secreto.",
+    )
     webhook_secret = models.CharField(
         max_length=64, blank=True,
         help_text="Generado por Core (nunca por Channel Gateway) al crear el canal — es el "

@@ -52,7 +52,10 @@ class CanalViewSetTests(TestCase):
         )
         self.assertEqual(authenticated_client(superusuario).get(self.list_url).status_code, 403)
 
-    def test_api_key_nunca_se_devuelve_por_la_api(self):
+    def test_el_campo_write_only_api_key_nunca_vuelve_por_la_api(self):
+        # El campo de ESCRITURA `api_key` nunca vuelve tal cual (write-only
+        # de verdad) — `api_key_valor` es un campo de LECTURA aparte,
+        # deliberado (ver el test de abajo), no lo mismo.
         authenticated_client(self.admin_a).get(self.list_url)
         canal = Canal.objects.get(organization=self.org_a, tipo="WHATSAPP")
         url = reverse("canal-detail", args=[canal.id])
@@ -63,6 +66,24 @@ class CanalViewSetTests(TestCase):
         self.assertTrue(response.data["api_key_configurada"])
         canal.refresh_from_db()
         self.assertEqual(canal.api_key, "secreta-1234")
+
+    def test_api_key_valor_devuelve_el_valor_completo_a_proposito(self):
+        # Excepción deliberada, pedida a mano: a diferencia del resto del
+        # patrón write-only/preview de arriba, esto SÍ expone la
+        # credencial completa — el Admin Panel decide si la muestra.
+        authenticated_client(self.admin_a).get(self.list_url)
+        canal = Canal.objects.get(organization=self.org_a, tipo="WHATSAPP")
+        url = reverse("canal-detail", args=[canal.id])
+        response = authenticated_client(self.admin_a).patch(url, {"api_key": "secreta-1234"})
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data["api_key_valor"], "secreta-1234")
+
+    def test_api_key_valor_es_null_sin_api_key_cargada(self):
+        authenticated_client(self.admin_a).get(self.list_url)
+        canal = Canal.objects.get(organization=self.org_a, tipo="INSTAGRAM")
+        url = reverse("canal-detail", args=[canal.id])
+        response = authenticated_client(self.admin_a).get(url)
+        self.assertIsNone(response.data["api_key_valor"])
 
     def test_api_key_larga_como_un_token_real_de_whatsapp_se_guarda_entera(self):
         # Reproduce un DataError real: un token de sistema de la Cloud API
@@ -313,3 +334,107 @@ class InternalCanalConfigViewTests(TestCase):
         client.credentials(HTTP_AUTHORIZATION="Service-Token token-de-gateway")
         response = client.get(otro_url)
         self.assertEqual(response.status_code, 404)
+
+
+class InternalCanalPorOrganizacionViewTests(TestCase):
+    """`GET /api/core/internal/canales/organizacion/<id>/<tipo>/` — Meta
+    manda Messenger/Instagram/WhatsApp de una misma organización a la MISMA
+    Callback URL (sólo deja configurar una por app), así que Channel
+    Gateway necesita poder encontrar el canal "hermano" correcto de la
+    misma organización cuando el `object` real del payload no coincide con
+    el canal de la URL que Meta llamó."""
+
+    def setUp(self):
+        self.org = make_organization()
+        self.admin = make_user(self.org, groups=["administradores"])
+        authenticated_client(self.admin).get(reverse("canal-list"))  # autogenera los 4
+        self.instagram = Canal.objects.get(organization=self.org, tipo="INSTAGRAM")
+        self.instagram.api_key = "ig-token"
+        self.instagram.save(update_fields=["api_key"])
+        ServiceToken.objects.create(
+            servicio=ServiceToken.Servicio.CHANNEL_GATEWAY, token="token-de-gateway", activo=True,
+        )
+        self.url = reverse("internal-canal-por-organizacion", args=[self.org.id, "instagram"])
+
+    def _get(self, token="token-de-gateway"):
+        client = APIClient()
+        if token is not None:
+            client.credentials(HTTP_AUTHORIZATION=f"Service-Token {token}")
+        return client.get(self.url)
+
+    def test_encuentra_el_canal_por_organizacion_y_tipo(self):
+        response = self._get()
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data["tipo"], "INSTAGRAM")
+        self.assertEqual(response.data["api_key"], "ig-token")
+        self.assertEqual(response.data["webhook_secret"], self.instagram.webhook_secret)
+
+    def test_tipo_en_minuscula_tambien_funciona(self):
+        # `self.url` ya se armó con "instagram" en minúscula en el setUp —
+        # confirma que el `.upper()` de la vista lo normaliza bien.
+        response = self._get()
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["tipo"], "INSTAGRAM")
+
+    def test_organizacion_o_tipo_inexistente_da_404(self):
+        url = reverse("internal-canal-por-organizacion", args=[999999, "instagram"])
+        client = APIClient()
+        client.credentials(HTTP_AUTHORIZATION="Service-Token token-de-gateway")
+        self.assertEqual(client.get(url).status_code, 404)
+
+    def test_requiere_service_token(self):
+        response = self._get(token=None)
+        self.assertEqual(response.status_code, 401)
+
+
+class WhatsappExchangeTests(TestCase):
+    """`POST /canales/{id}/whatsapp-exchange/` — el frontend le pasa el
+    `code` que le dio el SDK de Facebook al terminar el Embedded Signup
+    (más `phone_number_id`/`waba_id`, que vienen del mismo callback del
+    SDK), y esto lo cambia por el `access_token` real contra Meta."""
+
+    def setUp(self):
+        self.org = make_organization()
+        self.admin = make_user(self.org, groups=["administradores"])
+        self.operador = make_user(self.org, groups=["operadores"])
+        authenticated_client(self.admin).get(reverse("canal-list"))  # autogenera los 4
+        self.whatsapp = Canal.objects.get(organization=self.org, tipo="WHATSAPP")
+        self.messenger = Canal.objects.get(organization=self.org, tipo="MESSENGER")
+        self.url = reverse("canal-whatsapp-exchange", args=[self.whatsapp.id])
+
+    def test_intercambio_exitoso_guarda_todo(self):
+        mock_response = Mock(status_code=200, content=b"1")
+        mock_response.json.return_value = {"access_token": "el-token-real"}
+        with patch("channels.embedded_signup.requests.get", return_value=mock_response) as mock_get:
+            response = authenticated_client(self.admin).post(self.url, {
+                "code": "el-code-del-popup", "phone_number_id": "111222333", "waba_id": "444555666",
+            })
+        self.assertEqual(response.status_code, 200, response.data)
+        mock_get.assert_called_once()
+        self.whatsapp.refresh_from_db()
+        self.assertEqual(self.whatsapp.api_key, "el-token-real")
+        self.assertEqual(self.whatsapp.telefono_id, "111222333")
+        self.assertEqual(self.whatsapp.waba_id, "444555666")
+
+    def test_falta_el_code(self):
+        response = authenticated_client(self.admin).post(self.url, {"phone_number_id": "111"})
+        self.assertEqual(response.status_code, 400)
+
+    def test_no_aplica_a_otro_tipo_de_canal(self):
+        url = reverse("canal-whatsapp-exchange", args=[self.messenger.id])
+        response = authenticated_client(self.admin).post(url, {"code": "x"})
+        self.assertEqual(response.status_code, 400)
+
+    def test_error_de_meta_no_guarda_nada(self):
+        mock_response = Mock(status_code=400, content=b"1")
+        mock_response.json.return_value = {"error": {"message": "Invalid verification code format."}}
+        with patch("channels.embedded_signup.requests.get", return_value=mock_response):
+            response = authenticated_client(self.admin).post(self.url, {"code": "code-invalido"})
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertIn("Invalid verification code format", str(response.data))
+        self.whatsapp.refresh_from_db()
+        self.assertEqual(self.whatsapp.api_key, "")
+
+    def test_operador_no_puede_usarlo(self):
+        response = authenticated_client(self.operador).post(self.url, {"code": "x"})
+        self.assertEqual(response.status_code, 403)

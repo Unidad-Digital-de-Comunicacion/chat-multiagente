@@ -1,6 +1,6 @@
-import { type FormEvent, useEffect, useState } from "react";
+import { type ChangeEvent, type FormEvent, useEffect, useState } from "react";
 
-import { api, ApiError } from "../api/client";
+import { api, ApiError, extraerMensajeDeError } from "../api/client";
 import Modal from "../components/Modal";
 import { useAuth } from "../auth/AuthContext";
 import { hasPerm } from "../auth/permissions";
@@ -68,14 +68,17 @@ export default function MenuPage() {
   function toggleCollapse(id: number) {
     setCollapsed((prev) => {
       const next = new Set(prev);
+
       if (next.has(id)) next.delete(id);
       else next.add(id);
+
       return next;
     });
   }
 
   async function reordenar(parentId: number | null, orden: number[]) {
     setError(null);
+
     try {
       await api.post("/api/core/menu-opciones/reordenar/", { parent_id: parentId, orden });
       await loadTree();
@@ -241,7 +244,9 @@ function MenuChildrenList({
 
 function DropIndicator({ active, onDrop }: { active: boolean; onDrop: () => void }) {
   const [hover, setHover] = useState(false);
+
   if (!active) return <div className="menu-drop-indicator" />;
+
   return (
     <div
       className={"menu-drop-indicator" + (hover ? " menu-drop-indicator-active" : "")}
@@ -278,6 +283,7 @@ function MenuCard({
   onAddChild?: () => void;
 }) {
   const [hover, setHover] = useState(false);
+
   return (
     <div
       className={
@@ -355,17 +361,23 @@ function mensajeDeNodo(
   if (node.tipo === "RESPUESTA") {
     return { caption: "Respuesta", texto: node.respuesta_texto || "(sin texto todavía)" };
   }
+
   if (node.tipo === "DERIVACION") {
     const base = botMessages?.derivacion_mensaje?.trim() || botMessages?.valores_efectivos?.derivacion_mensaje
       || "Te derivamos con un operador. En breve te van a contactar. 🕑";
+
     const equipo = teams.find((t) => t.id === node.team)?.name ?? "un equipo";
+
     return { caption: `Deriva a "${equipo}"`, texto: aplicarVariables(base, { area, nombre: "Juan" }) };
   }
+
   if (node.tipo === "TERMINAR") {
     const base = botMessages?.mensaje_despedida?.trim() || botMessages?.valores_efectivos?.mensaje_despedida
       || "Gracias por contactarnos. ¡Hasta luego!";
+
     return { caption: "Despedida", texto: aplicarVariables(base, { nombre: "Juan" }) };
   }
+
   return null;
 }
 
@@ -387,18 +399,25 @@ function MenuWhatsAppPreview({
 
   function elegir(node: MenuOpcionTreeNode) {
     setRespuesta(null);
+
     if (node.tipo === "SUBMENU") {
       setPath((p) => [...p, node]);
+
       return;
     }
+
     if (node.tipo === "INICIO") {
       setPath([]);
+
       return;
     }
+
     if (node.tipo === "VOLVER") {
       setPath((p) => p.slice(0, -1));
+
       return;
     }
+
     setRespuesta(mensajeDeNodo(node, botMessages, teams, areaActual));
   }
 
@@ -429,6 +448,17 @@ function MenuWhatsAppPreview({
 
 const TIPOS: MenuTipo[] = ["SUBMENU", "RESPUESTA", "DERIVACION", "VOLVER", "INICIO", "TERMINAR"];
 
+// Body de POST/PATCH a `menu-opciones` — `respuesta_texto`/`team`/`parent`
+// sólo se mandan según `tipo` (ver `handleSubmit` de `MenuOpcionFormModal`).
+interface MenuOpcionPayload {
+  texto: string;
+  tipo: MenuTipo;
+  activo: boolean;
+  respuesta_texto?: string;
+  team?: number | null;
+  parent?: number | null;
+}
+
 function MenuOpcionFormModal({
   parentId, node, teams, botMessages, onClose, onSaved,
 }: {
@@ -451,27 +481,34 @@ function MenuOpcionFormModal({
     e.preventDefault();
     setError(null);
     setSubmitting(true);
+
     try {
-      const body: Record<string, unknown> = { texto, tipo, activo };
+      const body: MenuOpcionPayload = { texto, tipo, activo };
+
       if (tipo === "RESPUESTA") body.respuesta_texto = respuestaTexto;
+
       if (tipo === "DERIVACION") body.team = teamId || null;
+
       if (!node) body.parent = parentId;
 
       if (node) await api.patch(`/api/core/menu-opciones/${node.id}/`, body);
       else await api.post("/api/core/menu-opciones/", body);
       onSaved();
     } catch (err) {
-      if (err instanceof ApiError && err.data && typeof err.data === "object") {
-        setError(Object.values(err.data as Record<string, string[]>).flat().join(" "));
-      } else {
-        setError("No se pudo guardar.");
-      }
+      setError(extraerMensajeDeError(err) ?? "No se pudo guardar.");
     } finally {
       setSubmitting(false);
     }
   }
 
   const mensajePreview = mensajeDeNodo({ tipo, respuesta_texto: respuestaTexto, team: teamId || null }, botMessages, teams, "este menú");
+
+  function handleTipoChange(e: ChangeEvent<HTMLSelectElement>) {
+    // SAFETY: las <option> de este <select> salen de `TIPOS` (MenuTipo[])
+    // más abajo, así que el value siempre es uno de esos literales aunque
+    // el DOM lo tipe como string.
+    setTipo(e.target.value as MenuTipo);
+  }
 
   return (
     <Modal title={node ? "Editar opción" : "Nueva opción"} onClose={onClose} wide>
@@ -483,7 +520,7 @@ function MenuOpcionFormModal({
           </label>
           <label>
             Tipo
-            <select value={tipo} onChange={(e) => setTipo(e.target.value as MenuTipo)}>
+            <select value={tipo} onChange={handleTipoChange}>
               {TIPOS.map((t) => (
                 <option key={t} value={t}>
                   {MENU_TIPO_LABELS[t]}

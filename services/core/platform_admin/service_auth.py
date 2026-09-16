@@ -50,7 +50,12 @@ class IsChannelGatewayService(BasePermission):
 
     def has_permission(self, request, view):
         auth = request.auth
-        return bool(isinstance(auth, ServiceToken) and auth.servicio == ServiceToken.Servicio.CHANNEL_GATEWAY)
+        # No es un "ad hoc narrowing" de input externo sin parsear: `request.
+        # auth` ya lo tipó `ServiceTokenAuthentication` más arriba (un
+        # `ServiceToken` real o `None`/otra cosa si vino un JWT) — este
+        # isinstance es el chequeo real de permiso, no hay un "borde" más
+        # atrás donde parsearlo.
+        return bool(isinstance(auth, ServiceToken) and auth.servicio == ServiceToken.Servicio.CHANNEL_GATEWAY)  # noqa: ASP002
 
 
 try:

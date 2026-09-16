@@ -1,12 +1,13 @@
 import { type FormEvent, useEffect, useMemo, useState } from "react";
 
-import { api, ApiError } from "../api/client";
+import { api, ApiError, extraerMensajeDeError } from "../api/client";
 import Modal from "../components/Modal";
 import { GROUP_LABELS, type Group, type Paginated, type PlatformOrganization, type PlatformUser } from "../types";
 
 function agruparPorOrganizacion(users: PlatformUser[], orgs: PlatformOrganization[]) {
   const porOrg = new Map<number, PlatformUser[]>();
   const sinOrganizacion: PlatformUser[] = [];
+
   for (const u of users) {
     if (u.organization) {
       const lista = porOrg.get(u.organization) ?? [];
@@ -16,7 +17,9 @@ function agruparPorOrganizacion(users: PlatformUser[], orgs: PlatformOrganizatio
       sinOrganizacion.push(u);
     }
   }
+
   const grupos = orgs.map((org) => ({ org, usuarios: porOrg.get(org.id) ?? [] }));
+
   return { grupos, sinOrganizacion };
 }
 
@@ -36,6 +39,7 @@ export default function PlatformUsersPage() {
       const path = incluirEliminados
         ? "/api/core/plataforma/usuarios/?incluir_eliminados=1"
         : "/api/core/plataforma/usuarios/";
+
       const data = await api.get<Paginated<PlatformUser>>(path);
       setUsers(data.results);
     } catch (err) {
@@ -76,7 +80,9 @@ export default function PlatformUsersPage() {
   const usuariosFiltrados = useMemo(() => {
     if (!users) return [];
     const texto = busqueda.trim().toLowerCase();
+
     if (!texto) return users;
+
     return users.filter((u) =>
       u.email.toLowerCase().includes(texto)
       || `${u.first_name} ${u.last_name}`.toLowerCase().includes(texto));
@@ -87,6 +93,7 @@ export default function PlatformUsersPage() {
   );
 
   if (error) return <div className="empty-state">{error}</div>;
+
   if (!users) return <div className="page-loading">Cargando…</div>;
 
   return (
@@ -263,8 +270,10 @@ function PlatformUserFormModal({
     e.preventDefault();
     setError(null);
     setSubmitting(true);
+
     try {
       const organizationId = organization ? Number(organization) : null;
+
       if (user) {
         await api.patch(`/api/core/plataforma/usuarios/${user.id}/`, {
           email, first_name: firstName, last_name: lastName,
@@ -276,13 +285,10 @@ function PlatformUserFormModal({
           organization: organizationId, groups: selectedGroups,
         });
       }
+
       onSaved();
     } catch (err) {
-      if (err instanceof ApiError && err.data && typeof err.data === "object") {
-        setError(Object.values(err.data as Record<string, string[]>).flat().join(" "));
-      } else {
-        setError("No se pudo guardar.");
-      }
+      setError(extraerMensajeDeError(err) ?? "No se pudo guardar.");
     } finally {
       setSubmitting(false);
     }

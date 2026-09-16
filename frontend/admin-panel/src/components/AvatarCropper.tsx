@@ -3,6 +3,7 @@ import { type PointerEvent, useEffect, useRef, useState } from "react";
 import Modal from "./Modal";
 
 const FRAME = 240;
+
 // Se exporta a un canvas más grande que el frame visible para no perder
 // nitidez en pantallas de alta densidad — se ve chico en la UI pero el
 // archivo final tiene buena resolución.
@@ -36,6 +37,7 @@ export default function AvatarCropper({
   useEffect(() => {
     const url = URL.createObjectURL(file);
     setSrc(url);
+
     return () => URL.revokeObjectURL(url);
   }, [file]);
 
@@ -43,13 +45,12 @@ export default function AvatarCropper({
   const scale = baseScale * zoom;
   const dispW = natural.w * scale;
   const dispH = natural.h * scale;
-  const maxOffsetX = Math.max(0, (dispW - FRAME) / 2);
-  const maxOffsetY = Math.max(0, (dispH - FRAME) / 2);
 
   function clampFor(z: number, o: { x: number; y: number }) {
     const s = baseScale * z;
     const maxX = Math.max(0, (natural.w * s - FRAME) / 2);
     const maxY = Math.max(0, (natural.h * s - FRAME) / 2);
+
     return {
       x: Math.min(maxX, Math.max(-maxX, o.x)),
       y: Math.min(maxY, Math.max(-maxY, o.y)),
@@ -62,6 +63,7 @@ export default function AvatarCropper({
 
   function handleImgLoad() {
     const img = imgRef.current;
+
     if (!img) return;
     setNatural({ w: img.naturalWidth, h: img.naturalHeight });
     setZoom(1);
@@ -69,6 +71,8 @@ export default function AvatarCropper({
   }
 
   function handlePointerDown(e: PointerEvent<HTMLDivElement>) {
+    // SAFETY: el target de un PointerEvent real del DOM siempre es un
+    // Element — React sólo lo tipa como `EventTarget` en el tipo genérico.
     (e.target as Element).setPointerCapture(e.pointerId);
     dragOrigin.current = { x: e.clientX - offset.x, y: e.clientY - offset.y };
   }
@@ -89,11 +93,13 @@ export default function AvatarCropper({
 
   function confirmar() {
     const img = imgRef.current;
+
     if (!img || !src) return;
     const canvas = document.createElement("canvas");
     canvas.width = OUTPUT;
     canvas.height = OUTPUT;
     const ctx = canvas.getContext("2d");
+
     if (!ctx) return;
     const factor = OUTPUT / FRAME;
     const drawW = dispW * factor;

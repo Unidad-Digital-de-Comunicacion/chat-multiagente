@@ -1,6 +1,6 @@
 import { type FormEvent, useState } from "react";
 
-import { api, ApiError } from "../api/client";
+import { api, extraerMensajeDeError } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 
 // Pantalla forzada (ver ProtectedRoute) cuando un Admin te resetea la
@@ -18,20 +18,20 @@ export default function ChangePasswordPage() {
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
+
     if (nueva !== confirmar) {
       setError("Las contraseñas nuevas no coinciden.");
+
       return;
     }
+
     setSubmitting(true);
+
     try {
       await api.post("/api/core/users/me/cambiar-password/", { current_password: actual, new_password: nueva });
       await refreshMe();
     } catch (err) {
-      if (err instanceof ApiError && err.data && typeof err.data === "object") {
-        setError(Object.values(err.data as Record<string, string[]>).flat().join(" "));
-      } else {
-        setError("No se pudo cambiar la contraseña.");
-      }
+      setError(extraerMensajeDeError(err) ?? "No se pudo cambiar la contraseña.");
     } finally {
       setSubmitting(false);
     }

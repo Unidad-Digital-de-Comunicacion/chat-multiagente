@@ -31,7 +31,13 @@ export default function LoginPage() {
   const [submitting, setSubmitting] = useState(false);
 
   if (me) {
+    // SAFETY: react-router tipa `location.state` como `unknown` porque
+    // acepta cualquier cosa — hoy ningún caller manda `{from}` (`Protected
+    // Route` redirige a "/login" sin state), así que esto siempre cae al
+    // `landingPorDefecto` de abajo; el cast queda listo para cuando se
+    // agregue esa navegación con `{state: {from: ...}}`.
     const from = (location.state as { from?: string } | null)?.from || landingPorDefecto(me);
+
     return <Navigate to={from} replace />;
   }
 
@@ -39,6 +45,7 @@ export default function LoginPage() {
     e.preventDefault();
     setError(null);
     setSubmitting(true);
+
     try {
       const meNuevo = await login(email, password);
       navigate(landingPorDefecto(meNuevo), { replace: true });
@@ -46,6 +53,8 @@ export default function LoginPage() {
       if (err instanceof ApiError && err.status === 401) {
         setError("Email o contraseña incorrectos.");
       } else if (err instanceof ApiError && err.status === 429) {
+        // SAFETY: el back devuelve `{blocked_until}` en el body del 429 de
+        // login-lockout (ver `authentication.views`).
         const data = err.data as { blocked_until?: string } | null;
         const hasta = data?.blocked_until ? ` (hasta ${formatearFechaHora(data.blocked_until)})` : "";
         setError(`Demasiados intentos fallidos desde esta conexión. Probá de nuevo más tarde${hasta}.`);

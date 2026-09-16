@@ -1,6 +1,6 @@
-import { type FormEvent, useEffect, useState } from "react";
+import { type ChangeEvent, type FormEvent, useEffect, useState } from "react";
 
-import { api, ApiError } from "../api/client";
+import { api, ApiError, extraerMensajeDeError } from "../api/client";
 import Modal from "../components/Modal";
 import { PLAN_LABELS, type PlatformOrganization, type Plan, type Paginated } from "../types";
 
@@ -20,6 +20,7 @@ export default function PlatformOrganizationsPage() {
       const path = incluirEliminadas
         ? "/api/core/plataforma/organizaciones/?incluir_eliminadas=1"
         : "/api/core/plataforma/organizaciones/";
+
       const data = await api.get<Paginated<PlatformOrganization>>(path);
       setOrgs(data.results);
     } catch (err) {
@@ -45,6 +46,7 @@ export default function PlatformOrganizationsPage() {
     ) {
       return;
     }
+
     await api.delete(`/api/core/plataforma/organizaciones/${org.id}/`);
     load();
   }
@@ -55,6 +57,7 @@ export default function PlatformOrganizationsPage() {
   }
 
   if (error) return <div className="empty-state">{error}</div>;
+
   if (!orgs) return <div className="page-loading">Cargando…</div>;
 
   return (
@@ -174,6 +177,7 @@ function OrganizationFormModal({
     e.preventDefault();
     setError(null);
     setSubmitting(true);
+
     const body = {
       name, slug, plan,
       connection_limit: connectionLimit,
@@ -181,22 +185,26 @@ function OrganizationFormModal({
       monthly_conversation_limit: conversationLimit,
       is_active: isActive,
     };
+
     try {
       if (org) {
         await api.patch(`/api/core/plataforma/organizaciones/${org.id}/`, body);
       } else {
         await api.post("/api/core/plataforma/organizaciones/", body);
       }
+
       onSaved();
     } catch (err) {
-      if (err instanceof ApiError && err.data && typeof err.data === "object") {
-        setError(Object.values(err.data as Record<string, string[]>).flat().join(" "));
-      } else {
-        setError("No se pudo guardar.");
-      }
+      setError(extraerMensajeDeError(err) ?? "No se pudo guardar.");
     } finally {
       setSubmitting(false);
     }
+  }
+
+  function handlePlanChange(e: ChangeEvent<HTMLSelectElement>) {
+    // SAFETY: las <option> salen de `PLAN_LABELS` (claves = Plan), así que
+    // el value siempre es uno de esos literales.
+    setPlan(e.target.value as Plan);
   }
 
   return (
@@ -212,7 +220,7 @@ function OrganizationFormModal({
         </label>
         <label>
           Plan
-          <select value={plan} onChange={(e) => setPlan(e.target.value as Plan)}>
+          <select value={plan} onChange={handlePlanChange}>
             {Object.entries(PLAN_LABELS).map(([value, label]) => (
               <option key={value} value={value}>{label}</option>
             ))}

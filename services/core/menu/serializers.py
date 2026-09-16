@@ -49,3 +49,12 @@ class MenuOpcionTreeSerializer(serializers.ModelSerializer):
     def get_hijos(self, obj):
         hijos = self.context["por_padre"].get(obj.id, [])
         return MenuOpcionTreeSerializer(hijos, many=True, context=self.context).data
+
+
+class ReordenarInputSerializer(serializers.Serializer):
+    """Body de `MenuOpcionViewSet.reordenar` — sólo valida la forma general
+    (`orden` es una lista de ids no vacía); la pertenencia a la organización,
+    el tipo del padre y el resto de las reglas de negocio siguen en la vista."""
+
+    parent_id = serializers.IntegerField(required=False, allow_null=True, default=None)
+    orden = serializers.ListField(child=serializers.IntegerField(), allow_empty=False)

@@ -41,8 +41,11 @@ todos sus grupos (`user.has_perm(...)` ya lo resuelve así).
   tipo (usuarios/equipos/menú/etc.) — eso sigue siendo sólo de
   `administradores`.
 """
+from typing import Final
 
-GROUP_PERMISSIONS: dict[str, list[str]] = {
+# `Final` (en vez de sólo `dict[str, list[str]]`) para no perder el
+# conjunto de claves conocido del literal de abajo.
+GROUP_PERMISSIONS: Final[dict[str, list[str]]] = {
     "superusuarios": [
         "organizations.add_organization",
         "organizations.change_organization",

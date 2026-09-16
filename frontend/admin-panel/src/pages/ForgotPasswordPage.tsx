@@ -13,6 +13,7 @@ export default function ForgotPasswordPage() {
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setSubmitting(true);
+
     try {
       await api.post("/api/auth/password-reset/", { email });
     } catch {

@@ -29,6 +29,7 @@ import PlatformManualsPage from "./pages/PlatformManualsPage";
  * primera pantalla de su propia sección en cambio. */
 function Home() {
   const { me } = useAuth();
+
   return <Navigate to={isPlatformSuperuser(me) ? "/plataforma/organizaciones" : "/menu"} replace />;
 }
 

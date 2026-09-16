@@ -9,6 +9,7 @@ export default function ProtectedRoute() {
   const location = useLocation();
 
   if (loading) return <div className="page-loading">Cargando…</div>;
+
   if (!me) return <Navigate to="/login" replace />;
 
   // Después de que un Admin resetea la contraseña de alguien, esa persona

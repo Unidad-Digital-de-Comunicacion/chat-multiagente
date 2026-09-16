@@ -224,6 +224,14 @@ CHANNEL_GATEWAY_PUBLIC_URL = os.environ.get("CHANNEL_GATEWAY_PUBLIC_URL", "http:
 # ésta es la que usa Core mismo, puerta adentro de la red de contenedores.
 CHANNEL_GATEWAY_INTERNAL_URL = os.environ.get("CHANNEL_GATEWAY_INTERNAL_URL", "http://channel-gateway:8000").rstrip("/")
 
+# App de Meta (misma app/credenciales que ya usa channel-gateway para
+# verificar firmas de webhook, `META_APP_SECRET`) — acá hace falta además
+# para `channels.embedded_signup`: el intercambio de `code` por
+# `access_token` del Embedded Signup de WhatsApp se hace del lado de Core
+# (dueño de `Canal`), no de Channel Gateway.
+META_APP_ID = os.environ.get("META_APP_ID", "")
+META_APP_SECRET = os.environ.get("META_APP_SECRET", "")
+
 # --------------------------------------------------------------------------- #
 # JWT (RS256): Core firma con la clave privada; todos los servicios (FastAPI
 # incluidos) validan con la pública, publicada en /api/auth/jwks/. Evita tener

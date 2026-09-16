@@ -34,14 +34,20 @@ export default function MessageEditor({
 
   useEffect(() => {
     function onDocClick(e: MouseEvent) {
+      // SAFETY: `e.target` de un evento DOM real siempre es un Node —
+      // `MouseEvent` sólo lo tipa como `EventTarget` porque también acepta
+      // targets sintéticos que no lo son.
       if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setShowEmojis(false);
     }
+
     document.addEventListener("mousedown", onDocClick);
+
     return () => document.removeEventListener("mousedown", onDocClick);
   }, []);
 
   function wrapSelection(before: string, after: string) {
     const el = textareaRef.current;
+
     if (!el || disabled) return;
     const start = el.selectionStart;
     const end = el.selectionEnd;
@@ -57,6 +63,7 @@ export default function MessageEditor({
 
   function insertAtCursor(text: string) {
     const el = textareaRef.current;
+
     if (!el || disabled) return;
     const start = el.selectionStart;
     const end = el.selectionEnd;

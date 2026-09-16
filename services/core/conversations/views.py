@@ -6,6 +6,9 @@ la API que usa el frontend nuevo `operators-desk-web`: bandeja + tomar +
 responder + cerrar. Ver el docstring de `models.py` para qué le falta
 todavía a esto (selección nativa por canal, asignación real de Conversation
 Engine)."""
+from datetime import timedelta
+
+from django.db.models import Q
 from django.utils import timezone
 
 from bot_settings.models import BotMessages
@@ -20,9 +23,25 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .channel_gateway_client import enviar_mensaje_saliente
-from .menu_engine import procesar_seleccion, render_menu
+from .menu_engine import accion_menu, procesar_seleccion, render_menu
 from .models import Contact, Conversacion, ConversacionLog
 from .serializers import ConversacionLogSerializer, ConversacionSerializer
+
+
+def _registrar_salientes(conversacion: Conversacion, acciones: list[dict]) -> None:
+    """Deja constancia real (no inferible después del hecho) de cada
+    mensaje automático que el bot mandó — `enviar_texto` y `mostrar_menu`
+    (acá el `texto` es el fallback con el listado numerado, el mismo
+    contenido sustancial se haya mandado como texto plano o como widget
+    nativo). Antes de esto, sólo quedaba loguado lo que escribía el
+    contacto — nada de lo que el bot le contestaba, lo que hacía imposible
+    reconstruir una conversación completa después del hecho."""
+    for accion in acciones:
+        texto = accion.get("texto")
+        if texto:
+            ConversacionLog.objects.create(
+                conversacion=conversacion, remitente=ConversacionLog.Remitente.SISTEMA, texto=texto,
+            )
 
 
 class MensajeEntranteView(APIView):
@@ -78,8 +97,9 @@ class MensajeEntranteView(APIView):
             if bienvenida:
                 acciones.append({"tipo": "enviar_texto", "texto": bienvenida})
             menu_inicial = render_menu(organization_id, None) if bot_messages.menu_activo else None
-            if menu_inicial:
-                acciones.append({"tipo": "enviar_texto", "texto": menu_inicial})
+            menu_accion = accion_menu(menu_inicial)
+            if menu_accion:
+                acciones.append(menu_accion)
             else:
                 conversacion.menu_finalizado = True
                 conversacion.save(update_fields=["menu_finalizado"])
@@ -89,6 +109,7 @@ class MensajeEntranteView(APIView):
         ConversacionLog.objects.create(
             conversacion=conversacion, remitente=ConversacionLog.Remitente.CONTACTO, texto=texto,
         )
+        _registrar_salientes(conversacion, acciones)
         return Response({"acciones": acciones})
 
 
@@ -98,6 +119,8 @@ class ConversacionViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, view
     las actions de acá abajo (nunca un PATCH libre, que se saltearía el
     envío del mensaje de despedida al cerrar, por ejemplo)."""
 
+    LOCK_MINUTOS = 2
+
     serializer_class = ConversacionSerializer
     permission_classes = [IsAuthenticated, StrictDjangoModelPermissions]
 
@@ -106,7 +129,14 @@ class ConversacionViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, view
         qs = Conversacion.objects.filter(organization_id=organization_id).select_related("contact", "operador", "team")
         bandeja = self.request.query_params.get("bandeja")
         if bandeja == "sin_asignar":
-            qs = qs.filter(operador__isnull=True, estado=Conversacion.Estado.ABIERTA)
+            # "Sin asignar" de verdad, MÁS lo que quedó asignado (por
+            # round-robin o a mano) pero cuyo `bloqueada_hasta` ya venció
+            # sin que nadie respondiera — vuelve a estar disponible para
+            # que cualquier operador lo reclame (ver `tomar`).
+            ahora = timezone.now()
+            qs = qs.filter(estado=Conversacion.Estado.ABIERTA).filter(
+                Q(operador__isnull=True) | Q(bloqueada_hasta__lt=ahora),
+            )
         elif bandeja == "mias":
             qs = qs.filter(operador=self.request.user)
         return qs
@@ -122,12 +152,24 @@ class ConversacionViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, view
 
     @action(detail=True, methods=["post"])
     def tomar(self, request, pk=None):
+        """Reclama la conversación — sirve tanto para tomar una sin asignar
+        como para reclamar una cuyo lock de `LOCK_MINUTOS` ya venció (ver
+        `get_queryset`). Mientras el lock de OTRO operador siga vigente, no
+        se puede tomar, aunque técnicamente ya no esté "sin asignar"."""
         require_perm(request, "conversations.change_conversacion")
         conversacion = self.get_object()
-        if conversacion.operador_id is not None:
-            raise ValidationError("Esta conversación ya está tomada.")
+        ahora = timezone.now()
+        tomada_por_otro_vigente = (
+            conversacion.operador_id is not None
+            and conversacion.operador_id != request.user.id
+            and conversacion.bloqueada_hasta is not None
+            and conversacion.bloqueada_hasta > ahora
+        )
+        if tomada_por_otro_vigente:
+            raise ValidationError("Esta conversación está tomada por otro operador.")
         conversacion.operador = request.user
-        conversacion.save(update_fields=["operador", "updated_at"])
+        conversacion.bloqueada_hasta = ahora + timedelta(minutes=self.LOCK_MINUTOS)
+        conversacion.save(update_fields=["operador", "bloqueada_hasta", "updated_at"])
         return Response(self.get_serializer(conversacion).data)
 
     @action(detail=True, methods=["get"])
@@ -151,7 +193,11 @@ class ConversacionViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, view
 
         entregado = enviar_mensaje_saliente(conversacion, texto)
         ConversacionLog.objects.create(conversacion=conversacion, remitente=ConversacionLog.Remitente.OPERADOR, texto=texto)
-        conversacion.save(update_fields=["updated_at"])
+        # Renueva el lock — una conversación activamente atendida no
+        # debería quedar disponible para que otro operador la reclame a
+        # mitad de camino sólo porque pasaron 2 minutos desde que se tomó.
+        conversacion.bloqueada_hasta = timezone.now() + timedelta(minutes=self.LOCK_MINUTOS)
+        conversacion.save(update_fields=["updated_at", "bloqueada_hasta"])
         return Response({"entregado": entregado})
 
     @action(detail=True, methods=["post"])

@@ -1,6 +1,6 @@
 import { type FormEvent, useEffect, useState } from "react";
 
-import { api, ApiError } from "../api/client";
+import { api, ApiError, extraerMensajeDeError } from "../api/client";
 import Modal from "../components/Modal";
 import AvatarCropper from "../components/AvatarCropper";
 import { useAuth } from "../auth/AuthContext";
@@ -9,7 +9,6 @@ import { GROUP_LABELS, type Group, type Paginated, type UserRow } from "../types
 
 export default function UsersPage() {
   const { me } = useAuth();
-  const canView = hasPerm(me, "users.view_user");
   const canCreate = hasPerm(me, "users.add_user");
   const canEdit = hasPerm(me, "users.change_user");
   const canDelete = hasPerm(me, "users.delete_user");
@@ -71,6 +70,7 @@ export default function UsersPage() {
   }
 
   if (error) return <div className="empty-state">{error}</div>;
+
   if (!users) return <div className="page-loading">Cargando…</div>;
 
   return (
@@ -240,6 +240,7 @@ function UserFormModal({
   function handleAvatarChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0] ?? null;
     e.target.value = "";
+
     if (file) setPendingAvatarFile(file);
   }
 
@@ -254,12 +255,14 @@ function UserFormModal({
     e.preventDefault();
     setError(null);
     setSubmitting(true);
+
     try {
       if (user) {
         await api.patch(`/api/core/users/${user.id}/`, {
           email, first_name: firstName, last_name: lastName, dni,
           groups: selectedGroups,
         });
+
         if (avatarFile) {
           // Aparte y en multipart — mezclar campos JSON y un archivo en el
           // mismo FormData complica limpiar `groups` a [] (DRF necesita la
@@ -274,13 +277,10 @@ function UserFormModal({
           groups: selectedGroups,
         });
       }
+
       onSaved();
     } catch (err) {
-      if (err instanceof ApiError && err.data && typeof err.data === "object") {
-        setError(Object.values(err.data as Record<string, string[]>).flat().join(" "));
-      } else {
-        setError("No se pudo guardar.");
-      }
+      setError(extraerMensajeDeError(err) ?? "No se pudo guardar.");
     } finally {
       setSubmitting(false);
     }

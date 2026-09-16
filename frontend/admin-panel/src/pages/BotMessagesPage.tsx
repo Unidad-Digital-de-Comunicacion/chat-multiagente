@@ -1,6 +1,6 @@
 import { type FormEvent, useEffect, useState } from "react";
 
-import { api, ApiError } from "../api/client";
+import { api, ApiError, extraerMensajeDeError } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import { hasPerm } from "../auth/permissions";
 import MessageEditor from "../components/MessageEditor";
@@ -84,6 +84,7 @@ const CAMPOS_MENU: Campo[] = [
 ];
 
 const EJEMPLO = { area: "Ventas", nombre: "Juan" };
+
 const EJEMPLO_OPERADOR = { nombre: "Marina (operadora)" };
 
 function CampoInput({
@@ -154,9 +155,11 @@ export default function BotMessagesPage() {
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
+
     if (!mensajes) return;
     setError(null);
     setSaving(true);
+
     try {
       const body = {
         menu_activo: mensajes.menu_activo,
@@ -171,25 +174,24 @@ export default function BotMessagesPage() {
         minutos_inactividad_cierre: mensajes.minutos_inactividad_cierre,
         segundos_remostrar_menu: mensajes.segundos_remostrar_menu,
       };
+
       const data = await api.patch<BotMessages>("/api/core/mensajes-bot/", body);
       setMensajes(data);
       setSavedAt(Date.now());
     } catch (err) {
-      if (err instanceof ApiError && err.data && typeof err.data === "object") {
-        setError(Object.values(err.data as Record<string, string[]>).flat().join(" "));
-      } else {
-        setError("No se pudo guardar.");
-      }
+      setError(extraerMensajeDeError(err) ?? "No se pudo guardar.");
     } finally {
       setSaving(false);
     }
   }
 
   if (error) return <div className="empty-state">{error}</div>;
+
   if (!mensajes) return <div className="page-loading">Cargando…</div>;
 
   function efectivo(campo: keyof BotMessages): string {
     const valor = String(mensajes![campo] ?? "").trim();
+
     return valor || mensajes!.valores_efectivos[campo] || "";
   }
 

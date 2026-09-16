@@ -27,6 +27,7 @@ export default function PlatformStatsPage() {
   }, []);
 
   if (error) return <div className="empty-state">{error}</div>;
+
   if (!stats || !health) return <div className="page-loading">Cargando…</div>;
 
   return (

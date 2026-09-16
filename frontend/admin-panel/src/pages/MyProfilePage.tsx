@@ -1,6 +1,6 @@
 import { type FormEvent, useEffect, useState } from "react";
 
-import { api, ApiError } from "../api/client";
+import { api, extraerMensajeDeError } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import AvatarCropper from "../components/AvatarCropper";
 import type { Me } from "../types";
@@ -30,6 +30,7 @@ export default function MyProfilePage() {
   function handleAvatarChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0] ?? null;
     e.target.value = "";
+
     if (file) setPendingFile(file);
   }
 
@@ -45,12 +46,14 @@ export default function MyProfilePage() {
     setError(null);
     setSaved(false);
     setSubmitting(true);
+
     try {
       const form = new FormData();
       form.append("first_name", firstName);
       form.append("last_name", lastName);
       form.append("email", email);
       form.append("dni", dni);
+
       if (avatarFile) form.append("avatar", avatarFile);
 
       await api.patch<Me>("/api/core/users/me/", form);
@@ -58,11 +61,7 @@ export default function MyProfilePage() {
       setSaved(true);
       setAvatarFile(null);
     } catch (err) {
-      if (err instanceof ApiError && err.data && typeof err.data === "object") {
-        setError(Object.values(err.data as Record<string, string[]>).flat().join(" "));
-      } else {
-        setError("No se pudo guardar.");
-      }
+      setError(extraerMensajeDeError(err) ?? "No se pudo guardar.");
     } finally {
       setSubmitting(false);
     }

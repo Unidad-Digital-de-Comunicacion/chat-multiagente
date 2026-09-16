@@ -34,6 +34,7 @@ const PLATFORM_NAV_ITEMS = [
 
 export default function Layout() {
   const { me, logout } = useAuth();
+
   const navItems = isPlatformSuperuser(me)
     ? PLATFORM_NAV_ITEMS
     : NAV_ITEMS.filter((item) => hasPerm(me, item.perm));

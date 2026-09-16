@@ -89,7 +89,19 @@ class BotMessages(models.Model):
         return obj
 
     def valor_o_default(self, campo):
-        return getattr(self, campo) or defaults.DEFAULT_POR_CAMPO.get(campo, "")
+        # Registro explícito en vez de `getattr(self, campo)` — los nombres
+        # válidos son exactamente las claves de `defaults.DEFAULT_POR_CAMPO`.
+        valores = {
+            "mensaje_bienvenida": self.mensaje_bienvenida,
+            "saludo_inicial": self.saludo_inicial,
+            "saludo_area": self.saludo_area,
+            "mensaje_despedida": self.mensaje_despedida,
+            "derivacion_texto": self.derivacion_texto,
+            "derivacion_mensaje": self.derivacion_mensaje,
+            "mensaje_cierre_inactividad": self.mensaje_cierre_inactividad,
+            "mensaje_operador_toma": self.mensaje_operador_toma,
+        }
+        return valores.get(campo) or defaults.DEFAULT_POR_CAMPO.get(campo, "")
 
     def __str__(self):
         return f"Mensajes del bot — {self.organization.name}"

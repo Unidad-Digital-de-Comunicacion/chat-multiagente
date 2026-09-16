@@ -20,23 +20,36 @@ from users.models import User
 PASSWORD_DEMO = "Contrasena-123"
 
 
-def _get_or_create_user(email, organization, groups, grupos_por_nombre, **extra):
-    user, created = User.objects.get_or_create(
-        email=email, defaults={"organization": organization, **extra},
-    )
+def _get_or_create_user(email, organization, groups, grupos_por_nombre, *, is_staff=None, is_superuser=None):
+    """`is_staff`/`is_superuser` son los únicos flags que este seed necesita
+    sincronizar (hoy sólo los usa el superusuario de demo) — parámetros
+    explícitos en vez de `**extra` + `setattr` genérico."""
+    defaults = {"organization": organization}
+    if is_staff is not None:
+        defaults["is_staff"] = is_staff
+    if is_superuser is not None:
+        defaults["is_superuser"] = is_superuser
+
+    user, created = User.objects.get_or_create(email=email, defaults=defaults)
     if created:
         user.set_password(PASSWORD_DEMO)
         user.save()
-    elif extra:
+    else:
         # `get_or_create` no toca `defaults` en un usuario que ya existía —
-        # sincronizamos igual los flags que sí pasamos acá (is_staff/
-        # is_superuser) para que correr el seed de nuevo repare una cuenta
-        # de demo vieja que quedó desactualizada (ej. si se le sumó
-        # `is_superuser=True` al superusuario en una versión más nueva del
-        # comando), sin tocar nada que no se haya pasado por acá.
-        for campo, valor in extra.items():
-            setattr(user, campo, valor)
-        user.save(update_fields=list(extra.keys()))
+        # sincronizamos igual los flags que sí pasamos acá para que correr
+        # el seed de nuevo repare una cuenta de demo vieja que quedó
+        # desactualizada (ej. si se le sumó `is_superuser=True` al
+        # superusuario en una versión más nueva del comando), sin tocar
+        # nada que no se haya pasado por acá.
+        campos_a_actualizar = []
+        if is_staff is not None:
+            user.is_staff = is_staff
+            campos_a_actualizar.append("is_staff")
+        if is_superuser is not None:
+            user.is_superuser = is_superuser
+            campos_a_actualizar.append("is_superuser")
+        if campos_a_actualizar:
+            user.save(update_fields=campos_a_actualizar)
     user.groups.set([grupos_por_nombre[g] for g in groups])
     return user, created
 
@@ -70,7 +83,8 @@ class Command(BaseCommand):
         # criterio para distinguir "toda la plataforma" de "mi organización"
         # (`common.permissions.IsPlatformSuperuser`, `UserManager.create_superuser`).
         superusuario, _ = _get_or_create_user(
-            "superusuario@ucd.demo", None, ["superusuarios"], grupos, is_staff=True, is_superuser=True,
+            "superusuario@ucd.demo", None, ["superusuarios"], grupos,
+            is_staff=True, is_superuser=True,
         )
         administrador, _ = _get_or_create_user(
             "admin@ucd.demo", org, ["administradores"], grupos,

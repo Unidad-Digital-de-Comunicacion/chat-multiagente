@@ -124,6 +124,16 @@ class MenuOpcionReordenarTests(TestCase):
         b.refresh_from_db()
         self.assertEqual((b.orden, a.orden), (0, 1))
 
+    def test_orden_que_no_es_una_lista_falla(self):
+        response = authenticated_client(self.admin).post(
+            self.url, {"parent_id": None, "orden": "no-es-una-lista"}, format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_orden_vacio_falla(self):
+        response = authenticated_client(self.admin).post(self.url, {"parent_id": None, "orden": []}, format="json")
+        self.assertEqual(response.status_code, 400)
+
     def test_reparenta_dentro_de_un_submenu(self):
         raiz = MenuOpcion.objects.create(organization=self.org, texto="Menú", tipo=MenuOpcion.Tipo.SUBMENU)
         suelto = MenuOpcion.objects.create(organization=self.org, texto="Suelto", tipo=MenuOpcion.Tipo.TERMINAR)

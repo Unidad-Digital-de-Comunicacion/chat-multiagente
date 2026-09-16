@@ -149,8 +149,10 @@ function TeamFormModal({
     e.preventDefault();
     setError(null);
     setSubmitting(true);
+
     try {
       const body = { name, members, is_active: isActive };
+
       if (team) await api.patch(`/api/core/teams/${team.id}/`, body);
       else await api.post("/api/core/teams/", body);
       onSaved();

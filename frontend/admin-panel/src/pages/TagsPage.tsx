@@ -1,6 +1,6 @@
 import { type FormEvent, useEffect, useRef, useState } from "react";
 
-import { api, ApiError } from "../api/client";
+import { api, ApiError, extraerMensajeDeError } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import { hasPerm } from "../auth/permissions";
 import type { Etiqueta, Paginated } from "../types";
@@ -32,6 +32,7 @@ export default function TagsPage() {
 
   async function eliminar(tag: Etiqueta) {
     if (!confirm(`¿Eliminar la etiqueta "${tag.nombre}"?`)) return;
+
     try {
       await api.delete(`/api/core/etiquetas/${tag.id}/`);
       load();
@@ -41,6 +42,7 @@ export default function TagsPage() {
   }
 
   if (error) return <div className="empty-state">{error}</div>;
+
   if (!tags) return <div className="page-loading">Cargando…</div>;
 
   const generales = tags.filter((t) => t.team === null);
@@ -199,6 +201,14 @@ function TagFields({
 /** Fila de una etiqueta existente — SIEMPRE editable en la lista, sin
  * botón "Editar" de por medio: se cambia el nombre/color ahí mismo y se
  * confirma con "Guardar". */
+// `nombre` sólo se manda si la etiqueta no es protegida (ver `handleSubmit`
+// de `TagRow` más abajo).
+interface EtiquetaPayload {
+  color: string;
+  color_texto: string;
+  nombre?: string;
+}
+
 function TagRow({
   tag, canEdit, canDelete, onSaved, onDelete,
 }: {
@@ -236,17 +246,15 @@ function TagRow({
     e.preventDefault();
     setError(null);
     setSubmitting(true);
+
     try {
-      const body: Record<string, unknown> = { color, color_texto: colorTexto };
+      const body: EtiquetaPayload = { color, color_texto: colorTexto };
+
       if (!protegida) body.nombre = nombre;
       await api.patch(`/api/core/etiquetas/${tag.id}/`, body);
       onSaved();
     } catch (err) {
-      if (err instanceof ApiError && err.data && typeof err.data === "object") {
-        setError(Object.values(err.data as Record<string, string[]>).flat().join(" "));
-      } else {
-        setError("No se pudo guardar.");
-      }
+      setError(extraerMensajeDeError(err) ?? "No se pudo guardar.");
     } finally {
       setSubmitting(false);
     }
@@ -302,15 +310,12 @@ function TagCreateRow({
     e.preventDefault();
     setError(null);
     setSubmitting(true);
+
     try {
       await api.post("/api/core/etiquetas/", { nombre, color, color_texto: colorTexto });
       onSaved();
     } catch (err) {
-      if (err instanceof ApiError && err.data && typeof err.data === "object") {
-        setError(Object.values(err.data as Record<string, string[]>).flat().join(" "));
-      } else {
-        setError("No se pudo guardar.");
-      }
+      setError(extraerMensajeDeError(err) ?? "No se pudo guardar.");
     } finally {
       setSubmitting(false);
     }
@@ -361,16 +366,24 @@ function ColorPickerButton({
 
   useEffect(() => {
     if (!open) return;
+
     function onDocClick(e: MouseEvent) {
+      // SAFETY: `e.target` de un evento DOM real siempre es un Node —
+      // `MouseEvent` sólo lo tipa como `EventTarget` porque también acepta
+      // targets sintéticos que no lo son.
       if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
     }
+
     document.addEventListener("mousedown", onDocClick);
+
     return () => document.removeEventListener("mousedown", onDocClick);
   }, [open]);
 
   function applyHex(raw: string) {
     let v = raw.trim();
+
     if (v && !v.startsWith("#")) v = "#" + v;
+
     if (HEX_RE.test(v)) onChange(v.toUpperCase());
     else setHexInput(value);
   }
