@@ -1,10 +1,10 @@
 package com.udc.operador;
 
+import android.content.Intent;
 import android.os.Bundle;
 import android.util.Log;
 import android.widget.Button;
 import android.widget.EditText;
-import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.appcompat.app.AppCompatActivity;
@@ -13,22 +13,14 @@ import org.json.JSONObject;
 
 /**
  * Pantalla de login. Le pega de verdad a Core (POST /api/auth/login/,
- * ver docs/CONTEXTO_PROYECTO.md sección 9) y, si el usuario/contraseña son
- * correctos, guarda el JWT que devuelve con {@link Sesion}.
- *
- * "10.0.2.2" es una dirección especial que el EMULADOR de Android traduce a
- * "localhost de la máquina donde corre el emulador" — es decir, tu propia
- * PC, donde tenés `docker compose up` corriendo Core en el puerto 8001.
- * Un celular físico no podría usar esta IP (ahí iría la IP de tu PC en la
- * red Wi-Fi, o mejor, la URL real del servidor cuando exista).
+ * contrato §1) y, si el usuario/contraseña son correctos, guarda los dos
+ * JWT que devuelve con {@link Sesion} y abre la bandeja de conversaciones.
  */
 public class LoginActivity extends AppCompatActivity {
 
     private static final String TAG = "LoginActivity";
-    private static final String LOGIN_URL = "http://10.0.2.2:8001/api/auth/login/";
+    private static final String LOGIN_URL = Config.BASE_URL + "/api/auth/login/";
 
-    // Referencias a los elementos de la pantalla (activity_login.xml).
-    private TextView textTitulo;
     private EditText editUsuario;
     private EditText editContrasena;
     private Button botonIngresar;
@@ -38,7 +30,6 @@ public class LoginActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_login);
 
-        textTitulo = findViewById(R.id.textTitulo);
         editUsuario = findViewById(R.id.editUsuario);
         editContrasena = findViewById(R.id.editContrasena);
         botonIngresar = findViewById(R.id.botonIngresar);
@@ -68,21 +59,18 @@ public class LoginActivity extends AppCompatActivity {
     /** Corre en un hilo de background: acá SÍ se puede hacer la llamada de red. */
     private void hacerLogin(String usuario, String contrasena) {
         try {
-            // 1) Armar el pedido: un JSON { "email": ..., "password": ... }
             JSONObject cuerpoPedido = new JSONObject();
             cuerpoPedido.put("email", usuario);
             cuerpoPedido.put("password", contrasena);
 
-            // 2) Mandarlo y esperar la respuesta (todo el detalle feo de
-            // HttpURLConnection vive en HttpCliente, no acá).
             HttpCliente.Respuesta respuesta = HttpCliente.post(LOGIN_URL, cuerpoPedido);
-            Log.d(TAG, "Login -> código " + respuesta.codigo + ", respuesta: " + respuesta.cuerpo);
+            Log.d(TAG, "Login -> código " + respuesta.codigo);
 
-            // 3) Interpretar la respuesta. Django devuelve, si está todo
-            // bien, { "access": "<jwt>", "refresh": "<jwt>" }.
             if (respuesta.esExitosa()) {
-                String token = new JSONObject(respuesta.cuerpo).getString("access");
-                runOnUiThread(() -> onLoginExitoso(token));
+                JSONObject json = new JSONObject(respuesta.cuerpo);
+                String access = json.getString("access");
+                String refresh = json.getString("refresh");
+                runOnUiThread(() -> onLoginExitoso(access, refresh));
             } else {
                 runOnUiThread(() -> onLoginError("Usuario o contraseña incorrectos"));
             }
@@ -95,11 +83,10 @@ public class LoginActivity extends AppCompatActivity {
 
     // --- Todo lo que sigue vuelve a correr en el hilo principal (UI). ---
 
-    private void onLoginExitoso(String token) {
-        Sesion.guardarToken(this, token);
-        botonIngresar.setEnabled(true);
-        textTitulo.setText("¡Login OK!");
-        Toast.makeText(this, "Token guardado", Toast.LENGTH_LONG).show();
+    private void onLoginExitoso(String access, String refresh) {
+        Sesion.guardarTokens(this, access, refresh);
+        startActivity(new Intent(this, BandejaActivity.class));
+        finish();
     }
 
     private void onLoginError(String mensaje) {

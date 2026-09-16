@@ -4,27 +4,49 @@ import android.content.Context;
 import android.content.SharedPreferences;
 
 /**
- * Guarda y lee el token JWT en el celular usando SharedPreferences: la
+ * Guarda y lee los tokens JWT en el celular usando SharedPreferences: la
  * forma default/estándar de Android para persistir datos chicos (queda
  * guardado aunque cierres la app y la vuelvas a abrir). Para algo tan
- * simple como un token no hace falta ni una base de datos ni una librería
- * externa.
+ * simple como dos tokens no hace falta ni una base de datos ni una
+ * librería externa.
+ *
+ * Se guardan los dos tokens del login (contrato §1): `access` (vence a los
+ * 30 minutos, es el que se manda en cada pedido) y `refresh` (vence a los
+ * 7 días, sirve para pedir un `access` nuevo sin loguear de nuevo — ver
+ * HttpCliente.getAutenticado/postAutenticado).
  */
 public class Sesion {
 
-    // Nombre del "archivo" de preferencias y la clave dentro de él.
     private static final String PREFS_NOMBRE = "sesion";
-    private static final String CLAVE_TOKEN = "jwt_token";
+    private static final String CLAVE_ACCESS = "access_token";
+    private static final String CLAVE_REFRESH = "refresh_token";
 
-    /** Guarda el token (sobreescribe el anterior si había uno). */
-    public static void guardarToken(Context context, String token) {
-        SharedPreferences prefs = context.getSharedPreferences(PREFS_NOMBRE, Context.MODE_PRIVATE);
-        prefs.edit().putString(CLAVE_TOKEN, token).apply();
+    public static void guardarTokens(Context context, String access, String refresh) {
+        prefs(context).edit()
+                .putString(CLAVE_ACCESS, access)
+                .putString(CLAVE_REFRESH, refresh)
+                .apply();
     }
 
-    /** Devuelve el token guardado, o null si todavía no se hizo login. */
-    public static String obtenerToken(Context context) {
-        SharedPreferences prefs = context.getSharedPreferences(PREFS_NOMBRE, Context.MODE_PRIVATE);
-        return prefs.getString(CLAVE_TOKEN, null);
+    /** Reemplaza sólo el access (después de un refresh exitoso). */
+    public static void guardarAccess(Context context, String access) {
+        prefs(context).edit().putString(CLAVE_ACCESS, access).apply();
+    }
+
+    public static String obtenerAccess(Context context) {
+        return prefs(context).getString(CLAVE_ACCESS, null);
+    }
+
+    public static String obtenerRefresh(Context context) {
+        return prefs(context).getString(CLAVE_REFRESH, null);
+    }
+
+    /** Borra los tokens guardados (logout). */
+    public static void cerrarSesion(Context context) {
+        prefs(context).edit().clear().apply();
+    }
+
+    private static SharedPreferences prefs(Context context) {
+        return context.getSharedPreferences(PREFS_NOMBRE, Context.MODE_PRIVATE);
     }
 }

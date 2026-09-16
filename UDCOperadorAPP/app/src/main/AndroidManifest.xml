@@ -26,6 +26,14 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name=".BandejaActivity"
+            android:exported="false" />
+
+        <activity
+            android:name=".ConversacionActivity"
+            android:exported="false" />
+
     </application>
 
 </manifest>
