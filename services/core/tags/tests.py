@@ -37,10 +37,12 @@ class EtiquetaViewSetTests(TestCase):
         pendiente_b = Etiqueta.objects.get(organization=self.org_b, codigo="pendiente")
         self.assertNotEqual(pendiente_a.id, pendiente_b.id)
 
-    def test_operador_no_puede_leer_ni_crear_etiquetas(self):
-        # Core es sólo la API de autenticación de un operador — no tiene ningún permiso sobre
-        # el catálogo de etiquetas ni el resto de la configuración (`users.group_permissions`).
-        self.assertEqual(authenticated_client(self.operador_a).get(self.list_url).status_code, 403)
+    def test_operador_puede_leer_pero_no_crear_etiquetas(self):
+        # Necesita ver el catálogo (con sus colores) para aplicarlas a una
+        # conversación (`conversations.views.ConversacionViewSet.etiquetas`),
+        # pero no puede administrarlo — eso sigue siendo sólo de
+        # `administradores` (`users.group_permissions`).
+        self.assertEqual(authenticated_client(self.operador_a).get(self.list_url).status_code, 200)
         self.assertEqual(
             authenticated_client(self.operador_a).post(
                 self.list_url, {"nombre": "Urgente", "color": "#FF0000"},

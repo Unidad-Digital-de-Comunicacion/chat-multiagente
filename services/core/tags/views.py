@@ -24,8 +24,9 @@ class EtiquetaViewSet(OrganizationScopedModelViewSet):
 
     Esta app cubre únicamente la configuración del catálogo. Aplicar
     etiquetas a una conversación, las observaciones obligatorias al
-    resolver/pausar y el chat interno entre operadores quedan documentados
-    para Fase 4/5 en la sección 11 de docs/CONTEXTO_PROYECTO.md."""
+    resolver/pausar y las notas internas entre operadores están en
+    `conversations.views.ConversacionViewSet` (`etiquetas`/`observaciones`/
+    `notas_internas`)."""
 
     queryset = Etiqueta.objects.all()
     serializer_class = EtiquetaSerializer

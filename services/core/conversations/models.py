@@ -12,7 +12,22 @@ por canal (sección 4.1.1 — WhatsApp/Messenger tienen widgets de lista/
 botones, acá todo es texto numerado plano), ni el `OperatorSession`/
 asignación round-robin real de Conversation Engine (Fase 4) — la
 derivación por `team` sólo queda guardada en la conversación, más adelante
-sirve para filtrar la bandeja por equipo."""
+sirve para filtrar la bandeja por equipo.
+
+`ConversacionEtiqueta`/`ConversacionObservacion`/`ConversacionNotaInterna`
+(más abajo) son lo que la sección 11/Fase 5 documentaba como "etiquetas
+sobre una conversación" y "observaciones de resolución" del futuro
+Operators Desk Service — implementadas acá directamente por el mismo
+motivo que el resto de esta app (MVP contra Core, sin BFF aparte, ver
+`users.group_permissions`). `ConversacionNotaInterna` es un recorte
+deliberado del "chat interno entre operadores" que documentaba la Fase 4
+(Conversation Engine): ahí se pensó como mensajería 1:1 arbitraria entre
+operadores con WebSocket, sin pasar por ninguna conversación — acá es un
+hilo de notas internas ACOTADO a una conversación puntual (lo que un
+operador necesita para dejarle contexto a otro sobre ESE chat), sin
+WebSocket (Core no tiene infraestructura de tiempo real); un cliente que
+necesite notificación instantánea debe hacer polling, igual que con
+`mensajes`/`etiquetas`/`observaciones`."""
 from django.db import models
 
 from channels.models import Canal
@@ -70,6 +85,14 @@ class Conversacion(models.Model):
         help_text="Se completa al elegir una opción de menú tipo Derivación — dispara la asignación "
                    "round-robin dentro del equipo (`conversations.asignacion.asignar_round_robin`).",
     )
+    derivada_at = models.DateTimeField(
+        null=True, blank=True,
+        help_text="Cuándo se completó `team` por última vez — tanto la derivación automática del "
+                   "árbol de menú (`menu_engine.procesar_seleccion`) como la manual "
+                   "(`ConversacionViewSet.derivar`) la actualizan. Sólo para el historial "
+                   "(`ver_historial_conversacion`) — no es una bitácora de TODAS las derivaciones, "
+                   "sólo la más reciente.",
+    )
     nodo_menu_actual = models.ForeignKey(
         "menu.MenuOpcion", on_delete=models.SET_NULL, null=True, blank=True, related_name="+",
         help_text="En qué nodo del árbol está esta conversación mientras sigue en modo bot — "
@@ -91,6 +114,13 @@ class Conversacion(models.Model):
         verbose_name = "Conversación"
         verbose_name_plural = "Conversaciones"
         ordering = ["-updated_at"]
+        permissions = [
+            (
+                "ver_historial_conversacion",
+                "Puede ver el historial resumido de conversaciones (inicio/derivación/fin, "
+                "sin mensajes/etiquetas/notas)",
+            ),
+        ]
 
     def __str__(self):
         return f"Conversación #{self.pk} — {self.contact}"
@@ -114,3 +144,78 @@ class ConversacionLog(models.Model):
 
     def __str__(self):
         return f"{self.remitente}: {self.texto[:40]}"
+
+
+class ConversacionEtiqueta(models.Model):
+    """Qué etiquetas del catálogo (`tags.Etiqueta` — generales, de equipo, o
+    una de las 7 de sistema) tiene aplicadas una conversación puntual, quién
+    la aplicó y cuándo. Las de sistema son mutuamente excluyentes entre sí
+    (sólo puede haber una activa a la vez — pendiente/asignada/tomada/
+    en_proceso/en_pausa/rechazado/resuelto, ver `views.py::
+    ConversacionViewSet.etiquetas`); las generales y las de equipo son
+    libremente acumulables."""
+
+    conversacion = models.ForeignKey(Conversacion, on_delete=models.CASCADE, related_name="etiquetas_aplicadas")
+    etiqueta = models.ForeignKey("tags.Etiqueta", on_delete=models.CASCADE, related_name="+")
+    aplicada_por = models.ForeignKey(
+        "users.User", on_delete=models.SET_NULL, null=True, blank=True, related_name="+",
+    )
+    aplicada_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Etiqueta de conversación"
+        verbose_name_plural = "Etiquetas de conversación"
+        ordering = ["etiqueta__orden", "etiqueta__nombre"]
+        constraints = [
+            models.UniqueConstraint(fields=["conversacion", "etiqueta"], name="unique_etiqueta_por_conversacion"),
+        ]
+
+    def __str__(self):
+        return f"{self.conversacion_id} — {self.etiqueta.nombre}"
+
+
+class ConversacionObservacion(models.Model):
+    """Nota de texto libre que un operador deja sobre una conversación, para
+    dar contexto a otros operadores. `views.py::ConversacionViewSet.
+    etiquetas` exige una de estas (no vacía) al aplicar cualquiera de las 3
+    etiquetas de sistema "resuelto"/"rechazado"/"en_pausa" — el resto del
+    tiempo es opcional, se puede cargar en cualquier momento vía
+    `observaciones`."""
+
+    conversacion = models.ForeignKey(Conversacion, on_delete=models.CASCADE, related_name="observaciones")
+    operador = models.ForeignKey(
+        "users.User", on_delete=models.SET_NULL, null=True, blank=True, related_name="+",
+    )
+    texto = models.TextField()
+    creado_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Observación de conversación"
+        verbose_name_plural = "Observaciones de conversación"
+        ordering = ["creado_at"]
+
+    def __str__(self):
+        return f"{self.conversacion_id}: {self.texto[:40]}"
+
+
+class ConversacionNotaInterna(models.Model):
+    """Hilo de mensajería ENTRE OPERADORES sobre una conversación puntual —
+    nunca sale hacia Channel Gateway ni el contacto la ve, a diferencia de
+    `ConversacionLog`. Ver el docstring del módulo para el recorte de
+    alcance respecto del "chat interno" más genérico que documentaba la
+    Fase 4."""
+
+    conversacion = models.ForeignKey(Conversacion, on_delete=models.CASCADE, related_name="notas_internas")
+    operador = models.ForeignKey(
+        "users.User", on_delete=models.SET_NULL, null=True, blank=True, related_name="+",
+    )
+    texto = models.TextField()
+    creado_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Nota interna de conversación"
+        verbose_name_plural = "Notas internas de conversación"
+        ordering = ["creado_at"]
+
+    def __str__(self):
+        return f"{self.conversacion_id}: {self.texto[:40]}"

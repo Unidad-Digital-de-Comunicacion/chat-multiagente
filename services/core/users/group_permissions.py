@@ -33,13 +33,18 @@ todos sus grupos (`user.has_perm(...)` ya lo resuelve así).
   Fase 7/9, ver sección 11 de docs/CONTEXTO_PROYECTO.md); no tienen ninguna
   pantalla de configuración en el Admin Panel de Core.
 - operadores: ve y gestiona `conversations.Conversacion` de su propia
-  organización (bandeja sin asignar, tomar/responder/cerrar una
-  conversación) desde `frontend/operators-desk-web` — versión MVP de lo que
+  organización (bandeja sin asignar, tomar/responder/cerrar/derivar una
+  conversación, aplicar/quitar etiquetas, cargar observaciones y notas
+  internas — ver `conversations.views.ConversacionViewSet`) desde
+  `frontend/operators-desk-web` y la app Android — versión MVP de lo que
   documentaba la sección 11 como Operators Desk Service (Fase 4/5), armada
   directo contra Core en vez de como un BFF aparte (ver "Cola de mensajes"
-  en docs/CONTEXTO_PROYECTO.md). Sin permisos de administración de ningún
-  tipo (usuarios/equipos/menú/etc.) — eso sigue siendo sólo de
-  `administradores`.
+  en docs/CONTEXTO_PROYECTO.md). `teams.view_team` y `tags.view_etiqueta`
+  son de sólo lectura — un operador necesita ver el nombre de los equipos
+  (para derivar) y el catálogo de etiquetas con sus colores (para
+  aplicarlas), pero no puede crear/editar/borrar ninguno de los dos, eso
+  sigue siendo sólo de `administradores`. Sin ningún otro permiso de
+  administración (usuarios/menú/horarios/canales/etc.).
 """
 from typing import Final
 
@@ -98,6 +103,8 @@ GROUP_PERMISSIONS: Final[dict[str, list[str]]] = {
     "operadores": [
         "conversations.view_conversacion",
         "conversations.change_conversacion",
+        "teams.view_team",
+        "tags.view_etiqueta",
     ],
 }
 

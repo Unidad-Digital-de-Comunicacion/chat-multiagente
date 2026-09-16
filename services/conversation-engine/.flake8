@@ -1,0 +1,9 @@
+# anti-slop-py (paquete, ver requirements-dev.txt) registra las reglas ASP
+# vía entry points — nada que vendorizar acá. Alcance acotado a propósito:
+# sólo ASP/ASF por ahora, sin los códigos extra de Ruff ni mypy estricto.
+# ASF habilitado porque FastAPI es dependencia directa (requirements.txt);
+# ASD (pydantic) queda afuera porque no es dependencia directa acá — sólo
+# transitiva de FastAPI. Mismo criterio que services/channel-gateway/.flake8.
+[flake8]
+select = ASP,ASF
+enable-extensions = ASF

@@ -22,10 +22,12 @@ class TeamViewSetTests(TestCase):
         self.assertIn(self.team_a.id, nombres_ids)
         self.assertNotIn(self.team_b.id, nombres_ids)
 
-    def test_operador_no_puede_leer_ni_crear_equipos(self):
-        # Core es sólo la API de autenticación de un operador — no tiene ningún permiso sobre
-        # equipos ni el resto de la configuración (`users.group_permissions`).
-        self.assertEqual(authenticated_client(self.operador_a).get(self.list_url).status_code, 403)
+    def test_operador_puede_leer_pero_no_crear_equipos(self):
+        # Necesita ver el nombre de los equipos para derivar una conversación
+        # (`conversations.views.ConversacionViewSet.derivar`), pero no puede
+        # administrarlos — eso sigue siendo sólo de `administradores`
+        # (`users.group_permissions`).
+        self.assertEqual(authenticated_client(self.operador_a).get(self.list_url).status_code, 200)
         self.assertEqual(
             authenticated_client(self.operador_a).post(self.list_url, {"name": "Soporte"}).status_code, 403,
         )

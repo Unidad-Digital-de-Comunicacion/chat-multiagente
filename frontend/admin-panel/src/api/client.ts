@@ -1,4 +1,5 @@
 const API_URL = import.meta.env.VITE_CORE_API_URL || "http://localhost:8001";
+const CONVERSATION_ENGINE_URL = import.meta.env.VITE_CONVERSATION_ENGINE_URL || "http://localhost:8003";
 
 // NOTA de seguridad: guardar el refresh token en localStorage es vulnerable a
 // robo por XSS. Es una simplificación deliberada para esta primera versión
@@ -181,4 +182,13 @@ export async function downloadFile(path: string, filename: string): Promise<void
  * adentro; ver `platform_admin.views.PlatformSwaggerView`). */
 export function coreUrl(path: string): string {
   return `${API_URL}${path}`;
+}
+
+/** URL absoluta de Conversation Engine — Swagger (`/docs`) y Redoc
+ * (`/redoc`) los sirve FastAPI solo, sin nada que armar del lado de Core.
+ * No documentan el WebSocket (`WS /ws/operador/{token}`, OpenAPI no tiene
+ * forma de expresarlo) — sólo `/internal/eventos/` y
+ * `/organizations/{id}/conexiones-activas`. */
+export function conversationEngineUrl(path: string): string {
+  return `${CONVERSATION_ENGINE_URL}${path}`;
 }

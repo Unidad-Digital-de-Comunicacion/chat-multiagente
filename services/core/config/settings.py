@@ -224,6 +224,16 @@ CHANNEL_GATEWAY_PUBLIC_URL = os.environ.get("CHANNEL_GATEWAY_PUBLIC_URL", "http:
 # ésta es la que usa Core mismo, puerta adentro de la red de contenedores.
 CHANNEL_GATEWAY_INTERNAL_URL = os.environ.get("CHANNEL_GATEWAY_INTERNAL_URL", "http://channel-gateway:8000").rstrip("/")
 
+# URL INTERNA de Conversation Engine — Core le avisa ahí (`conversations.
+# conversation_engine_client.notificar_evento`) cada vez que pasa algo que
+# un operador conectado por WebSocket necesita saber en tiempo real (nueva
+# conversación/mensaje, tomada, derivada, cerrada, etiqueta o nota interna
+# nueva). Mismo patrón que `CHANNEL_GATEWAY_INTERNAL_URL` de acá arriba
+# (dirección Core -> servicio FastAPI, puerta adentro de la red).
+CONVERSATION_ENGINE_INTERNAL_URL = os.environ.get(
+    "CONVERSATION_ENGINE_INTERNAL_URL", "http://conversation-engine:8000",
+).rstrip("/")
+
 # App de Meta (misma app/credenciales que ya usa channel-gateway para
 # verificar firmas de webhook, `META_APP_SECRET`) — acá hace falta además
 # para `channels.embedded_signup`: el intercambio de `code` por

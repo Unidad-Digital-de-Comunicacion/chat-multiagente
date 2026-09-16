@@ -139,7 +139,8 @@ def procesar_seleccion(conversacion: Conversacion, texto: str) -> list[dict]:
     if elegido.tipo == MenuOpcion.Tipo.DERIVACION:
         conversacion.team = elegido.team
         conversacion.menu_finalizado = True
-        campos = ["team", "menu_finalizado", "updated_at"]
+        conversacion.derivada_at = timezone.now()
+        campos = ["team", "menu_finalizado", "derivada_at", "updated_at"]
         operador = asignar_round_robin(elegido.team)
         if operador:
             conversacion.operador = operador

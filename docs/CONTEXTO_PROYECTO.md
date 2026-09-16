@@ -732,18 +732,33 @@ son templates Django con SSO, esa idea se descartó a favor de una sola UI en el
       URL` al dominio real para que `webhook_url` deje de mostrar localhost.
   - **Chequeo de salud real** (`POST /api/core/canales/{id}/verificar/`, `channels/health.py`): no
     es un simulacro — para WhatsApp/Messenger/Instagram (los 3 sobre la Graph API de Meta) pega de
-    verdad a `GET https://graph.facebook.com/v19.0/me` con la api key cargada y guarda el
-    resultado (`ultimo_chequeo_at/ok/detalle`): conectado + nombre de la cuenta, o el mensaje de
-    error real de Meta. No valida permisos de envío, sólo "¿el servidor la acepta y contesta?" — el
-    envío/recepción real de mensajes (Messenger/Instagram) es Channel Gateway (sección 4.2), no
-    esto. Webchat no tiene un servidor de terceros que
-    consultar (sería el propio Webchat Service, Fase 9, sin construir) — el chequeo ahí devuelve
+    verdad a Meta y guarda el resultado (`ultimo_chequeo_at/ok/detalle`). **WhatsApp y Messenger/
+    Instagram usan nodo y autenticación DISTINTOS** (bug real, confirmado en producción
+    2026-09-16: dos canales 100% funcionales — mandaban/recibían mensajes sin problema — aparecían
+    "sin conexión" acá por chequearse mal, no por estar realmente caídos):
+    - **WhatsApp**: un token de System User de la Cloud API casi nunca puede resolver `/me` (Meta
+      responde `"Unsupported get request..."` aunque el token mande mensajes perfecto por
+      `/<phone_number_id>/messages`). Se verifica contra el propio `phone_number_id`
+      (`Canal.telefono_id`) con el token en el header `Authorization: Bearer` — mismo nodo y
+      autenticación que el envío real (`channel-gateway/app/meta_client.py`).
+    - **Messenger/Instagram**: un Page Access Token con sólo `pages_messaging` (lo mínimo que hace
+      falta para mandar mensajes) tampoco puede leer `/me` (Meta pide `pages_read_engagement`, un
+      permiso que ese token no tiene por qué tener). Se verifica con `/debug_token`, autenticado
+      con las credenciales de la APP (`META_APP_ID`/`META_APP_SECRET`) en vez del token del canal
+      — el mecanismo que la propia Graph API documenta para validar un token sin depender de sus
+      permisos puntuales (`is_valid`/`scopes`/`expires_at`).
+
+    Ninguno de los dos valida permisos de envío más allá de lo mínimo que ya exige el nodo/
+    mecanismo consultado — el envío/recepción real de mensajes (Messenger/Instagram) es Channel
+    Gateway (sección 4.2), no esto. Webchat no tiene un servidor de terceros que consultar (sería
+    el propio Webchat Service, Fase 9, sin construir) — el chequeo ahí devuelve
     `ultimo_chequeo_ok=None` ("No aplica") en vez de intentar una conexión que no existe. Esta
     action tiene su propio `get_permissions()` (sólo pide `IsAuthenticated` + `require_perm`
     manual a `channels.change_canal`) porque `StrictDjangoModelPermissions` mapea POST →
     `add_canal`, que nadie tiene — sin ese override, hasta un Admin real quedaría bloqueado con 403
     al intentar verificar. En los tests, `requests.get` va siempre mockeado
-    (`channels.tests.CanalVerificarConexionTests`) — la suite nunca pega de verdad a Meta.
+    (`channels.tests.CanalVerificarWhatsappTests`/`CanalVerificarMessengerTests`) — la suite nunca
+    pega de verdad a Meta.
 - **Sección "Plataforma" del Admin Panel** (sólo el superusuario real de plataforma — ver
   `IsPlatformSuperuser` más abajo): organizaciones (con sus límites de uso), usuarios de TODAS las
   organizaciones, tokens para la comunicación ENTRE los propios microservicios del proyecto,
@@ -930,31 +945,58 @@ son templates Django con SSO, esa idea se descartó a favor de una sola UI en el
   sintaxis real de WhatsApp al armar cada mensaje saliente.
 
 ### Fase 4 — Conversation Engine (post-derivación)
-- `OperatorSession`, asignación round-robin dentro del `Team` indicado por el nodo `DERIVACION`.
-- WebSocket para entrega en tiempo real.
-- Límite de conexiones simultáneas por organización (consultando el plan en Core).
-- **Chat interno entre operadores** (pedido explícito, todavía no implementado): operadores pueden
-  abrir chats internos entre ellos en paralelo a las conversaciones con usuarios finales, **sin
-  pasar por las APIs de canal** (WhatsApp/etc.) — es mensajería 1:1 puramente interna. Encaja acá
-  por el WebSocket ya resuelto en esta fase (misma infraestructura de tiempo real que la entrega de
-  mensajes de conversaciones, pero un tipo de mensaje/canal distinto que nunca sale hacia Channel
-  Gateway). Requiere su propio modelo de mensajes internos (remitente/destinatario u
-  organización+lista de operadores, sin `Conversacion`/`Contacto` de por medio).
+- **WebSocket de entrega en tiempo real: implementado**, con un alcance recortado a propósito
+  respecto de lo que documentaban estos párrafos originalmente — `services/conversation-engine`
+  (FastAPI) es HOY sólo la capa de entrega (`WS /ws/operador/{token}`, mismo JWT de Core), sin
+  ninguna tabla propia de negocio. Core le avisa (`conversations.conversation_engine_client.
+  notificar_evento`, mejor esfuerzo vía `POST /internal/eventos/`, `Service-Token` del servicio
+  `CONVERSATION_ENGINE`) cada vez que pasa algo relevante para la bandeja, y este servicio lo
+  reenvía por organización a los sockets conectados (`app/connections.py`, registro EN MEMORIA de
+  un solo proceso — no sobrevive un restart ni escala a más de un worker todavía). Contrato completo
+  de los 3 tipos de evento (`mensaje_nuevo`/`conversacion_actualizada`/`nota_interna_nueva`) en
+  §7 de [`docs/operators-desk-api-contract.md`](operators-desk-api-contract.md).
+- **`OperatorSession`/`AsignacionChat` como tablas persistidas: NO implementado, a propósito** — la
+  asignación real (`team`/`operador`/lock de 2 minutos) sigue viviendo enteramente en
+  `Conversacion` de Core (Fase 5 más abajo), duplicarla acá sería una segunda fuente de verdad sin
+  necesidad. `GET /organizations/{id}/conexiones-activas` sí existe, pero cuenta conexiones del
+  proceso actual (en memoria), no una tabla.
+- Límite de conexiones simultáneas por organización (consultando el plan en Core): no implementado.
+- **Chat interno entre operadores, sin atar a una conversación puntual** (mensajería 1:1 arbitraria
+  entre operadores, pedido explícito, todavía no implementado): lo que SÍ existe es
+  `conversations.ConversacionNotaInterna` (Fase 5 más abajo), un recorte deliberado acotado a una
+  conversación puntual — no reemplaza esto, que sigue siendo un chat operador-a-operador aparte, sin
+  `Conversacion`/`Contacto` de por medio, para cuando se pida explícitamente.
+- **Escalar a más de un worker/instancia**: no implementado — el registro de conexiones de
+  `app/connections.py` es un dict en memoria de un solo proceso (`uvicorn` sin `--workers`, ver su
+  Dockerfile). El día que haga falta más de una instancia, mover ese registro a algo compartido
+  entre procesos (Postgres LISTEN/NOTIFY — restricción no negociable del proyecto: nada de
+  Redis/Kafka), no antes de que el volumen real lo justifique.
 
 ### Fase 5 — Operators Desk Service + Operators Desk Web
-- BFF que compone Core (historial/tags/datos transaccionales) + Conversation Engine (asignación/
-  tiempo real) para la bandeja y el hilo de conversación.
-- Frontend React: bandeja, hilo, responder/derivar/etiquetar/cerrar.
-- **Etiquetas sobre una conversación** (pedido explícito, todavía no implementado — la
-  configuración del catálogo ya existe en Core desde Fase 2/`tags`, ver arriba): un operador agrega
-  y quita etiquetas (del catálogo general o de su equipo) de una conversación puntual. Necesita una
-  tabla puente `ConversacionEtiqueta` (conversación × etiqueta, quién la puso y cuándo) en el
-  esquema de este servicio o de Conversation Engine, según dónde termine viviendo `Conversacion`.
-- **Observaciones de resolución** (pedido explícito, todavía no implementado): un operador puede
-  dejar una observación de texto libre en cualquier momento para dar contexto a otros operadores.
-  Es **obligatorio** cargar una observación al resolver una conversación en forma positiva o
-  negativa, o al ponerla en pausa — el back debe rechazar esas tres transiciones de estado sin un
-  texto de observación no vacío (regla de negocio en el propio servicio, no una validación de UI).
+- Lo que esta fase pedía (bandeja, hilo, responder/derivar/etiquetar/cerrar, observaciones
+  obligatorias al resolver/rechazar/pausar) está **implementado directo en Core**
+  (`conversations.views.ConversacionViewSet`), no como el BFF/Conversation Engine con WebSocket que
+  documentaban estos párrafos originalmente — mismo pivot pragmático que el resto de `conversations`
+  (bandeja/tomar/responder/cerrar, ver `users.group_permissions`). Contrato completo, con ejemplos
+  de request/response, para quien construya un cliente (Operators Desk Web o la app Android):
+  [`docs/operators-desk-api-contract.md`](operators-desk-api-contract.md).
+  - **Etiquetas sobre una conversación**: `conversations.ConversacionEtiqueta` (conversación ×
+    `tags.Etiqueta`, quién la aplicó y cuándo) — `GET/POST/DELETE .../conversaciones/{id}/etiquetas/`.
+    Las de sistema (pendiente/asignada/tomada/en_proceso/en_pausa/rechazado/resuelto) son
+    mutuamente excluyentes entre sí; las generales y de equipo son libremente acumulables.
+  - **Observaciones**: `conversations.ConversacionObservacion`, opcionales en cualquier momento
+    (`GET/POST .../observaciones/`) pero **obligatorias** (texto no vacío) al aplicar la etiqueta de
+    sistema resuelto/rechazado/en_pausa — el back rechaza esa transición sin observación.
+  - **Notas internas entre operadores**: `conversations.ConversacionNotaInterna` — recorte deliberado
+    del "chat interno" que documentaba la Fase 4 más abajo: acá está ACOTADO a una conversación
+    puntual y es sólo REST con polling (`GET/POST .../notas-internas/`), no el WebSocket 1:1
+    arbitrario entre operadores que se pensó para Conversation Engine (ver esa fase, sigue sin
+    implementar).
+  - Lo que sigue faltando de verdad: reconexión automática del WebSocket de Conversation Engine
+    (hoy es 100% responsabilidad del cliente, ver §7.1 del contrato), asignación round-robin
+    explícita vía API (hoy sólo la dispara una derivación de menú), y notificaciones push a la app
+    Android (**no implementado, no construir sin pedido explícito** — sección 11 — pero ver la
+    sección "Notificaciones push (roadmap)" del contrato de API para el enfoque que se evaluó).
 
 ### Fase 6 — App móvil Android
 - Mismo contrato de API que Operators Desk Service (sección 3.2): login, bandeja, hilo, acciones.

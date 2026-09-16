@@ -4,9 +4,12 @@ rechazado, resuelto. Además hay etiquetas por cada equipo y el admin puede
 agregar/editar/quitar otras etiquetas y definir los colores de las
 existentes"). Esta app es sólo la CONFIGURACIÓN del catálogo — quién puede
 crear/editar/borrar etiquetas y de qué color son. Aplicarlas a una
-conversación, las observaciones de resolución y el chat interno entre
-operadores son Fase 4/5 (Conversation Engine / Operators Desk), ver sección
-11 de docs/CONTEXTO_PROYECTO.md.
+conversación puntual es `conversations.ConversacionEtiqueta` (ver
+`conversations.views.ConversacionViewSet.etiquetas`) — implementado
+directo contra Core en vez de en el Operators Desk Service/Conversation
+Engine que documentaba originalmente la sección 11/Fase 4-5 de
+docs/CONTEXTO_PROYECTO.md, mismo motivo que el resto de `conversations`
+(ver `users.group_permissions`).
 """
 import re
 

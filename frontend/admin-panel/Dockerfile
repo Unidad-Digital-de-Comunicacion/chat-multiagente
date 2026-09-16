@@ -8,6 +8,8 @@ COPY . .
 # `build.args`), no como `environment` del contenedor final.
 ARG VITE_CORE_API_URL=http://localhost:8001
 ENV VITE_CORE_API_URL=$VITE_CORE_API_URL
+ARG VITE_CONVERSATION_ENGINE_URL=http://localhost:8003
+ENV VITE_CONVERSATION_ENGINE_URL=$VITE_CONVERSATION_ENGINE_URL
 RUN npm run build
 
 FROM nginx:alpine

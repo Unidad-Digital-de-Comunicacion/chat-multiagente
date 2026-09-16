@@ -2,13 +2,19 @@
 de docs/CONTEXTO_PROYECTO.md (`POST /api/core/bot/mensaje-entrante/`) — sólo
 lo llama Channel Gateway (mismo `ServiceTokenAuthentication` que `channels.
 views.InternalCanalConfigView`), nunca un usuario. `ConversacionViewSet` es
-la API que usa el frontend nuevo `operators-desk-web`: bandeja + tomar +
-responder + cerrar. Ver el docstring de `models.py` para qué le falta
-todavía a esto (selección nativa por canal, asignación real de Conversation
-Engine)."""
+la API que usan tanto `operators-desk-web` como la app Android (mismo
+contrato para los dos, sección 3.2): bandeja + tomar + responder + cerrar +
+derivar + etiquetas + observaciones + notas internas. Cada action que
+cambia algo relevante para la bandeja avisa además a Conversation Engine
+(`conversation_engine_client.notificar_evento`, mejor esfuerzo — ver su
+docstring) para que lo reenvíe por WebSocket a quien tenga la app abierta;
+si eso falla o no está configurado, el cliente se entera igual por
+polling. Ver el docstring de `models.py` para qué le falta todavía a esto
+(selección nativa por canal)."""
 from datetime import timedelta
 
 from django.db.models import Q
+from django.shortcuts import get_object_or_404
 from django.utils import timezone
 
 from bot_settings.models import BotMessages
@@ -21,11 +27,26 @@ from rest_framework.exceptions import NotFound, PermissionDenied, ValidationErro
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from tags.models import Etiqueta
+from teams.models import Team
 
 from .channel_gateway_client import enviar_mensaje_saliente
+from .conversation_engine_client import notificar_evento
 from .menu_engine import accion_menu, procesar_seleccion, render_menu
-from .models import Contact, Conversacion, ConversacionLog
-from .serializers import ConversacionLogSerializer, ConversacionSerializer
+from .models import (
+    Contact, Conversacion, ConversacionEtiqueta, ConversacionLog, ConversacionNotaInterna, ConversacionObservacion,
+)
+from .serializers import (
+    AplicarEtiquetaInputSerializer, ConversacionEtiquetaSerializer, ConversacionLogSerializer,
+    ConversacionNotaInternaSerializer, ConversacionObservacionSerializer, ConversacionSerializer,
+    DerivarInputSerializer, NotaInternaInputSerializer, ObservacionInputSerializer,
+)
+
+# Las 3 únicas etiquetas de sistema donde una observación vacía no alcanza
+# (pedido explícito, sección 11/Fase 5 de docs/CONTEXTO_PROYECTO.md): hay
+# que poder explicar POR QUÉ se resolvió positiva/negativamente o se
+# pausó, para que otro operador que retome la conversación tenga contexto.
+CODIGOS_QUE_EXIGEN_OBSERVACION = {"resuelto", "rechazado", "en_pausa"}
 
 
 def _registrar_salientes(conversacion: Conversacion, acciones: list[dict]) -> None:
@@ -110,6 +131,14 @@ class MensajeEntranteView(APIView):
             conversacion=conversacion, remitente=ConversacionLog.Remitente.CONTACTO, texto=texto,
         )
         _registrar_salientes(conversacion, acciones)
+        # Cubre tanto "mensaje nuevo" como cualquier cambio de estado que
+        # haya disparado el motor de menú en el camino (derivación a un
+        # equipo, asignación por round-robin, cierre por "Terminar") — un
+        # solo aviso al final, no hace falta instrumentar `menu_engine.py`.
+        notificar_evento(
+            tipo="mensaje_nuevo", organization_id=organization.id, conversacion_id=conversacion.id,
+            team_id=conversacion.team_id, operador_id=conversacion.operador_id,
+        )
         return Response({"acciones": acciones})
 
 
@@ -142,11 +171,18 @@ class ConversacionViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, view
         return qs
 
     def get_permissions(self):
-        # Ninguna de estas 4 actions mapea 1 a 1 a un CRUD (todas son POST/GET
-        # que no son ni add/change/delete "genéricos" de `StrictDjango
-        # ModelPermissions") — mismo criterio que `channels.CanalViewSet.
-        # verificar`: el permiso real se pide a mano en cada método.
-        if self.action in ("tomar", "mensajes", "responder", "cerrar"):
+        # Ninguna de estas actions mapea 1 a 1 a un CRUD (todas son POST/GET/
+        # DELETE que no son ni add/change/delete "genéricos" de `StrictDjango
+        # ModelPermissions`) — mismo criterio que `channels.CanalViewSet.
+        # verificar`: el permiso real se pide a mano en cada método, siempre
+        # `conversations.view_/change_conversacion` (nunca un permiso propio
+        # de `ConversacionEtiqueta`/`ConversacionObservacion`/
+        # `ConversacionNotaInterna` — son detalle de una conversación, no
+        # recursos que se administren aparte).
+        if self.action in (
+            "tomar", "mensajes", "responder", "cerrar", "derivar",
+            "etiquetas", "quitar_etiqueta", "observaciones", "notas_internas",
+        ):
             return [IsAuthenticated()]
         return super().get_permissions()
 
@@ -170,6 +206,10 @@ class ConversacionViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, view
         conversacion.operador = request.user
         conversacion.bloqueada_hasta = ahora + timedelta(minutes=self.LOCK_MINUTOS)
         conversacion.save(update_fields=["operador", "bloqueada_hasta", "updated_at"])
+        notificar_evento(
+            tipo="conversacion_actualizada", organization_id=conversacion.organization_id,
+            conversacion_id=conversacion.id, team_id=conversacion.team_id, operador_id=conversacion.operador_id,
+        )
         return Response(self.get_serializer(conversacion).data)
 
     @action(detail=True, methods=["get"])
@@ -218,4 +258,140 @@ class ConversacionViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, view
             enviar_mensaje_saliente(conversacion, despedida)
             ConversacionLog.objects.create(conversacion=conversacion, remitente=ConversacionLog.Remitente.SISTEMA, texto=despedida)
 
+        notificar_evento(
+            tipo="conversacion_actualizada", organization_id=conversacion.organization_id,
+            conversacion_id=conversacion.id, team_id=conversacion.team_id, operador_id=conversacion.operador_id,
+        )
         return Response(self.get_serializer(conversacion).data)
+
+    @action(detail=True, methods=["post"])
+    def derivar(self, request, pk=None):
+        """Deriva a mano una conversación ya en curso a otro equipo —
+        distinto de la derivación automática del árbol de menú
+        (`menu_engine.procesar_seleccion`, que sólo pasa mientras el
+        contacto sigue en modo bot): acá el operador ya la venía atendiendo
+        (o estaba sin asignar en la bandeja de otro equipo) y decide
+        pasarla. Vuelve a quedar sin operador asignado (libre para que
+        cualquiera del equipo destino la tome) — pedido explícito (sección
+        11/Fase 5): requiere indicar el motivo en `observacion`."""
+        require_perm(request, "conversations.change_conversacion")
+        conversacion = self.get_object()
+        if conversacion.estado != Conversacion.Estado.ABIERTA:
+            raise ValidationError("Esta conversación ya está cerrada.")
+
+        entrada = DerivarInputSerializer(data=request.data)
+        entrada.is_valid(raise_exception=True)
+        team = get_object_or_404(Team, pk=entrada.validated_data["team"], organization_id=conversacion.organization_id)
+
+        conversacion.team = team
+        conversacion.operador = None
+        conversacion.bloqueada_hasta = None
+        conversacion.derivada_at = timezone.now()
+        conversacion.save(update_fields=["team", "operador", "bloqueada_hasta", "derivada_at", "updated_at"])
+        ConversacionObservacion.objects.create(
+            conversacion=conversacion, operador=request.user, texto=entrada.validated_data["observacion"].strip(),
+        )
+        notificar_evento(
+            tipo="conversacion_actualizada", organization_id=conversacion.organization_id,
+            conversacion_id=conversacion.id, team_id=conversacion.team_id, operador_id=conversacion.operador_id,
+        )
+        return Response(self.get_serializer(conversacion).data)
+
+    @action(detail=True, methods=["get", "post"], url_path="etiquetas")
+    def etiquetas(self, request, pk=None):
+        """GET: etiquetas hoy aplicadas a esta conversación (de sistema, de
+        equipo o generales — mismo catálogo de `tags.EtiquetaViewSet`). POST
+        `{etiqueta, observacion?}`: aplica una — si es de sistema, saca
+        cualquier otra etiqueta de sistema que ya estuviera (mutuamente
+        excluyentes, sólo puede haber un estado activo a la vez) y exige
+        `observacion` no vacía si el código es resuelto/rechazado/en_pausa
+        (pedido explícito, sección 11/Fase 5)."""
+        conversacion = self.get_object()
+        if request.method == "GET":
+            require_perm(request, "conversations.view_conversacion")
+            aplicadas = conversacion.etiquetas_aplicadas.select_related("etiqueta", "aplicada_por")
+            return Response(ConversacionEtiquetaSerializer(aplicadas, many=True).data)
+
+        require_perm(request, "conversations.change_conversacion")
+        entrada = AplicarEtiquetaInputSerializer(data=request.data)
+        entrada.is_valid(raise_exception=True)
+        etiqueta = get_object_or_404(
+            Etiqueta, pk=entrada.validated_data["etiqueta"], organization_id=conversacion.organization_id,
+        )
+        observacion_texto = entrada.validated_data["observacion"].strip()
+        if etiqueta.codigo in CODIGOS_QUE_EXIGEN_OBSERVACION and not observacion_texto:
+            raise ValidationError({
+                "observacion": f"Hace falta cargar una observación para marcar la conversación como «{etiqueta.nombre}».",
+            })
+
+        if etiqueta.es_sistema:
+            conversacion.etiquetas_aplicadas.filter(etiqueta__es_sistema=True).exclude(etiqueta=etiqueta).delete()
+        ConversacionEtiqueta.objects.update_or_create(
+            conversacion=conversacion, etiqueta=etiqueta, defaults={"aplicada_por": request.user},
+        )
+        if observacion_texto:
+            ConversacionObservacion.objects.create(conversacion=conversacion, operador=request.user, texto=observacion_texto)
+
+        notificar_evento(
+            tipo="conversacion_actualizada", organization_id=conversacion.organization_id,
+            conversacion_id=conversacion.id, team_id=conversacion.team_id, operador_id=conversacion.operador_id,
+        )
+        aplicadas = conversacion.etiquetas_aplicadas.select_related("etiqueta", "aplicada_por")
+        return Response(ConversacionEtiquetaSerializer(aplicadas, many=True).data, status=201)
+
+    @action(detail=True, methods=["delete"], url_path=r"etiquetas/(?P<etiqueta_id>\d+)")
+    def quitar_etiqueta(self, request, pk=None, etiqueta_id=None):
+        require_perm(request, "conversations.change_conversacion")
+        conversacion = self.get_object()
+        borradas, _ = conversacion.etiquetas_aplicadas.filter(etiqueta_id=etiqueta_id).delete()
+        if not borradas:
+            raise NotFound("Esa etiqueta no está aplicada a esta conversación.")
+        notificar_evento(
+            tipo="conversacion_actualizada", organization_id=conversacion.organization_id,
+            conversacion_id=conversacion.id, team_id=conversacion.team_id, operador_id=conversacion.operador_id,
+        )
+        return Response(status=204)
+
+    @action(detail=True, methods=["get", "post"], url_path="observaciones")
+    def observaciones(self, request, pk=None):
+        """Notas de texto libre sobre esta conversación — se pueden cargar
+        en cualquier momento (a diferencia de las que `etiquetas` crea
+        automáticamente al resolver/rechazar/pausar, éstas son opcionales)."""
+        conversacion = self.get_object()
+        if request.method == "GET":
+            require_perm(request, "conversations.view_conversacion")
+            observaciones = conversacion.observaciones.select_related("operador")
+            return Response(ConversacionObservacionSerializer(observaciones, many=True).data)
+
+        require_perm(request, "conversations.change_conversacion")
+        entrada = ObservacionInputSerializer(data=request.data)
+        entrada.is_valid(raise_exception=True)
+        observacion = ConversacionObservacion.objects.create(
+            conversacion=conversacion, operador=request.user, texto=entrada.validated_data["texto"].strip(),
+        )
+        return Response(ConversacionObservacionSerializer(observacion).data, status=201)
+
+    @action(detail=True, methods=["get", "post"], url_path="notas-internas")
+    def notas_internas(self, request, pk=None):
+        """Hilo de mensajería ENTRE OPERADORES sobre esta conversación —
+        nunca sale hacia Channel Gateway ni la ve el contacto, a diferencia
+        de `mensajes`. Ver el docstring de `models.py` para el alcance
+        acotado de esto respecto del "chat interno" más genérico que
+        documentaba la Fase 4 (Conversation Engine)."""
+        conversacion = self.get_object()
+        if request.method == "GET":
+            require_perm(request, "conversations.view_conversacion")
+            notas = conversacion.notas_internas.select_related("operador")
+            return Response(ConversacionNotaInternaSerializer(notas, many=True).data)
+
+        require_perm(request, "conversations.change_conversacion")
+        entrada = NotaInternaInputSerializer(data=request.data)
+        entrada.is_valid(raise_exception=True)
+        nota = ConversacionNotaInterna.objects.create(
+            conversacion=conversacion, operador=request.user, texto=entrada.validated_data["texto"].strip(),
+        )
+        notificar_evento(
+            tipo="nota_interna_nueva", organization_id=conversacion.organization_id,
+            conversacion_id=conversacion.id, team_id=conversacion.team_id, operador_id=conversacion.operador_id,
+        )
+        return Response(ConversacionNotaInternaSerializer(nota).data, status=201)

@@ -72,11 +72,25 @@ services:
       - FRONTEND_URL=${FRONTEND_URL}
       - CHANNEL_GATEWAY_PUBLIC_URL=${CHANNEL_GATEWAY_PUBLIC_URL}
       - CHANNEL_GATEWAY_INTERNAL_URL=${CHANNEL_GATEWAY_INTERNAL_URL:-http://channel-gateway:8000}
+      - CONVERSATION_ENGINE_INTERNAL_URL=${CONVERSATION_ENGINE_INTERNAL_URL:-http://conversation-engine:8000}
       - META_APP_ID=${META_APP_ID}
       - META_APP_SECRET=${META_APP_SECRET}
     volumes:
       - jwt_keys:/app/keys
       - media_files:/app/mediafiles
+      # Documentos técnicos que `platform_admin.DocumentoTecnicoView` sirve
+      # desde "Plataforma > Manuales y API" del Admin Panel — de sólo
+      # lectura, la fuente sigue viviendo en la raíz del repo (docs/ y
+      # UDCOperadorAPP/AGENTS.md), no se duplica adentro de services/core.
+      # A propósito FUERA de /app (no /app/docs_repo): docker-compose.
+      # override.yml monta ./services/core:/app entero para hot-reload en
+      # dev, y anidar un bind mount del host bajo OTRO bind mount del host
+      # ahí adentro hace que Docker Desktop en Windows deje archivos/
+      # carpetas vacíos fantasma en services/core/ (visto y limpiado una
+      # vez — no lo repitas). Como mount de nivel raíz del contenedor, sin
+      # relación de anidamiento con /app, no pasa.
+      - ./docs:/docs_repo:ro
+      - ./UDCOperadorAPP/AGENTS.md:/agents_android.md:ro
     ports:
       - "8001:80"
     depends_on:
@@ -129,6 +143,11 @@ services:
       - DB_SCHEMA=conversation_engine
       - DB_USER=${POSTGRES_USER}
       - DB_PASSWORD=${POSTGRES_PASSWORD}
+      # Ver el comentario de CONVERSATION_ENGINE_SERVICE_TOKEN en
+      # .env.example — mismo valor, nombre de variable distinto porque acá
+      # es "el secreto que comparto con Core" (mismo patrón que usa
+      # channel-gateway para su propio CORE_SERVICE_TOKEN).
+      - CORE_SERVICE_TOKEN=${CONVERSATION_ENGINE_SERVICE_TOKEN}
     ports:
       - "8003:8000"
     healthcheck:
@@ -195,6 +214,7 @@ services:
       context: ./frontend/admin-panel
       args:
         - VITE_CORE_API_URL=${ADMIN_PANEL_CORE_API_URL:-http://localhost:8001}
+        - VITE_CONVERSATION_ENGINE_URL=${ADMIN_PANEL_CONVERSATION_ENGINE_URL:-http://localhost:8003}
     ports:
       - "3000:80"
     depends_on:
@@ -233,6 +253,16 @@ services:
   #   3. Actualizar `CHANNEL_GATEWAY_PUBLIC_URL` en `.env` al dominio nuevo
   #      (ej. https://webhooks.midominio.com) para que `Canal.webhook_url`
   #      en el Admin Panel muestre la URL pública real, no localhost.
+  #
+  # El mismo túnel/token sirve para exponer Conversation Engine (WebSocket
+  # de tiempo real, `services/conversation-engine`) — un SEGUNDO "Public
+  # Hostname" en este mismo túnel (en udcchat.com.ar: realtime.udcchat.
+  # com.ar), Service Type HTTP, apuntando a `conversation-engine:8000`
+  # (Cloudflare hace el upgrade a WebSocket solo, no hay nada más que
+  # tildar). No hace falta otro `CLOUDFLARE_TUNNEL_TOKEN` ni otro
+  # contenedor — actualizar `CONVERSATION_ENGINE_PUBLIC_URL` Y
+  # `ADMIN_PANEL_CONVERSATION_ENGINE_URL` en `.env` a ese dominio
+  # (`wss://`/`https://` respectivamente, ver .env.example).
   cloudflared:
     image: cloudflare/cloudflared:latest
     restart: unless-stopped

@@ -1,3 +1,6 @@
+import tempfile
+from pathlib import Path
+
 from django.test import TestCase
 from django.urls import reverse
 
@@ -6,6 +9,7 @@ from common.test_utils import authenticated_client, make_organization, make_user
 from teams.models import Team
 
 from .models import ServiceToken
+from .views import DOCUMENTOS_TECNICOS
 
 
 def _make_superusuario(email="superusuario@plataforma.test"):
@@ -129,6 +133,54 @@ class ManualDownloadViewTests(TestCase):
 
     def test_admin_no_puede_descargarlo(self):
         response = authenticated_client(self.admin).get(self.url)
+        self.assertEqual(response.status_code, 403)
+
+
+class DocumentoTecnicoViewTests(TestCase):
+    """`DOCUMENTOS_TECNICOS` apunta a paths montados por docker-compose.yml
+    (ver sus comentarios) — acá se sustituye el path de un slug por un
+    archivo temporal para no depender de que ese mount exista en el
+    ambiente donde corren los tests."""
+
+    def setUp(self):
+        self.superusuario = _make_superusuario()
+        self.org = make_organization()
+        self.admin = make_user(self.org, groups=["administradores"])
+
+    def test_superusuario_puede_descargar_un_documento_existente(self):
+        with tempfile.NamedTemporaryFile(suffix=".md") as archivo:
+            archivo.write(b"# Contrato de prueba")
+            archivo.flush()
+            original = DOCUMENTOS_TECNICOS["operators-desk-api"]["path"]
+            DOCUMENTOS_TECNICOS["operators-desk-api"]["path"] = Path(archivo.name)
+            try:
+                url = reverse("plataforma-manual-documento", args=["operators-desk-api"])
+                response = authenticated_client(self.superusuario).get(url)
+                self.assertEqual(response.status_code, 200)
+                self.assertTrue(response["Content-Type"].startswith("text/markdown"))
+            finally:
+                DOCUMENTOS_TECNICOS["operators-desk-api"]["path"] = original
+
+    def test_slug_desconocido_da_404(self):
+        url = reverse("plataforma-manual-documento", args=["no-existe"])
+        response = authenticated_client(self.superusuario).get(url)
+        self.assertEqual(response.status_code, 404)
+
+    def test_documento_sin_montar_todavia_da_404(self):
+        # Mismo caso que un ambiente donde todavía no se agregó el mount
+        # de docker-compose.yml para ese path (`docs_repo`/`agents_android.md`).
+        original = DOCUMENTOS_TECNICOS["operators-desk-api"]["path"]
+        DOCUMENTOS_TECNICOS["operators-desk-api"]["path"] = Path("/no/existe/nada/aca.md")
+        try:
+            url = reverse("plataforma-manual-documento", args=["operators-desk-api"])
+            response = authenticated_client(self.superusuario).get(url)
+            self.assertEqual(response.status_code, 404)
+        finally:
+            DOCUMENTOS_TECNICOS["operators-desk-api"]["path"] = original
+
+    def test_admin_no_puede_descargar_documentos_tecnicos(self):
+        url = reverse("plataforma-manual-documento", args=["operators-desk-api"])
+        response = authenticated_client(self.admin).get(url)
         self.assertEqual(response.status_code, 403)
 
 

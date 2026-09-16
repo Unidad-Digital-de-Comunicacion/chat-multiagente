@@ -6,14 +6,19 @@ from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
 from menu.models import MenuOpcion
+from requests.exceptions import RequestException
 from teams.models import Team
 
 from common.test_utils import authenticated_client, make_organization, make_user
 from platform_admin.models import ServiceToken
 from rest_framework.test import APIClient
 
+from tags.defaults import asegurar_etiquetas_sistema
+from tags.models import Etiqueta
+
 from .asignacion import asignar_round_robin
-from .models import Contact, Conversacion, ConversacionLog
+from .conversation_engine_client import notificar_evento
+from .models import Contact, Conversacion, ConversacionEtiqueta, ConversacionLog, ConversacionNotaInterna, ConversacionObservacion
 
 
 def _service_client(token):
@@ -224,6 +229,228 @@ class ConversacionViewSetTests(TestCase):
         )
         response = authenticated_client(superusuario).get(self.list_url)
         self.assertEqual(response.status_code, 403)
+
+    def test_estado_operativo_pendiente_sin_equipo_ni_operador(self):
+        detail_url = reverse("conversacion-detail", args=[self.conversacion.id])
+        response = authenticated_client(self.operador).get(detail_url)
+        self.assertEqual(response.data["estado_operativo"], "pendiente")
+
+    def test_estado_operativo_asignada_con_equipo_sin_operador(self):
+        team = Team.objects.create(organization=self.org, name="Ventas")
+        self.conversacion.team = team
+        self.conversacion.save(update_fields=["team"])
+        detail_url = reverse("conversacion-detail", args=[self.conversacion.id])
+        response = authenticated_client(self.operador).get(detail_url)
+        self.assertEqual(response.data["estado_operativo"], "asignada")
+
+    def test_estado_operativo_tomada_con_operador(self):
+        reverse_tomar = reverse("conversacion-tomar", args=[self.conversacion.id])
+        authenticated_client(self.operador).post(reverse_tomar)
+        detail_url = reverse("conversacion-detail", args=[self.conversacion.id])
+        response = authenticated_client(self.operador).get(detail_url)
+        self.assertEqual(response.data["estado_operativo"], "tomada")
+
+    @patch("conversations.views.enviar_mensaje_saliente", return_value=True)
+    def test_estado_operativo_cerrada(self, mock_enviar):
+        self.conversacion.operador = self.operador
+        self.conversacion.save(update_fields=["operador"])
+        authenticated_client(self.operador).post(reverse("conversacion-cerrar", args=[self.conversacion.id]))
+        detail_url = reverse("conversacion-detail", args=[self.conversacion.id])
+        response = authenticated_client(self.operador).get(detail_url)
+        self.assertEqual(response.data["estado_operativo"], "cerrada")
+
+
+class ConversacionDerivarTests(TestCase):
+    """`POST /conversaciones/{id}/derivar/` — reasignación manual a otro
+    equipo, distinta de la que dispara el árbol de menú."""
+
+    def setUp(self):
+        self.org = make_organization()
+        self.operador = make_user(self.org, groups=["operadores"])
+        self.team_destino = Team.objects.create(organization=self.org, name="Soporte")
+        ServiceToken.objects.create(servicio=ServiceToken.Servicio.CHANNEL_GATEWAY, token="tok", activo=True)
+        _service_client("tok").post(
+            reverse("bot-mensaje-entrante"),
+            {"organization_id": self.org.id, "channel": "WHATSAPP", "contact_externo_id": "111", "texto": "hola"},
+            format="json",
+        )
+        self.conversacion = Conversacion.objects.get()
+        self.conversacion.operador = self.operador
+        self.conversacion.save(update_fields=["operador"])
+        self.url = reverse("conversacion-derivar", args=[self.conversacion.id])
+
+    def test_deriva_y_deja_libre_para_el_equipo_destino(self):
+        response = authenticated_client(self.operador).post(
+            self.url, {"team": self.team_destino.id, "observacion": "No es mi área, pasa a Soporte."},
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        self.conversacion.refresh_from_db()
+        self.assertEqual(self.conversacion.team, self.team_destino)
+        self.assertIsNone(self.conversacion.operador)
+        self.assertIsNone(self.conversacion.bloqueada_hasta)
+        self.assertEqual(
+            ConversacionObservacion.objects.get().texto, "No es mi área, pasa a Soporte.",
+        )
+
+    def test_requiere_observacion(self):
+        response = authenticated_client(self.operador).post(self.url, {"team": self.team_destino.id, "observacion": ""})
+        self.assertEqual(response.status_code, 400)
+
+    def test_no_puede_derivar_a_un_equipo_de_otra_organizacion(self):
+        otra_org = make_organization(name="Otra", slug="otra")
+        team_ajeno = Team.objects.create(organization=otra_org, name="Ajeno")
+        response = authenticated_client(self.operador).post(
+            self.url, {"team": team_ajeno.id, "observacion": "motivo"},
+        )
+        self.assertEqual(response.status_code, 404)
+
+    def test_no_se_puede_derivar_una_conversacion_cerrada(self):
+        self.conversacion.estado = Conversacion.Estado.CERRADA
+        self.conversacion.save(update_fields=["estado"])
+        response = authenticated_client(self.operador).post(
+            self.url, {"team": self.team_destino.id, "observacion": "motivo"},
+        )
+        self.assertEqual(response.status_code, 400)
+
+
+class ConversacionEtiquetasTests(TestCase):
+    """`GET/POST /conversaciones/{id}/etiquetas/` y `DELETE .../etiquetas/{id}/`."""
+
+    def setUp(self):
+        self.org = make_organization()
+        self.operador = make_user(self.org, groups=["operadores"])
+        ServiceToken.objects.create(servicio=ServiceToken.Servicio.CHANNEL_GATEWAY, token="tok", activo=True)
+        _service_client("tok").post(
+            reverse("bot-mensaje-entrante"),
+            {"organization_id": self.org.id, "channel": "WHATSAPP", "contact_externo_id": "111", "texto": "hola"},
+            format="json",
+        )
+        self.conversacion = Conversacion.objects.get()
+        self.url = reverse("conversacion-etiquetas", args=[self.conversacion.id])
+        # Dispara la autogeneración del catálogo de sistema (mismo patrón
+        # lazy que `tags.EtiquetaViewSet.get_queryset`).
+        asegurar_etiquetas_sistema(self.org.id)
+        self.en_proceso = Etiqueta.objects.get(organization=self.org, codigo="en_proceso")
+        self.resuelto = Etiqueta.objects.get(organization=self.org, codigo="resuelto")
+        self.general = Etiqueta.objects.create(organization=self.org, nombre="VIP", color="#000000")
+
+    def test_aplica_una_etiqueta_general(self):
+        response = authenticated_client(self.operador).post(self.url, {"etiqueta": self.general.id})
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertEqual(ConversacionEtiqueta.objects.get().etiqueta, self.general)
+
+    def test_aplicar_etiqueta_de_sistema_saca_la_etiqueta_de_sistema_anterior(self):
+        authenticated_client(self.operador).post(self.url, {"etiqueta": self.en_proceso.id})
+        authenticated_client(self.operador).post(self.url, {"etiqueta": self.resuelto.id, "observacion": "Resuelto ok."})
+        codigos = set(ConversacionEtiqueta.objects.values_list("etiqueta__codigo", flat=True))
+        self.assertEqual(codigos, {"resuelto"})
+
+    def test_etiqueta_de_sistema_general_no_saca_la_de_equipo_ni_la_general(self):
+        authenticated_client(self.operador).post(self.url, {"etiqueta": self.general.id})
+        authenticated_client(self.operador).post(self.url, {"etiqueta": self.en_proceso.id})
+        codigos_o_nombres = set(ConversacionEtiqueta.objects.values_list("etiqueta__nombre", flat=True))
+        self.assertEqual(codigos_o_nombres, {"VIP", "En proceso"})
+
+    def test_resolver_sin_observacion_falla(self):
+        response = authenticated_client(self.operador).post(self.url, {"etiqueta": self.resuelto.id})
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("observacion", response.data)
+        self.assertEqual(ConversacionEtiqueta.objects.count(), 0)
+
+    def test_resolver_con_observacion_la_crea_tambien(self):
+        authenticated_client(self.operador).post(
+            self.url, {"etiqueta": self.resuelto.id, "observacion": "Se le dio de baja el servicio."},
+        )
+        self.assertEqual(
+            ConversacionObservacion.objects.get().texto, "Se le dio de baja el servicio.",
+        )
+
+    def test_etiqueta_general_no_exige_observacion(self):
+        response = authenticated_client(self.operador).post(self.url, {"etiqueta": self.general.id})
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertEqual(ConversacionObservacion.objects.count(), 0)
+
+    def test_no_puede_aplicar_una_etiqueta_de_otra_organizacion(self):
+        otra_org = make_organization(name="Otra", slug="otra")
+        etiqueta_ajena = Etiqueta.objects.create(organization=otra_org, nombre="Ajena")
+        response = authenticated_client(self.operador).post(self.url, {"etiqueta": etiqueta_ajena.id})
+        self.assertEqual(response.status_code, 404)
+
+    def test_quita_una_etiqueta_aplicada(self):
+        authenticated_client(self.operador).post(self.url, {"etiqueta": self.general.id})
+        aplicada = ConversacionEtiqueta.objects.get()
+        quitar_url = reverse("conversacion-quitar-etiqueta", args=[self.conversacion.id, aplicada.etiqueta_id])
+        response = authenticated_client(self.operador).delete(quitar_url)
+        self.assertEqual(response.status_code, 204)
+        self.assertEqual(ConversacionEtiqueta.objects.count(), 0)
+
+    def test_quitar_una_etiqueta_no_aplicada_da_404(self):
+        quitar_url = reverse("conversacion-quitar-etiqueta", args=[self.conversacion.id, self.general.id])
+        response = authenticated_client(self.operador).delete(quitar_url)
+        self.assertEqual(response.status_code, 404)
+
+    def test_lista_las_etiquetas_aplicadas_con_su_color(self):
+        authenticated_client(self.operador).post(self.url, {"etiqueta": self.general.id})
+        response = authenticated_client(self.operador).get(self.url)
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(len(response.data), 1)
+        self.assertEqual(response.data[0]["etiqueta"]["color"], "#000000")
+
+
+class ConversacionObservacionesTests(TestCase):
+    def setUp(self):
+        self.org = make_organization()
+        self.operador = make_user(self.org, groups=["operadores"])
+        ServiceToken.objects.create(servicio=ServiceToken.Servicio.CHANNEL_GATEWAY, token="tok", activo=True)
+        _service_client("tok").post(
+            reverse("bot-mensaje-entrante"),
+            {"organization_id": self.org.id, "channel": "WHATSAPP", "contact_externo_id": "111", "texto": "hola"},
+            format="json",
+        )
+        self.conversacion = Conversacion.objects.get()
+        self.url = reverse("conversacion-observaciones", args=[self.conversacion.id])
+
+    def test_agrega_y_lista_una_observacion(self):
+        response = authenticated_client(self.operador).post(self.url, {"texto": "Cliente pidió que lo llamen."})
+        self.assertEqual(response.status_code, 201, response.data)
+        response = authenticated_client(self.operador).get(self.url)
+        self.assertEqual(len(response.data), 1)
+        self.assertEqual(response.data[0]["texto"], "Cliente pidió que lo llamen.")
+        self.assertEqual(response.data[0]["operador_email"], self.operador.email)
+
+    def test_texto_vacio_falla(self):
+        response = authenticated_client(self.operador).post(self.url, {"texto": "   "})
+        self.assertEqual(response.status_code, 400)
+
+
+class ConversacionNotasInternasTests(TestCase):
+    """Hilo de mensajería entre operadores sobre una conversación puntual —
+    nunca sale hacia Channel Gateway ni la ve el contacto."""
+
+    def setUp(self):
+        self.org = make_organization()
+        self.operador = make_user(self.org, groups=["operadores"])
+        self.otro_operador = make_user(self.org, groups=["operadores"], email="otro@test.com")
+        ServiceToken.objects.create(servicio=ServiceToken.Servicio.CHANNEL_GATEWAY, token="tok", activo=True)
+        _service_client("tok").post(
+            reverse("bot-mensaje-entrante"),
+            {"organization_id": self.org.id, "channel": "WHATSAPP", "contact_externo_id": "111", "texto": "hola"},
+            format="json",
+        )
+        self.conversacion = Conversacion.objects.get()
+        self.url = reverse("conversacion-notas-internas", args=[self.conversacion.id])
+
+    def test_agrega_y_lista_una_nota_interna(self):
+        authenticated_client(self.operador).post(self.url, {"texto": "¿Alguien habló con este cliente antes?"})
+        response = authenticated_client(self.otro_operador).get(self.url)
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(len(response.data), 1)
+        self.assertEqual(response.data[0]["operador_email"], self.operador.email)
+
+    def test_no_queda_en_el_log_que_ve_el_contacto(self):
+        authenticated_client(self.operador).post(self.url, {"texto": "nota interna"})
+        self.assertEqual(ConversacionNotaInterna.objects.count(), 1)
+        self.assertFalse(ConversacionLog.objects.filter(texto="nota interna").exists())
 
 
 class MenuEngineTests(TestCase):
@@ -514,3 +741,85 @@ class AsignacionRoundRobinTests(TestCase):
         segundo = make_user(self.org, groups=["operadores"], email="segundo@test.com")
         self.team.members.add(segundo, primero)  # orden de alta invertido
         self.assertEqual(asignar_round_robin(self.team), primero)
+
+
+class NotificarEventoTests(TestCase):
+    """`conversation_engine_client.notificar_evento` en aislamiento — mejor
+    esfuerzo: nunca debe levantar, con o sin Conversation Engine configurado
+    o disponible."""
+
+    def setUp(self):
+        self.org = make_organization()
+
+    @patch("conversations.conversation_engine_client.requests.post")
+    def test_sin_token_activo_no_intenta_nada(self, mock_post):
+        notificar_evento(tipo="mensaje_nuevo", organization_id=self.org.id, conversacion_id=1)
+        mock_post.assert_not_called()
+
+    @patch("conversations.conversation_engine_client.requests.post")
+    def test_con_token_activo_manda_el_evento(self, mock_post):
+        ServiceToken.objects.create(servicio=ServiceToken.Servicio.CONVERSATION_ENGINE, token="tok-ce", activo=True)
+        notificar_evento(
+            tipo="conversacion_actualizada", organization_id=self.org.id, conversacion_id=7,
+            team_id=3, operador_id=None,
+        )
+        mock_post.assert_called_once()
+        _, kwargs = mock_post.call_args
+        self.assertEqual(kwargs["headers"]["Authorization"], "Service-Token tok-ce")
+        self.assertEqual(
+            kwargs["json"],
+            {"tipo": "conversacion_actualizada", "organization_id": self.org.id, "conversacion_id": 7, "team_id": 3, "operador_id": None},
+        )
+
+    @patch("conversations.conversation_engine_client.requests.post")
+    def test_token_inactivo_no_intenta_nada(self, mock_post):
+        ServiceToken.objects.create(servicio=ServiceToken.Servicio.CONVERSATION_ENGINE, token="tok-ce", activo=False)
+        notificar_evento(tipo="mensaje_nuevo", organization_id=self.org.id, conversacion_id=1)
+        mock_post.assert_not_called()
+
+    @patch("conversations.conversation_engine_client.requests.post", side_effect=RequestException("caído"))
+    def test_si_falla_la_request_no_propaga_la_excepcion(self, mock_post):
+        ServiceToken.objects.create(servicio=ServiceToken.Servicio.CONVERSATION_ENGINE, token="tok-ce", activo=True)
+        notificar_evento(tipo="mensaje_nuevo", organization_id=self.org.id, conversacion_id=1)  # no debe levantar
+
+
+class NotificarEventoEnLasActionsTests(TestCase):
+    """Confirma que las actions que cambian la bandeja avisan a Conversation
+    Engine — el contenido exacto del evento ya está cubierto arriba, acá
+    sólo importa CUÁNDO se dispara."""
+
+    def setUp(self):
+        self.org = make_organization()
+        self.operador = make_user(self.org, groups=["operadores"])
+        ServiceToken.objects.create(servicio=ServiceToken.Servicio.CHANNEL_GATEWAY, token="tok", activo=True)
+        _service_client("tok").post(
+            reverse("bot-mensaje-entrante"),
+            {"organization_id": self.org.id, "channel": "WHATSAPP", "contact_externo_id": "111", "texto": "hola"},
+            format="json",
+        )
+        self.conversacion = Conversacion.objects.get()
+
+    @patch("conversations.views.notificar_evento")
+    def test_mensaje_entrante_avisa(self, mock_notificar):
+        mock_notificar.reset_mock()
+        _service_client("tok").post(
+            reverse("bot-mensaje-entrante"),
+            {"organization_id": self.org.id, "channel": "WHATSAPP", "contact_externo_id": "111", "texto": "otro mensaje"},
+            format="json",
+        )
+        mock_notificar.assert_called_once()
+        self.assertEqual(mock_notificar.call_args.kwargs["tipo"], "mensaje_nuevo")
+
+    @patch("conversations.views.notificar_evento")
+    def test_tomar_avisa(self, mock_notificar):
+        url = reverse("conversacion-tomar", args=[self.conversacion.id])
+        authenticated_client(self.operador).post(url)
+        mock_notificar.assert_called_once()
+        self.assertEqual(mock_notificar.call_args.kwargs["tipo"], "conversacion_actualizada")
+
+    @patch("conversations.views.notificar_evento")
+    def test_notas_internas_avisa(self, mock_notificar):
+        url = reverse("conversacion-notas-internas", args=[self.conversacion.id])
+        authenticated_client(self.operador).post(url, {"texto": "nota"})
+        mock_notificar.assert_called_once()
+        self.assertEqual(mock_notificar.call_args.kwargs["tipo"], "nota_interna_nueva")

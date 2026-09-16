@@ -133,6 +133,44 @@ class ManualDownloadView(APIView):
         )
 
 
+# Documentos en Markdown para pasarle a otro equipo/agente sin necesitar
+# acceso al repo (ej. el dev que arma la app Android contra este mismo
+# backend) — a diferencia de MANUAL_PDF_PATH (que vive DENTRO de
+# services/core), la fuente de estos sigue siendo docs/ y
+# UDCOperadorAPP/AGENTS.md en la raíz del repo: docker-compose.yml monta
+# esos dos paths de sólo lectura adentro del contenedor de Core (servicio
+# `core`, ver sus `volumes`) en vez de duplicar el contenido acá — así no
+# hay que recordar copiarlos cada vez que se actualiza la documentación.
+DOCUMENTOS_TECNICOS = {
+    "operators-desk-api": {
+        "path": Path("/docs_repo/operators-desk-api-contract.md"),
+        "filename": "operators-desk-api-contract.md",
+    },
+    "operators-desk-agente-android": {
+        "path": Path("/agents_android.md"),
+        "filename": "AGENTS-android.md",
+    },
+}
+
+
+class DocumentoTecnicoView(APIView):
+    """Mismo gate que `ManualDownloadView` (sólo superusuario real) — ver
+    `DOCUMENTOS_TECNICOS` acá arriba para qué `slug` existen."""
+
+    permission_classes = [IsPlatformSuperuser]
+
+    def get(self, request, slug):
+        documento = DOCUMENTOS_TECNICOS.get(slug)
+        if documento is None:
+            raise Http404("No existe ese documento.")
+        if not documento["path"].exists():
+            raise Http404("Ese documento todavía no está disponible en este ambiente.")
+        return FileResponse(
+            open(documento["path"], "rb"), as_attachment=True, filename=documento["filename"],
+            content_type="text/markdown; charset=utf-8",
+        )
+
+
 class PlatformSchemaView(SpectacularAPIView):
     """El esquema OpenAPI (paths, params — nunca datos, sólo la FORMA de la
     API) — a propósito público (`AllowAny`), no detrás de

@@ -1,7 +1,7 @@
 from unittest.mock import Mock, patch
 
 import requests
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.urls import reverse
 
 from common.test_utils import authenticated_client, make_organization, make_user
@@ -143,7 +143,10 @@ class CanalViewSetTests(TestCase):
 class CanalVerificarConexionTests(TestCase):
     """`POST /canales/{id}/verificar/` — chequeo real contra el servidor
     remoto (mockeado acá: la suite nunca debe pegarle de verdad a la Graph
-    API de Meta)."""
+    API de Meta). Casos comunes a cualquier tipo de canal; WhatsApp y
+    Messenger/Instagram tienen nodo/autenticación DISTINTOS del lado de
+    Meta (ver `channels.health`), así que sus casos puntuales están en
+    `CanalVerificarWhatsappTests`/`CanalVerificarMessengerTests` más abajo."""
 
     def setUp(self):
         self.org = make_organization()
@@ -173,53 +176,161 @@ class CanalVerificarConexionTests(TestCase):
         self.assertEqual(response.status_code, 200, response.data)
         self.assertIsNone(response.data["ultimo_chequeo_ok"])
 
-    def test_chequeo_exitoso_contra_la_graph_api(self):
-        self.whatsapp.api_key = "token-valido"
-        self.whatsapp.save(update_fields=["api_key"])
-        mock_response = Mock(status_code=200)
-        mock_response.json.return_value = {"id": "123456", "name": "Mi Empresa"}
-        with patch("channels.health.requests.get", return_value=mock_response) as mock_get:
-            response = self._verificar(self.admin, self.whatsapp)
-        mock_get.assert_called_once()
-        self.assertEqual(response.status_code, 200, response.data)
-        self.assertTrue(response.data["ultimo_chequeo_ok"])
-        self.assertIn("Mi Empresa", response.data["ultimo_chequeo_detalle"])
-        self.assertIsNotNone(response.data["ultimo_chequeo_at"])
-
-    def test_chequeo_fallido_por_token_invalido(self):
-        self.whatsapp.api_key = "token-vencido"
-        self.whatsapp.save(update_fields=["api_key"])
-        mock_response = Mock(status_code=400)
-        mock_response.json.return_value = {"error": {"message": "Invalid OAuth access token"}}
-        with patch("channels.health.requests.get", return_value=mock_response):
-            response = self._verificar(self.admin, self.whatsapp)
-        self.assertEqual(response.status_code, 200, response.data)
-        self.assertFalse(response.data["ultimo_chequeo_ok"])
-        self.assertEqual(response.data["ultimo_chequeo_detalle"], "Invalid OAuth access token")
-
-    def test_chequeo_no_se_pudo_conectar(self):
-        self.whatsapp.api_key = "token"
-        self.whatsapp.save(update_fields=["api_key"])
-        with patch("channels.health.requests.get", side_effect=requests.ConnectionError("timeout")):
-            response = self._verificar(self.admin, self.whatsapp)
-        self.assertEqual(response.status_code, 200, response.data)
-        self.assertFalse(response.data["ultimo_chequeo_ok"])
-        self.assertIn("No se pudo conectar", response.data["ultimo_chequeo_detalle"])
-
     def test_operador_no_puede_verificar(self):
         response = self._verificar(self.operador, self.whatsapp)
         self.assertEqual(response.status_code, 403)
 
-    def test_resultado_del_chequeo_queda_guardado_en_la_base(self):
-        self.whatsapp.api_key = "token-valido"
-        self.whatsapp.save(update_fields=["api_key"])
+
+class CanalVerificarWhatsappTests(TestCase):
+    """WhatsApp (Cloud API): el nodo real a consultar es el propio
+    `phone_number_id` (`Canal.telefono_id`), NUNCA `/me` — un token de
+    System User acotado al número no puede resolver `/me` aunque mande
+    mensajes de verdad sin problema (`/me` es el bug real que reportó un
+    canal andando en producción marcado como "sin conexión" acá). La
+    autenticación va por header `Authorization: Bearer`, igual que el envío
+    real (`channel-gateway/app/meta_client.py`), no por query param."""
+
+    def setUp(self):
+        self.org = make_organization()
+        self.admin = make_user(self.org, groups=["administradores"])
+        authenticated_client(self.admin).get(reverse("canal-list"))
+        self.whatsapp = Canal.objects.get(organization=self.org, tipo="WHATSAPP")
+        self.whatsapp.api_key = "token-de-system-user"
+        self.whatsapp.telefono_id = "1234567890"
+        self.whatsapp.save(update_fields=["api_key", "telefono_id"])
+
+    def _verificar(self):
+        return authenticated_client(self.admin).post(reverse("canal-verificar", args=[self.whatsapp.id]))
+
+    def test_sin_telefono_id_no_intenta_conectar(self):
+        self.whatsapp.telefono_id = ""
+        self.whatsapp.save(update_fields=["telefono_id"])
+        with patch("channels.health.requests.get") as mock_get:
+            response = self._verificar()
+        mock_get.assert_not_called()
+        self.assertFalse(response.data["ultimo_chequeo_ok"])
+        self.assertIn("Phone Number ID", response.data["ultimo_chequeo_detalle"])
+
+    def test_consulta_el_nodo_del_telefono_no_me(self):
         mock_response = Mock(status_code=200)
-        mock_response.json.return_value = {"id": "1", "name": "OK"}
+        mock_response.json.return_value = {"id": "1234567890", "verified_name": "Mi Empresa"}
+        with patch("channels.health.requests.get", return_value=mock_response) as mock_get:
+            response = self._verificar()
+        url_llamada = mock_get.call_args.args[0]
+        self.assertTrue(url_llamada.endswith("/1234567890"))
+        self.assertNotIn("/me", url_llamada)
+        self.assertTrue(response.data["ultimo_chequeo_ok"])
+        self.assertIn("Mi Empresa", response.data["ultimo_chequeo_detalle"])
+
+    def test_autentica_por_header_bearer_no_por_query_param(self):
+        mock_response = Mock(status_code=200)
+        mock_response.json.return_value = {"id": "1234567890"}
+        with patch("channels.health.requests.get", return_value=mock_response) as mock_get:
+            self._verificar()
+        _, kwargs = mock_get.call_args
+        self.assertEqual(kwargs["headers"]["Authorization"], "Bearer token-de-system-user")
+        self.assertNotIn("access_token", kwargs.get("params", {}))
+
+    def test_error_de_meta_incluye_el_code_en_el_detalle(self):
+        mock_response = Mock(status_code=400)
+        mock_response.json.return_value = {
+            "error": {"message": "Unsupported get request.", "code": 100, "error_subcode": 33},
+        }
         with patch("channels.health.requests.get", return_value=mock_response):
-            self._verificar(self.admin, self.whatsapp)
+            response = self._verificar()
+        self.assertFalse(response.data["ultimo_chequeo_ok"])
+        self.assertIn("Unsupported get request.", response.data["ultimo_chequeo_detalle"])
+        self.assertIn("code=100", response.data["ultimo_chequeo_detalle"])
+        self.assertIn("subcode=33", response.data["ultimo_chequeo_detalle"])
+
+    def test_no_se_pudo_conectar(self):
+        with patch("channels.health.requests.get", side_effect=requests.ConnectionError("timeout")):
+            response = self._verificar()
+        self.assertFalse(response.data["ultimo_chequeo_ok"])
+        self.assertIn("No se pudo conectar", response.data["ultimo_chequeo_detalle"])
+
+    def test_resultado_queda_guardado_en_la_base(self):
+        mock_response = Mock(status_code=200)
+        mock_response.json.return_value = {"id": "1234567890"}
+        with patch("channels.health.requests.get", return_value=mock_response):
+            self._verificar()
         self.whatsapp.refresh_from_db()
         self.assertTrue(self.whatsapp.ultimo_chequeo_ok)
         self.assertIsNotNone(self.whatsapp.ultimo_chequeo_at)
+
+
+class CanalVerificarMessengerTests(TestCase):
+    """Messenger/Instagram: un token de página con sólo `pages_messaging`
+    no puede leer `/me` (Meta exige `pages_read_engagement` — el error real
+    que reportó un canal andando en producción marcado "sin conexión" acá).
+    Se valida con `/debug_token` + credenciales de la APP en vez del token
+    del canal, que es lo que la Graph API documenta para esto sin depender
+    de qué permisos tenga el token puntual."""
+
+    def setUp(self):
+        self.org = make_organization()
+        self.admin = make_user(self.org, groups=["administradores"])
+        authenticated_client(self.admin).get(reverse("canal-list"))
+        self.messenger = Canal.objects.get(organization=self.org, tipo="MESSENGER")
+        self.messenger.api_key = "page-access-token"
+        self.messenger.save(update_fields=["api_key"])
+
+    def _verificar(self):
+        return authenticated_client(self.admin).post(reverse("canal-verificar", args=[self.messenger.id]))
+
+    @override_settings(META_APP_ID="app-id", META_APP_SECRET="app-secret")
+    def test_chequeo_exitoso_consulta_debug_token_con_credenciales_de_la_app(self):
+        mock_response = Mock(status_code=200)
+        mock_response.json.return_value = {"data": {"is_valid": True, "expires_at": 0}}
+        with patch("channels.health.requests.get", return_value=mock_response) as mock_get:
+            response = self._verificar()
+        url_llamada = mock_get.call_args.args[0]
+        _, kwargs = mock_get.call_args
+        self.assertTrue(url_llamada.endswith("/debug_token"))
+        self.assertEqual(kwargs["params"]["input_token"], "page-access-token")
+        self.assertEqual(kwargs["params"]["access_token"], "app-id|app-secret")
+        self.assertTrue(response.data["ultimo_chequeo_ok"])
+        self.assertIn("no vence", response.data["ultimo_chequeo_detalle"])
+
+    @override_settings(META_APP_ID="app-id", META_APP_SECRET="app-secret")
+    def test_token_con_permiso_de_solo_mensajeria_no_falla_mas_por_me(self):
+        # Este es exactamente el caso que reportó un canal andando en
+        # producción marcado "sin conexión": el token SÍ es válido para
+        # mandar mensajes, `/me` no lo reconoce por falta de
+        # `pages_read_engagement`. `/debug_token` no le pide ese permiso.
+        mock_response = Mock(status_code=200)
+        mock_response.json.return_value = {
+            "data": {"is_valid": True, "scopes": ["pages_messaging"], "expires_at": 1798761600},
+        }
+        with patch("channels.health.requests.get", return_value=mock_response):
+            response = self._verificar()
+        self.assertTrue(response.data["ultimo_chequeo_ok"])
+
+    @override_settings(META_APP_ID="app-id", META_APP_SECRET="app-secret")
+    def test_token_vencido_o_revocado(self):
+        mock_response = Mock(status_code=200)
+        mock_response.json.return_value = {
+            "data": {"is_valid": False, "error": {"message": "Error validating access token: Session has expired."}},
+        }
+        with patch("channels.health.requests.get", return_value=mock_response):
+            response = self._verificar()
+        self.assertFalse(response.data["ultimo_chequeo_ok"])
+        self.assertIn("Session has expired", response.data["ultimo_chequeo_detalle"])
+
+    def test_sin_meta_app_id_o_secret_configurados_no_intenta_conectar(self):
+        with override_settings(META_APP_ID="", META_APP_SECRET=""):
+            with patch("channels.health.requests.get") as mock_get:
+                response = self._verificar()
+        mock_get.assert_not_called()
+        self.assertFalse(response.data["ultimo_chequeo_ok"])
+        self.assertIn("META_APP_ID", response.data["ultimo_chequeo_detalle"])
+
+    @override_settings(META_APP_ID="app-id", META_APP_SECRET="app-secret")
+    def test_no_se_pudo_conectar(self):
+        with patch("channels.health.requests.get", side_effect=requests.ConnectionError("timeout")):
+            response = self._verificar()
+        self.assertFalse(response.data["ultimo_chequeo_ok"])
+        self.assertIn("No se pudo conectar", response.data["ultimo_chequeo_detalle"])
 
 
 class CanalWebhookTests(TestCase):
