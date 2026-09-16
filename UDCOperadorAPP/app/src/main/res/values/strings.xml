@@ -1,3 +1,9 @@
 <resources>
     <string name="app_name">UDC Operador APP</string>
+
+    <!-- Pantalla de login -->
+    <string name="login_titulo">Ingresar</string>
+    <string name="login_hint_usuario">Usuario (email)</string>
+    <string name="login_hint_contrasena">Contraseña</string>
+    <string name="login_boton_ingresar">Ingresar</string>
 </resources>
