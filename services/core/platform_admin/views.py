@@ -4,7 +4,7 @@ from pathlib import Path
 from django.http import FileResponse, Http404
 from django.utils import timezone
 from drf_spectacular.views import SpectacularAPIView, SpectacularRedocView, SpectacularSwaggerView
-from rest_framework import mixins, viewsets
+from rest_framework import generics, mixins, viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
@@ -12,6 +12,9 @@ from rest_framework.views import APIView
 
 from channels.models import Canal
 from common.permissions import IsPlatformSuperuser
+from conversations.models import Conversacion
+from conversations.serializers import ConversacionHistorialSerializer
+from conversations.views import aplicar_filtros_historial
 from organizations.models import Organization
 from teams.models import Team
 from users.models import User
@@ -116,6 +119,28 @@ class ExternalApiHealthView(APIView):
             for canal in canales
         ]
         return Response(data)
+
+
+class HistorialConversacionesPlatformView(generics.ListAPIView):
+    """Historial resumido (inicio/derivación/fin — `ConversacionHistorial
+    Serializer`, ver su docstring) de las conversaciones de TODAS las
+    organizaciones a la vez — a diferencia de `conversations.views.
+    ConversacionViewSet.historial` (una sola organización, para
+    `administradores`), esto es sólo del superusuario real. Paginado
+    (a diferencia de `ExternalApiHealthView` de acá arriba, que sí
+    devuelve todo sin paginar — ahí el total está acotado a 4 canales por
+    organización, acá el volumen de conversaciones no tiene techo).
+    Ordenado por organización para que el Admin Panel lo agrupe
+    visualmente sin pedidos aparte por cada una."""
+
+    serializer_class = ConversacionHistorialSerializer
+    permission_classes = [IsPlatformSuperuser]
+
+    def get_queryset(self):
+        queryset = Conversacion.objects.select_related("contact", "operador", "team", "organization").order_by(
+            "organization__name", "-iniciada_at",
+        )
+        return aplicar_filtros_historial(queryset, self.request)
 
 
 class ManualDownloadView(APIView):

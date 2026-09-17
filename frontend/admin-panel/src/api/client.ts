@@ -1,4 +1,5 @@
 const API_URL = import.meta.env.VITE_CORE_API_URL || "http://localhost:8001";
+
 const CONVERSATION_ENGINE_URL = import.meta.env.VITE_CONVERSATION_ENGINE_URL || "http://localhost:8003";
 
 // NOTA de seguridad: guardar el refresh token en localStorage es vulnerable a

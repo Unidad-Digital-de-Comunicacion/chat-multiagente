@@ -1,10 +1,11 @@
-from datetime import timedelta
+from datetime import datetime, timedelta
 from unittest.mock import patch
 
 from bot_settings.models import BotMessages
 from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
+from django.utils.dateparse import parse_datetime
 from menu.models import MenuOpcion
 from requests.exceptions import RequestException
 from teams.models import Team
@@ -823,3 +824,171 @@ class NotificarEventoEnLasActionsTests(TestCase):
         authenticated_client(self.operador).post(url, {"texto": "nota"})
         mock_notificar.assert_called_once()
         self.assertEqual(mock_notificar.call_args.kwargs["tipo"], "nota_interna_nueva")
+
+
+class ConversacionHistorialTests(TestCase):
+    """`GET /conversaciones/historial/` — vista resumida para
+    `administradores` (permiso propio, `ver_historial_conversacion`,
+    NO el `view_conversacion` de los operadores): sólo inicio/derivación/
+    fin, nunca mensajes/etiquetas/notas."""
+
+    def setUp(self):
+        self.org = make_organization()
+        self.otra_org = make_organization(name="Otra", slug="otra")
+        self.admin = make_user(self.org, groups=["administradores"])
+        self.operador = make_user(self.org, groups=["operadores"])
+        self.team = Team.objects.create(organization=self.org, name="Ventas")
+        ServiceToken.objects.create(servicio=ServiceToken.Servicio.CHANNEL_GATEWAY, token="tok", activo=True)
+        _service_client("tok").post(
+            reverse("bot-mensaje-entrante"),
+            {"organization_id": self.org.id, "channel": "WHATSAPP", "contact_externo_id": "111", "texto": "hola"},
+            format="json",
+        )
+        self.conversacion = Conversacion.objects.get()
+        self.url = reverse("conversacion-historial")
+
+    def test_admin_ve_el_historial_de_su_organizacion(self):
+        response = authenticated_client(self.admin).get(self.url)
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data["count"], 1)
+        fila = response.data["results"][0]
+        self.assertEqual(fila["id"], self.conversacion.id)
+        self.assertIn("iniciada_at", fila)
+        self.assertIn("cerrada_at", fila)
+        self.assertIn("derivada_at", fila)
+        self.assertNotIn("mensajes", fila)
+
+    def test_incluye_conversaciones_cerradas_a_diferencia_de_bandeja(self):
+        self.conversacion.estado = Conversacion.Estado.CERRADA
+        self.conversacion.cerrada_at = timezone.now()
+        self.conversacion.save(update_fields=["estado", "cerrada_at"])
+        response = authenticated_client(self.admin).get(self.url)
+        self.assertEqual(response.data["count"], 1)
+
+    def test_operador_no_puede_ver_el_historial(self):
+        response = authenticated_client(self.operador).get(self.url)
+        self.assertEqual(response.status_code, 403)
+
+    def test_no_ve_el_historial_de_otra_organizacion(self):
+        otro_admin = make_user(self.otra_org, groups=["administradores"], email="otro-admin@test.com")
+        response = authenticated_client(otro_admin).get(self.url)
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data["count"], 0)
+
+    def test_derivar_a_mano_actualiza_derivada_at(self):
+        self.conversacion.operador = self.operador
+        self.conversacion.save(update_fields=["operador"])
+        url_derivar = reverse("conversacion-derivar", args=[self.conversacion.id])
+        antes = timezone.now()
+        authenticated_client(self.operador).post(url_derivar, {"team": self.team.id, "observacion": "motivo"})
+        response = authenticated_client(self.admin).get(self.url)
+        derivada_at = parse_datetime(response.data["results"][0]["derivada_at"])
+        self.assertIsNotNone(derivada_at)
+        self.assertGreaterEqual(derivada_at, antes)
+
+    def test_derivacion_por_menu_actualiza_derivada_at(self):
+        team_ventas = Team.objects.create(organization=self.org, name="Soporte")
+        MenuOpcion.objects.create(
+            organization=self.org, texto="Hablar con un operador", orden=1,
+            tipo=MenuOpcion.Tipo.DERIVACION, team=team_ventas,
+        )
+        # Conversación nueva (la del setUp ya no tiene menú activo configurado).
+        _service_client("tok").post(
+            reverse("bot-mensaje-entrante"),
+            {"organization_id": self.org.id, "channel": "WHATSAPP", "contact_externo_id": "222", "texto": "hola"},
+            format="json",
+        )
+        _service_client("tok").post(
+            reverse("bot-mensaje-entrante"),
+            {"organization_id": self.org.id, "channel": "WHATSAPP", "contact_externo_id": "222", "texto": "1"},
+            format="json",
+        )
+        nueva = Conversacion.objects.get(contact__identificador_externo="222")
+        self.assertIsNotNone(nueva.derivada_at)
+
+
+class ConversacionHistorialFiltrosTests(TestCase):
+    """Filtros de `GET /conversaciones/historial/` — mismo
+    `aplicar_filtros_historial` que usa la vista de plataforma, así que
+    alcanza con probarlos acá una vez."""
+
+    def setUp(self):
+        self.org = make_organization()
+        self.admin = make_user(self.org, groups=["administradores"])
+        self.team_ventas = Team.objects.create(organization=self.org, name="Ventas")
+        self.team_soporte = Team.objects.create(organization=self.org, name="Soporte")
+        self.url = reverse("conversacion-historial")
+
+        contacto_whatsapp = Contact.objects.create(
+            organization=self.org, canal="WHATSAPP", identificador_externo="5493511234567", nombre="",
+        )
+        contacto_messenger = Contact.objects.create(
+            organization=self.org, canal="MESSENGER", identificador_externo="psid-999", nombre="Juan Pérez",
+        )
+        self.conv_whatsapp_derivada = Conversacion.objects.create(
+            organization=self.org, contact=contacto_whatsapp, canal="WHATSAPP", team=self.team_ventas,
+        )
+        self.conv_messenger_sin_derivar = Conversacion.objects.create(
+            organization=self.org, contact=contacto_messenger, canal="MESSENGER",
+        )
+        Conversacion.objects.filter(pk=self.conv_whatsapp_derivada.pk).update(
+            iniciada_at=timezone.make_aware(datetime(2026, 1, 10)),
+        )
+        Conversacion.objects.filter(pk=self.conv_messenger_sin_derivar.pk).update(
+            iniciada_at=timezone.make_aware(datetime(2026, 6, 20)),
+        )
+
+    def test_filtra_por_canal(self):
+        response = authenticated_client(self.admin).get(self.url, {"canal": "MESSENGER"})
+        ids = {f["id"] for f in response.data["results"]}
+        self.assertEqual(ids, {self.conv_messenger_sin_derivar.id})
+
+    def test_canal_invalido_da_400(self):
+        response = authenticated_client(self.admin).get(self.url, {"canal": "TELEGRAM"})
+        self.assertEqual(response.status_code, 400)
+
+    def test_filtra_por_team(self):
+        response = authenticated_client(self.admin).get(self.url, {"team": self.team_ventas.id})
+        ids = {f["id"] for f in response.data["results"]}
+        self.assertEqual(ids, {self.conv_whatsapp_derivada.id})
+
+    def test_filtra_por_derivada_true(self):
+        response = authenticated_client(self.admin).get(self.url, {"derivada": "true"})
+        ids = {f["id"] for f in response.data["results"]}
+        self.assertEqual(ids, {self.conv_whatsapp_derivada.id})
+
+    def test_filtra_por_derivada_false(self):
+        response = authenticated_client(self.admin).get(self.url, {"derivada": "false"})
+        ids = {f["id"] for f in response.data["results"]}
+        self.assertEqual(ids, {self.conv_messenger_sin_derivar.id})
+
+    def test_sin_filtro_derivada_trae_las_dos(self):
+        # Regresión del bug real: `BooleanField(required=False)` sin
+        # `default=None` explícito hacía que "no vino el filtro" se
+        # interpretara como `derivada=False` y excluyera todo lo derivado.
+        response = authenticated_client(self.admin).get(self.url)
+        self.assertEqual(response.data["count"], 2)
+
+    def test_filtra_por_rango_de_fechas(self):
+        response = authenticated_client(self.admin).get(self.url, {"desde": "2026-01-01", "hasta": "2026-03-01"})
+        ids = {f["id"] for f in response.data["results"]}
+        self.assertEqual(ids, {self.conv_whatsapp_derivada.id})
+
+    def test_fecha_invalida_da_400(self):
+        response = authenticated_client(self.admin).get(self.url, {"desde": "no-es-una-fecha"})
+        self.assertEqual(response.status_code, 400)
+
+    def test_busca_por_telefono(self):
+        response = authenticated_client(self.admin).get(self.url, {"q": "5493511234567"})
+        ids = {f["id"] for f in response.data["results"]}
+        self.assertEqual(ids, {self.conv_whatsapp_derivada.id})
+
+    def test_busca_por_nombre_de_usuario(self):
+        response = authenticated_client(self.admin).get(self.url, {"q": "Juan"})
+        ids = {f["id"] for f in response.data["results"]}
+        self.assertEqual(ids, {self.conv_messenger_sin_derivar.id})
+
+    def test_combina_filtros(self):
+        response = authenticated_client(self.admin).get(self.url, {"canal": "WHATSAPP", "derivada": "true"})
+        ids = {f["id"] for f in response.data["results"]}
+        self.assertEqual(ids, {self.conv_whatsapp_derivada.id})

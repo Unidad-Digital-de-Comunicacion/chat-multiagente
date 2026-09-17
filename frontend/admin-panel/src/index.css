@@ -1410,3 +1410,70 @@ input, select, textarea {
 .msg-editor-hint code {
   font-size: 0.7rem;
 }
+
+/* ---- Historial de conversaciones ---- */
+.historial-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.historial-row {
+  padding: 0;
+  overflow: hidden;
+}
+
+.historial-row-header {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.6rem 0.85rem;
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+}
+
+.historial-row-contacto {
+  flex: 1;
+  font-weight: 600;
+}
+
+.historial-row-detalle {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.25rem;
+  padding: 0 0.85rem 0.85rem 2.35rem;
+  border-top: 1px solid var(--border);
+  padding-top: 0.6rem;
+}
+
+.historial-row-detalle > div {
+  min-width: 200px;
+}
+
+.historial-filtros-fila {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.85rem;
+}
+
+.historial-filtros-fila label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.historial-filtro-busqueda {
+  flex: 1;
+  min-width: 180px;
+}
+
+.historial-paginador {
+  justify-content: center;
+  margin-top: 1rem;
+}

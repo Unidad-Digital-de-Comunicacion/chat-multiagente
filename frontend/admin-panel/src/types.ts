@@ -325,3 +325,35 @@ export interface ExternalHealthRow {
   ultimo_chequeo_ok: boolean | null;
   ultimo_chequeo_detalle: string;
 }
+
+// --------------------------------------------------------------------- //
+// Historial de conversaciones — `GET /api/core/conversaciones/historial/`
+// (administradores, `conversations.ver_historial_conversacion`, una sola
+// organización) y `GET /api/core/plataforma/historial-conversaciones/`
+// (superusuario real, todas las organizaciones — mismo shape de fila,
+// `organization_nombre` es el que se usa para agrupar visualmente).
+// A propósito NO trae mensajes/etiquetas/notas — sólo inicio/derivación/fin.
+
+export interface ContactoConversacion {
+  id: number;
+  canal: CanalTipo;
+  identificador_externo: string;
+  nombre: string;
+}
+
+export type ConversacionEstado = "ABIERTA" | "CERRADA";
+
+export interface ConversacionHistorialRow {
+  id: number;
+  organization_id: number;
+  organization_nombre: string;
+  contact: ContactoConversacion;
+  canal: CanalTipo;
+  canal_display: string;
+  team_nombre: string | null;
+  derivada_at: string | null;
+  operador_email: string | null;
+  estado: ConversacionEstado;
+  iniciada_at: string;
+  cerrada_at: string | null;
+}

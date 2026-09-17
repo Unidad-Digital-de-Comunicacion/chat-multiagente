@@ -6,6 +6,7 @@ from django.urls import reverse
 
 from channels.models import Canal
 from common.test_utils import authenticated_client, make_organization, make_user
+from conversations.models import Contact, Conversacion
 from teams.models import Team
 
 from .models import ServiceToken
@@ -117,6 +118,44 @@ class ExternalApiHealthViewTests(TestCase):
     def test_admin_no_puede_entrar(self):
         response = authenticated_client(self.admin).get(self.url)
         self.assertEqual(response.status_code, 403)
+
+
+class HistorialConversacionesPlatformViewTests(TestCase):
+    """`GET /plataforma/historial-conversaciones/` — mismo shape resumido
+    que `conversations.views.ConversacionViewSet.historial`, pero de TODAS
+    las organizaciones a la vez y sólo para el superusuario real."""
+
+    def setUp(self):
+        self.superusuario = _make_superusuario()
+        self.org_a = make_organization(name="Org A", slug="org-a")
+        self.org_b = make_organization(name="Org B", slug="org-b")
+        self.admin = make_user(self.org_a, groups=["administradores"])
+        self.url = reverse("plataforma-historial-conversaciones")
+
+        contact_a = Contact.objects.create(organization=self.org_a, canal="WHATSAPP", identificador_externo="111")
+        contact_b = Contact.objects.create(organization=self.org_b, canal="WHATSAPP", identificador_externo="222")
+        Conversacion.objects.create(organization=self.org_a, contact=contact_a, canal="WHATSAPP")
+        Conversacion.objects.create(organization=self.org_b, contact=contact_b, canal="WHATSAPP")
+
+    def test_superusuario_ve_las_conversaciones_de_todas_las_organizaciones(self):
+        response = authenticated_client(self.superusuario).get(self.url)
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data["count"], 2)
+        organizaciones = {fila["organization_id"] for fila in response.data["results"]}
+        self.assertEqual(organizaciones, {self.org_a.id, self.org_b.id})
+
+    def test_ordenado_por_organizacion(self):
+        response = authenticated_client(self.superusuario).get(self.url)
+        nombres = [fila["organization_nombre"] for fila in response.data["results"]]
+        self.assertEqual(nombres, sorted(nombres))
+
+    def test_admin_no_puede_entrar(self):
+        response = authenticated_client(self.admin).get(self.url)
+        self.assertEqual(response.status_code, 403)
+
+    def test_no_incluye_mensajes(self):
+        response = authenticated_client(self.superusuario).get(self.url)
+        self.assertNotIn("mensajes", response.data["results"][0])
 
 
 class ManualDownloadViewTests(TestCase):

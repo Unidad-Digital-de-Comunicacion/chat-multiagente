@@ -26,6 +26,13 @@ todos sus grupos (`user.has_perm(...)` ya lo resuelve así).
   chatbot (menú + horarios + mensajes predeterminados), el catálogo de
   etiquetas de conversación (por organización y por equipo) y la api key/
   estado de cada canal de mensajería (WhatsApp/Messenger/Instagram/Webchat).
+  `conversations.ver_historial_conversacion` es un permiso APARTE de
+  `view_conversacion`/`change_conversacion` (que ya tienen, de antes de
+  esta sección) — habilita `ConversacionViewSet.historial`, la vista
+  resumida (inicio/derivación/fin, sin mensajes/notas) de "Historial de
+  conversaciones" del Admin Panel; el superusuario de plataforma ve lo
+  mismo de TODAS las organizaciones vía `platform_admin.views.
+  HistorialConversacionesPlatformView`.
 - encargados_difusion / analistas_datos: NINGÚN permiso sobre Core — para
   estos dos grupos, Core es sólo la API de autenticación (login, recuperar
   usuario/contraseña por DNI, "mi perfil") que van a usar sus propios
@@ -97,6 +104,7 @@ GROUP_PERMISSIONS: Final[dict[str, list[str]]] = {
         "channels.change_canal",
         "conversations.view_conversacion",
         "conversations.change_conversacion",
+        "conversations.ver_historial_conversacion",
     ],
     "encargados_difusion": [],
     "analistas_datos": [],

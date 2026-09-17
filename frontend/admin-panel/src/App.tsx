@@ -17,6 +17,7 @@ import BusinessHoursPage from "./pages/BusinessHoursPage";
 import BotMessagesPage from "./pages/BotMessagesPage";
 import TagsPage from "./pages/TagsPage";
 import ChannelsPage from "./pages/ChannelsPage";
+import ConversationHistoryPage from "./pages/ConversationHistoryPage";
 import PlatformOrganizationsPage from "./pages/PlatformOrganizationsPage";
 import PlatformUsersPage from "./pages/PlatformUsersPage";
 import PlatformTokensPage from "./pages/PlatformTokensPage";
@@ -52,11 +53,13 @@ export default function App() {
             <Route path="/mensajes" element={<BotMessagesPage />} />
             <Route path="/etiquetas" element={<TagsPage />} />
             <Route path="/canales" element={<ChannelsPage />} />
+            <Route path="/historial-conversaciones" element={<ConversationHistoryPage />} />
             <Route path="/plataforma/organizaciones" element={<PlatformOrganizationsPage />} />
             <Route path="/plataforma/usuarios" element={<PlatformUsersPage />} />
             <Route path="/plataforma/tokens" element={<PlatformTokensPage />} />
             <Route path="/plataforma/estadisticas" element={<PlatformStatsPage />} />
             <Route path="/plataforma/manuales" element={<PlatformManualsPage />} />
+            <Route path="/plataforma/historial-conversaciones" element={<ConversationHistoryPage />} />
             <Route path="/" element={<Home />} />
           </Route>
         </Route>

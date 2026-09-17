@@ -4,7 +4,9 @@ lo llama Channel Gateway (mismo `ServiceTokenAuthentication` que `channels.
 views.InternalCanalConfigView`), nunca un usuario. `ConversacionViewSet` es
 la API que usan tanto `operators-desk-web` como la app Android (mismo
 contrato para los dos, sección 3.2): bandeja + tomar + responder + cerrar +
-derivar + etiquetas + observaciones + notas internas. Cada action que
+derivar + etiquetas + observaciones + notas internas. `historial` es
+aparte — para `administradores` en el Admin Panel, no para operadores (ver
+su docstring). Cada action que
 cambia algo relevante para la bandeja avisa además a Conversation Engine
 (`conversation_engine_client.notificar_evento`, mejor esfuerzo — ver su
 docstring) para que lo reenvíe por WebSocket a quien tenga la app abierta;
@@ -37,9 +39,10 @@ from .models import (
     Contact, Conversacion, ConversacionEtiqueta, ConversacionLog, ConversacionNotaInterna, ConversacionObservacion,
 )
 from .serializers import (
-    AplicarEtiquetaInputSerializer, ConversacionEtiquetaSerializer, ConversacionLogSerializer,
-    ConversacionNotaInternaSerializer, ConversacionObservacionSerializer, ConversacionSerializer,
-    DerivarInputSerializer, NotaInternaInputSerializer, ObservacionInputSerializer,
+    AplicarEtiquetaInputSerializer, ConversacionEtiquetaSerializer, ConversacionHistorialSerializer,
+    ConversacionLogSerializer, ConversacionNotaInternaSerializer, ConversacionObservacionSerializer,
+    ConversacionSerializer, DerivarInputSerializer, HistorialFiltrosSerializer, NotaInternaInputSerializer,
+    ObservacionInputSerializer,
 )
 
 # Las 3 únicas etiquetas de sistema donde una observación vacía no alcanza
@@ -47,6 +50,34 @@ from .serializers import (
 # que poder explicar POR QUÉ se resolvió positiva/negativamente o se
 # pausó, para que otro operador que retome la conversación tenga contexto.
 CODIGOS_QUE_EXIGEN_OBSERVACION = {"resuelto", "rechazado", "en_pausa"}
+
+
+def aplicar_filtros_historial(queryset, request):
+    """Filtros comunes a `ConversacionViewSet.historial` (una organización)
+    y `platform_admin.views.HistorialConversacionesPlatformView` (todas) —
+    mismo shape de query params en los dos, factorizado acá para no
+    duplicar la lógica. `entrada.validated_data` ya viene limpio
+    (`HistorialFiltrosSerializer` valida tipos/formato, un `canal`/`desde`
+    con basura da 400 en vez de un 500 al pegarle directo al ORM)."""
+    entrada = HistorialFiltrosSerializer(data=request.query_params)
+    entrada.is_valid(raise_exception=True)
+    datos = entrada.validated_data
+
+    if datos.get("canal"):
+        queryset = queryset.filter(canal=datos["canal"])
+    if datos.get("team") is not None:
+        queryset = queryset.filter(team_id=datos["team"])
+    if datos.get("derivada") is not None:
+        queryset = queryset.filter(team__isnull=not datos["derivada"])
+    if datos.get("desde"):
+        queryset = queryset.filter(iniciada_at__date__gte=datos["desde"])
+    if datos.get("hasta"):
+        queryset = queryset.filter(iniciada_at__date__lte=datos["hasta"])
+    if datos.get("q"):
+        queryset = queryset.filter(
+            Q(contact__identificador_externo__icontains=datos["q"]) | Q(contact__nombre__icontains=datos["q"]),
+        )
+    return queryset
 
 
 def _registrar_salientes(conversacion: Conversacion, acciones: list[dict]) -> None:
@@ -181,10 +212,37 @@ class ConversacionViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, view
         # recursos que se administren aparte).
         if self.action in (
             "tomar", "mensajes", "responder", "cerrar", "derivar",
-            "etiquetas", "quitar_etiqueta", "observaciones", "notas_internas",
+            "etiquetas", "quitar_etiqueta", "observaciones", "notas_internas", "historial",
         ):
             return [IsAuthenticated()]
         return super().get_permissions()
+
+    @action(detail=False, methods=["get"])
+    def historial(self, request):
+        """Historial resumido (inicio/derivación/fin, `Conversacion
+        HistorialSerializer`) de TODAS las conversaciones de la
+        organización — abiertas y cerradas, a diferencia de `bandeja`.
+        Gate propio (`ver_historial_conversacion`, ver `Conversacion.Meta.
+        permissions`) en vez de `view_conversacion` — ese sigue siendo
+        sólo de operadores, y desbloquea `mensajes`/`etiquetas`/
+        `observaciones`/`notas_internas`, que acá justamente NO
+        corresponde exponer (pensado para `administradores`, que audita
+        el flujo, no lee el contenido real). El superusuario de
+        plataforma ve todas las organizaciones a la vez por
+        `platform_admin.views.HistorialConversacionesPlatformView`, no
+        por acá — esto sigue scopeado a una sola organización. Filtros
+        (opcionales, ver `HistorialFiltrosSerializer`): `?canal=`, `?team=`,
+        `?derivada=true|false`, `?desde=`/`?hasta=` (YYYY-MM-DD, sobre
+        `iniciada_at`), `?q=` (busca en teléfono/usuario del contacto)."""
+        require_perm(request, "conversations.ver_historial_conversacion")
+        organization_id = require_organization(request)
+        queryset = Conversacion.objects.filter(organization_id=organization_id).select_related(
+            "contact", "operador", "team",
+        )
+        queryset = aplicar_filtros_historial(queryset, request)
+        page = self.paginate_queryset(queryset)
+        serializer = ConversacionHistorialSerializer(page, many=True)
+        return self.get_paginated_response(serializer.data)
 
     @action(detail=True, methods=["post"])
     def tomar(self, request, pk=None):

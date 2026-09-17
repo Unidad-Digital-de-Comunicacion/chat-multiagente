@@ -17,6 +17,7 @@ const NAV_ITEMS = [
   { to: "/mensajes", label: "Mensajes", perm: "bot_settings.view_botmessages" },
   { to: "/etiquetas", label: "Etiquetas", perm: "tags.view_etiqueta" },
   { to: "/canales", label: "Canales", perm: "channels.view_canal" },
+  { to: "/historial-conversaciones", label: "Historial de conversaciones", perm: "conversations.ver_historial_conversacion" },
 ];
 
 // Sólo para el superusuario real de plataforma (`isPlatformSuperuser`) — a
@@ -29,6 +30,7 @@ const PLATFORM_NAV_ITEMS = [
   { to: "/plataforma/usuarios", label: "Usuarios" },
   { to: "/plataforma/tokens", label: "Tokens internos" },
   { to: "/plataforma/estadisticas", label: "Estadísticas" },
+  { to: "/plataforma/historial-conversaciones", label: "Historial de conversaciones" },
   { to: "/plataforma/manuales", label: "Manuales y API" },
 ];
 
