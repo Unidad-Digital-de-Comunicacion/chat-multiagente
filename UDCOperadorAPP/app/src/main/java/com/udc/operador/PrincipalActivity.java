@@ -6,6 +6,7 @@ import android.util.Log;
 import android.view.View;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
+import android.widget.EditText;
 import android.widget.ListView;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -29,10 +30,15 @@ import java.util.List;
 public class PrincipalActivity extends AppCompatActivity {
 
     private static final String TAG = "PrincipalActivity";
+    private static final String PERFIL_URL = Config.BASE_URL + "/api/core/users/me/";
 
     private ListView listaConversaciones;
     private View vistaPerfil;
     private TextView textEmail;
+    private EditText editNombre;
+    private EditText editApellido;
+    private EditText editDni;
+    private Button botonGuardarPerfil;
     private final List<Integer> idsConversaciones = new ArrayList<>();
     private int pantallaActual = R.id.menu_sin_asignar;
 
@@ -44,9 +50,15 @@ public class PrincipalActivity extends AppCompatActivity {
         listaConversaciones = findViewById(R.id.listaConversaciones);
         vistaPerfil = findViewById(R.id.vistaPerfil);
         textEmail = findViewById(R.id.textEmail);
-        Button botonCerrarSesion = findViewById(R.id.botonCerrarSesion);
+        editNombre = findViewById(R.id.editNombre);
+        editApellido = findViewById(R.id.editApellido);
+        editDni = findViewById(R.id.editDni);
+        botonGuardarPerfil = findViewById(R.id.botonGuardarPerfil);
 
-        botonCerrarSesion.setOnClickListener(v -> cerrarSesion());
+        botonGuardarPerfil.setOnClickListener(v -> guardarPerfil());
+        findViewById(R.id.botonCambiarPassword).setOnClickListener(v ->
+                startActivity(new Intent(this, CambiarPasswordActivity.class)));
+        findViewById(R.id.botonCerrarSesion).setOnClickListener(v -> cerrarSesion());
 
         listaConversaciones.setOnItemClickListener((parent, view, position, id) -> {
             Intent intent = new Intent(this, ConversacionActivity.class);
@@ -66,6 +78,8 @@ public class PrincipalActivity extends AppCompatActivity {
     protected void onResume() {
         super.onResume();
         // Recarga al volver (ej. después de tomar o cerrar una conversación) — no hay WebSocket todavía.
+        // El perfil se pide siempre: además de llenar la pantalla, dice si hay que cambiar la contraseña.
+        cargarPerfil();
         mostrarPantallaActual();
     }
 
@@ -74,9 +88,7 @@ public class PrincipalActivity extends AppCompatActivity {
         listaConversaciones.setVisibility(esPerfil ? View.GONE : View.VISIBLE);
         vistaPerfil.setVisibility(esPerfil ? View.VISIBLE : View.GONE);
 
-        if (esPerfil) {
-            cargarPerfil();
-        } else {
+        if (!esPerfil) {
             cargarBandeja(pantallaActual == R.id.menu_sin_asignar ? "sin_asignar" : "mias");
         }
     }
@@ -121,11 +133,11 @@ public class PrincipalActivity extends AppCompatActivity {
         listaConversaciones.setAdapter(new ArrayAdapter<>(this, android.R.layout.simple_list_item_1, textos));
     }
 
-    /** Trae el email del usuario logueado (GET /api/core/users/me/, contrato §1). */
+    /** Trae el perfil del usuario logueado (GET /api/core/users/me/, contrato §1). */
     private void cargarPerfil() {
         new Thread(() -> {
             try {
-                HttpCliente.Respuesta respuesta = HttpCliente.getAutenticado(this, Config.BASE_URL + "/api/core/users/me/");
+                HttpCliente.Respuesta respuesta = HttpCliente.getAutenticado(this, PERFIL_URL);
                 if (sesionVencida(respuesta)) {
                     return;
                 }
@@ -133,12 +145,61 @@ public class PrincipalActivity extends AppCompatActivity {
                     runOnUiThread(() -> Toast.makeText(this, "No se pudo cargar el perfil", Toast.LENGTH_SHORT).show());
                     return;
                 }
-                String email = new JSONObject(respuesta.cuerpo).getString("email");
-                runOnUiThread(() -> textEmail.setText(email));
+                JSONObject perfil = new JSONObject(respuesta.cuerpo);
+                runOnUiThread(() -> mostrarPerfil(perfil));
             } catch (Exception e) {
                 Log.e(TAG, "Error cargando perfil", e);
                 runOnUiThread(() -> Toast.makeText(this, "No se pudo conectar con el servidor", Toast.LENGTH_SHORT).show());
             }
+        }).start();
+    }
+
+    private void mostrarPerfil(JSONObject perfil) {
+        textEmail.setText(perfil.optString("email"));
+        editNombre.setText(texto(perfil, "first_name"));
+        editApellido.setText(texto(perfil, "last_name"));
+        editDni.setText(texto(perfil, "dni"));
+
+        // Un admin le reseteó la contraseña: no puede seguir sin cambiarla (contrato §1).
+        if (perfil.optBoolean("must_change_password")) {
+            Intent intent = new Intent(this, CambiarPasswordActivity.class);
+            intent.putExtra(CambiarPasswordActivity.EXTRA_OBLIGATORIO, true);
+            startActivity(intent);
+        }
+    }
+
+    /** Un campo que puede venir null en el JSON (ej. `dni`) se muestra como vacío, no como "null". */
+    private static String texto(JSONObject json, String campo) {
+        return json.isNull(campo) ? "" : json.optString(campo);
+    }
+
+    /** PATCH /api/core/users/me/ con nombre, apellido y DNI (nunca grupos ni organización). */
+    private void guardarPerfil() {
+        String nombre = editNombre.getText().toString().trim();
+        String apellido = editApellido.getText().toString().trim();
+        String dni = editDni.getText().toString().trim();
+
+        botonGuardarPerfil.setEnabled(false);
+        botonGuardarPerfil.setText("Guardando...");
+        new Thread(() -> {
+            try {
+                JSONObject cuerpo = new JSONObject().put("first_name", nombre).put("last_name", apellido).put("dni", dni);
+                HttpCliente.Respuesta respuesta = HttpCliente.patchAutenticado(this, PERFIL_URL, cuerpo);
+                if (sesionVencida(respuesta)) {
+                    return;
+                }
+                String mensaje = respuesta.esExitosa()
+                        ? "Perfil actualizado"
+                        : HttpCliente.mensajeDeError(respuesta.cuerpo, "No se pudo guardar el perfil");
+                runOnUiThread(() -> Toast.makeText(this, mensaje, Toast.LENGTH_LONG).show());
+            } catch (Exception e) {
+                Log.e(TAG, "Error guardando perfil", e);
+                runOnUiThread(() -> Toast.makeText(this, "No se pudo conectar con el servidor", Toast.LENGTH_SHORT).show());
+            }
+            runOnUiThread(() -> {
+                botonGuardarPerfil.setEnabled(true);
+                botonGuardarPerfil.setText(R.string.perfil_boton_guardar);
+            });
         }).start();
     }
 

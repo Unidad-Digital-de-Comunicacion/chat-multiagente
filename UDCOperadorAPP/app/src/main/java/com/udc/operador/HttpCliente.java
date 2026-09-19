@@ -2,6 +2,7 @@ package com.udc.operador;
 
 import android.content.Context;
 
+import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.BufferedReader;
@@ -16,10 +17,10 @@ import java.nio.charset.StandardCharsets;
 /**
  * Todo el detalle feo de HttpURLConnection (armar el pedido, mandarlo, leer
  * la respuesta byte a byte) vive acá adentro, una sola vez. El resto de la
- * app sólo llama a {@link #get}/{@link #post} (sin token, ej. login) o a
- * {@link #getAutenticado}/{@link #postAutenticado} (con el token guardado
- * en {@link Sesion}, y refresh automático si venció) y recibe una
- * {@link Respuesta} simple.
+ * app sólo llama a {@link #post} (sin token, ej. login) o a
+ * {@link #getAutenticado}/{@link #postAutenticado}/{@link #patchAutenticado}
+ * (con el token guardado en {@link Sesion}, y refresh automático si
+ * venció) y recibe una {@link Respuesta} simple.
  *
  * IMPORTANTE: esto corre en un hilo aparte del principal — quien llame acá
  * tiene que hacerlo desde un Thread de background, nunca directo desde un
@@ -42,16 +43,9 @@ public class HttpCliente {
         }
     }
 
-    public static Respuesta get(String url, String token) throws IOException {
-        return pedido("GET", url, null, token);
-    }
-
+    /** POST sin token (login y refresh). */
     public static Respuesta post(String url, JSONObject cuerpoPedido) throws IOException {
         return pedido("POST", url, cuerpoPedido, null);
-    }
-
-    public static Respuesta post(String url, JSONObject cuerpoPedido, String token) throws IOException {
-        return pedido("POST", url, cuerpoPedido, token);
     }
 
     private static Respuesta pedido(String metodo, String url, JSONObject cuerpoPedido, String token) throws IOException {
@@ -96,19 +90,37 @@ public class HttpCliente {
      * decide mandar al login.
      */
     public static Respuesta getAutenticado(Context context, String url) throws IOException {
-        Respuesta respuesta = get(url, Sesion.obtenerAccess(context));
+        return autenticado(context, "GET", url, null);
+    }
+
+    public static Respuesta postAutenticado(Context context, String url, JSONObject cuerpoPedido) throws IOException {
+        return autenticado(context, "POST", url, cuerpoPedido);
+    }
+
+    public static Respuesta patchAutenticado(Context context, String url, JSONObject cuerpoPedido) throws IOException {
+        return autenticado(context, "PATCH", url, cuerpoPedido);
+    }
+
+    private static Respuesta autenticado(Context context, String metodo, String url, JSONObject cuerpoPedido) throws IOException {
+        Respuesta respuesta = pedido(metodo, url, cuerpoPedido, Sesion.obtenerAccess(context));
         if (respuesta.codigo == 401 && refrescarAccess(context)) {
-            respuesta = get(url, Sesion.obtenerAccess(context));
+            respuesta = pedido(metodo, url, cuerpoPedido, Sesion.obtenerAccess(context));
         }
         return respuesta;
     }
 
-    public static Respuesta postAutenticado(Context context, String url, JSONObject cuerpoPedido) throws IOException {
-        Respuesta respuesta = post(url, cuerpoPedido, Sesion.obtenerAccess(context));
-        if (respuesta.codigo == 401 && refrescarAccess(context)) {
-            respuesta = post(url, cuerpoPedido, Sesion.obtenerAccess(context));
+    /**
+     * Mensaje legible de una respuesta de error de DRF (contrato §5): `detail`
+     * si está, si no el primer mensaje del primer campo (`{"campo": ["..."]}`).
+     */
+    public static String mensajeDeError(String cuerpo, String porDefecto) {
+        try {
+            JSONObject json = new JSONObject(cuerpo);
+            Object valor = json.get(json.has("detail") ? "detail" : json.keys().next());
+            return valor instanceof JSONArray ? ((JSONArray) valor).getString(0) : valor.toString();
+        } catch (Exception e) {
+            return porDefecto;
         }
-        return respuesta;
     }
 
     /** Pide un access nuevo con el refresh guardado. false si el refresh también venció. */

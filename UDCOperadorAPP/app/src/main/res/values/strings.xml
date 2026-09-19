@@ -12,7 +12,19 @@
     <string name="menu_mias">Mías</string>
     <string name="menu_perfil">Perfil</string>
     <string name="perfil_conectado_como">Conectado como</string>
+    <string name="perfil_hint_nombre">Nombre</string>
+    <string name="perfil_hint_apellido">Apellido</string>
+    <string name="perfil_hint_dni">DNI</string>
+    <string name="perfil_boton_guardar">Guardar cambios</string>
+    <string name="perfil_boton_cambiar_password">Cambiar contraseña</string>
     <string name="perfil_boton_cerrar_sesion">Cerrar sesión</string>
+
+    <!-- Cambio de contraseña -->
+    <string name="password_titulo">Cambiar contraseña</string>
+    <string name="password_aviso_obligatorio">Tenés que cambiar tu contraseña para continuar.</string>
+    <string name="password_hint_actual">Contraseña actual</string>
+    <string name="password_hint_nueva">Contraseña nueva</string>
+    <string name="password_boton_cambiar">Cambiar contraseña</string>
 
     <!-- Detalle de conversación -->
     <string name="conversacion_hint_mensaje">Escribí una respuesta</string>
