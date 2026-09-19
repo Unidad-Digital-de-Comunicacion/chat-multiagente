@@ -7,9 +7,12 @@
     <string name="login_hint_contrasena">Contraseña</string>
     <string name="login_boton_ingresar">Ingresar</string>
 
-    <!-- Bandeja de conversaciones -->
-    <string name="bandeja_sin_asignar">Sin asignar</string>
-    <string name="bandeja_mias">Mías</string>
+    <!-- Pantalla principal: menú inferior y perfil -->
+    <string name="menu_sin_asignar">Sin asignar</string>
+    <string name="menu_mias">Mías</string>
+    <string name="menu_perfil">Perfil</string>
+    <string name="perfil_conectado_como">Conectado como</string>
+    <string name="perfil_boton_cerrar_sesion">Cerrar sesión</string>
 
     <!-- Detalle de conversación -->
     <string name="conversacion_hint_mensaje">Escribí una respuesta</string>

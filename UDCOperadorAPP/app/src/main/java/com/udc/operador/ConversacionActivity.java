@@ -8,6 +8,7 @@ import android.widget.EditText;
 import android.widget.ListView;
 import android.widget.Toast;
 
+import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 
 import org.json.JSONArray;
@@ -29,6 +30,8 @@ public class ConversacionActivity extends AppCompatActivity {
     private int conversacionId;
     private ListView listaMensajes;
     private EditText editMensaje;
+    private Button botonEnviar;
+    private Button botonCerrar;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -38,8 +41,8 @@ public class ConversacionActivity extends AppCompatActivity {
         conversacionId = getIntent().getIntExtra("conversacion_id", -1);
         listaMensajes = findViewById(R.id.listaMensajes);
         editMensaje = findViewById(R.id.editMensaje);
-        Button botonEnviar = findViewById(R.id.botonEnviar);
-        Button botonCerrar = findViewById(R.id.botonCerrar);
+        botonEnviar = findViewById(R.id.botonEnviar);
+        botonCerrar = findViewById(R.id.botonCerrar);
 
         botonEnviar.setOnClickListener(v -> onEnviarClick());
         botonCerrar.setOnClickListener(v -> onCerrarClick());
@@ -74,28 +77,37 @@ public class ConversacionActivity extends AppCompatActivity {
         }).start();
     }
 
-    /** Se puede llamar tanto desde el hilo principal como desde uno de background. */
+    /** Bloqueante: llamar sólo desde un hilo de background (los que ya tienen el pedido anterior). */
     private void cargarMensajes() {
-        new Thread(() -> {
-            try {
-                HttpCliente.Respuesta respuesta = HttpCliente.getAutenticado(this, urlConversacion() + "mensajes/");
-                if (!respuesta.esExitosa()) {
-                    runOnUiThread(() -> Toast.makeText(this, "No se pudo cargar el hilo", Toast.LENGTH_SHORT).show());
-                    return;
-                }
-
-                JSONArray mensajes = new JSONArray(respuesta.cuerpo);
-                List<String> textos = new ArrayList<>();
-                for (int i = 0; i < mensajes.length(); i++) {
-                    JSONObject mensaje = mensajes.getJSONObject(i);
-                    textos.add(mensaje.getString("remitente") + ": " + mensaje.getString("texto"));
-                }
-                runOnUiThread(() -> listaMensajes.setAdapter(new ArrayAdapter<>(this, android.R.layout.simple_list_item_1, textos)));
-            } catch (Exception e) {
-                Log.e(TAG, "Error cargando mensajes", e);
-                runOnUiThread(() -> Toast.makeText(this, "No se pudo conectar con el servidor", Toast.LENGTH_SHORT).show());
+        try {
+            HttpCliente.Respuesta respuesta = HttpCliente.getAutenticado(this, urlConversacion() + "mensajes/");
+            if (!respuesta.esExitosa()) {
+                runOnUiThread(() -> Toast.makeText(this, "No se pudo cargar el hilo", Toast.LENGTH_SHORT).show());
+                return;
             }
-        }).start();
+
+            JSONArray mensajes = new JSONArray(respuesta.cuerpo);
+            List<String> textos = new ArrayList<>();
+            for (int i = 0; i < mensajes.length(); i++) {
+                JSONObject mensaje = mensajes.getJSONObject(i);
+                textos.add(mensaje.getString("remitente") + ": " + mensaje.getString("texto"));
+            }
+            runOnUiThread(() -> listaMensajes.setAdapter(new ArrayAdapter<>(this, android.R.layout.simple_list_item_1, textos)));
+        } catch (Exception e) {
+            Log.e(TAG, "Error cargando mensajes", e);
+            runOnUiThread(() -> Toast.makeText(this, "No se pudo conectar con el servidor", Toast.LENGTH_SHORT).show());
+        }
+    }
+
+    /** Mientras hay un pedido en curso se bloquea todo, para que se vea que algo está pasando. */
+    private void ocupado(boolean si) {
+        botonEnviar.setEnabled(!si);
+        botonCerrar.setEnabled(!si);
+        editMensaje.setEnabled(!si);
+        if (!si) {
+            botonEnviar.setText(R.string.conversacion_boton_enviar);
+            botonCerrar.setText(R.string.conversacion_boton_cerrar);
+        }
     }
 
     private void onEnviarClick() {
@@ -103,12 +115,21 @@ public class ConversacionActivity extends AppCompatActivity {
         if (texto.isEmpty()) {
             return;
         }
+        ocupado(true);
+        botonEnviar.setText("Enviando...");
         new Thread(() -> {
             try {
                 JSONObject cuerpo = new JSONObject().put("texto", texto);
                 HttpCliente.Respuesta respuesta = HttpCliente.postAutenticado(this, urlConversacion() + "responder/", cuerpo);
                 if (respuesta.esExitosa()) {
-                    runOnUiThread(() -> editMensaje.setText(""));
+                    // entregado=false: Core lo guardó en el hilo pero el canal no confirmó la entrega (contrato §4.5).
+                    boolean entregado = new JSONObject(respuesta.cuerpo).getBoolean("entregado");
+                    runOnUiThread(() -> {
+                        editMensaje.setText("");
+                        if (!entregado) {
+                            Toast.makeText(this, "El mensaje quedó en el hilo pero no se pudo entregar al contacto", Toast.LENGTH_LONG).show();
+                        }
+                    });
                     cargarMensajes();
                 } else {
                     runOnUiThread(() -> Toast.makeText(this, "No se pudo enviar el mensaje", Toast.LENGTH_SHORT).show());
@@ -116,23 +137,37 @@ public class ConversacionActivity extends AppCompatActivity {
             } catch (Exception e) {
                 Log.e(TAG, "Error enviando mensaje", e);
                 runOnUiThread(() -> Toast.makeText(this, "No se pudo conectar con el servidor", Toast.LENGTH_SHORT).show());
+            } finally {
+                runOnUiThread(() -> ocupado(false));
             }
         }).start();
     }
 
     private void onCerrarClick() {
+        new AlertDialog.Builder(this)
+                .setTitle("Cerrar conversación")
+                .setMessage("La conversación se marca como cerrada y, si hay un mensaje de despedida configurado, se le envía al contacto. Ya no vas a poder responderla.")
+                .setPositiveButton("Cerrar", (dialogo, boton) -> cerrarConversacion())
+                .setNegativeButton("Cancelar", null)
+                .show();
+    }
+
+    private void cerrarConversacion() {
+        ocupado(true);
+        botonCerrar.setText("Cerrando...");
         new Thread(() -> {
             try {
                 HttpCliente.Respuesta respuesta = HttpCliente.postAutenticado(this, urlConversacion() + "cerrar/", new JSONObject());
                 if (respuesta.esExitosa()) {
                     runOnUiThread(this::finish);
-                } else {
-                    runOnUiThread(() -> Toast.makeText(this, "No se pudo cerrar la conversación", Toast.LENGTH_SHORT).show());
+                    return;
                 }
+                runOnUiThread(() -> Toast.makeText(this, "No se pudo cerrar la conversación", Toast.LENGTH_SHORT).show());
             } catch (Exception e) {
                 Log.e(TAG, "Error cerrando la conversación", e);
                 runOnUiThread(() -> Toast.makeText(this, "No se pudo conectar con el servidor", Toast.LENGTH_SHORT).show());
             }
+            runOnUiThread(() -> ocupado(false));
         }).start();
     }
 }
