@@ -68,6 +68,8 @@ public class ConversacionActivity extends AppCompatActivity {
 
     // Cada cuánto se refresca el hilo mientras la pantalla está a la vista (contrato §7.3).
     private static final long INTERVALO_SONDEO_MS = 5_000;
+    // El bloqueo dura 2 minutos en Core; se renueva a la mitad de ese tiempo (contrato §4.3).
+    private static final long INTERVALO_RENOVACION_MS = 60_000;
 
     private final List<String> lineasMostradas = new ArrayList<>();
     private ArrayAdapter<String> adaptadorMensajes;
@@ -77,6 +79,13 @@ public class ConversacionActivity extends AppCompatActivity {
         public void run() {
             refrescarEnSilencio();
             manejador.postDelayed(this, INTERVALO_SONDEO_MS);
+        }
+    };
+    private final Runnable renovacion = new Runnable() {
+        @Override
+        public void run() {
+            renovarBloqueo();
+            manejador.postDelayed(this, INTERVALO_RENOVACION_MS);
         }
     };
 
@@ -120,13 +129,18 @@ public class ConversacionActivity extends AppCompatActivity {
         tomarYCargarMensajes();
     }
 
-    /** Una conversación cerrada no cambia, así que sólo las abiertas se refrescan. Se pausa en segundo plano. */
+    /**
+     * Una conversación cerrada no cambia ni se toma, así que sólo las abiertas se refrescan
+     * y renuevan el bloqueo. Todo se pausa en segundo plano.
+     */
     @Override
     protected void onResume() {
         super.onResume();
         if (!soloLectura) {
             manejador.removeCallbacks(sondeo);
             manejador.postDelayed(sondeo, INTERVALO_SONDEO_MS);
+            manejador.removeCallbacks(renovacion);
+            manejador.postDelayed(renovacion, INTERVALO_RENOVACION_MS);
         }
     }
 
@@ -134,6 +148,29 @@ public class ConversacionActivity extends AppCompatActivity {
     protected void onPause() {
         super.onPause();
         manejador.removeCallbacks(sondeo);
+        manejador.removeCallbacks(renovacion);
+    }
+
+    /**
+     * Vuelve a llamar a `tomar` para que el bloqueo de 2 minutos no venza mientras la pantalla
+     * sigue abierta (contrato §4.3). Si Core contesta 400 es que otro operador la tomó después de
+     * que el bloqueo venció (por ejemplo si la app estuvo en segundo plano): ya no es tuya.
+     * Si falla por conexión no se avisa, se reintenta en el próximo ciclo.
+     */
+    private void renovarBloqueo() {
+        new Thread(() -> {
+            try {
+                HttpCliente.Respuesta respuesta = HttpCliente.postAutenticado(this, urlConversacion() + "tomar/", new JSONObject());
+                if (respuesta.codigo == 400) {
+                    runOnUiThread(() -> {
+                        Toast.makeText(this, "Otro operador tomó esta conversación", Toast.LENGTH_LONG).show();
+                        finish();
+                    });
+                }
+            } catch (Exception e) {
+                Log.e(TAG, "Error renovando el bloqueo", e);
+            }
+        }).start();
     }
 
     private String urlConversacion() {
