@@ -3,8 +3,9 @@ package com.udc.operador;
 import android.content.Intent;
 import android.os.Bundle;
 import android.util.Log;
+import android.view.Menu;
+import android.view.MenuItem;
 import android.view.View;
-import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.ListView;
@@ -39,7 +40,8 @@ public class PrincipalActivity extends AppCompatActivity {
     private EditText editApellido;
     private EditText editDni;
     private Button botonGuardarPerfil;
-    private final List<Integer> idsConversaciones = new ArrayList<>();
+
+    private final List<JSONObject> conversaciones = new ArrayList<>();
     private int pantallaActual = R.id.menu_sin_asignar;
 
     @Override
@@ -54,17 +56,16 @@ public class PrincipalActivity extends AppCompatActivity {
         editApellido = findViewById(R.id.editApellido);
         editDni = findViewById(R.id.editDni);
         botonGuardarPerfil = findViewById(R.id.botonGuardarPerfil);
+        Button botonCambiarPassword = findViewById(R.id.botonCambiarPassword);
+        Button botonCerrarSesion = findViewById(R.id.botonCerrarSesion);
 
         botonGuardarPerfil.setOnClickListener(v -> guardarPerfil());
-        findViewById(R.id.botonCambiarPassword).setOnClickListener(v ->
+        botonCambiarPassword.setOnClickListener(v ->
                 startActivity(new Intent(this, CambiarPasswordActivity.class)));
-        findViewById(R.id.botonCerrarSesion).setOnClickListener(v -> cerrarSesion());
+        botonCerrarSesion.setOnClickListener(v -> cerrarSesion());
 
-        listaConversaciones.setOnItemClickListener((parent, view, position, id) -> {
-            Intent intent = new Intent(this, ConversacionActivity.class);
-            intent.putExtra("conversacion_id", idsConversaciones.get(position));
-            startActivity(intent);
-        });
+        listaConversaciones.setOnItemClickListener((parent, view, position, id) ->
+                ConversacionActivity.abrir(this, conversaciones.get(position), false));
 
         BottomNavigationView menu = findViewById(R.id.menuInferior);
         menu.setOnItemSelectedListener(item -> {
@@ -83,10 +84,34 @@ public class PrincipalActivity extends AppCompatActivity {
         mostrarPantallaActual();
     }
 
+    // --- Menú de los tres puntitos: "Ver cerradas", sólo en la pestaña Mías ---
+
+    @Override
+    public boolean onCreateOptionsMenu(Menu menu) {
+        getMenuInflater().inflate(R.menu.menu_mias, menu);
+        return true;
+    }
+
+    @Override
+    public boolean onPrepareOptionsMenu(Menu menu) {
+        menu.findItem(R.id.menu_ver_cerradas).setVisible(pantallaActual == R.id.menu_mias);
+        return true;
+    }
+
+    @Override
+    public boolean onOptionsItemSelected(MenuItem item) {
+        if (item.getItemId() == R.id.menu_ver_cerradas) {
+            startActivity(new Intent(this, CerradasActivity.class));
+            return true;
+        }
+        return super.onOptionsItemSelected(item);
+    }
+
     private void mostrarPantallaActual() {
         boolean esPerfil = pantallaActual == R.id.menu_perfil;
         listaConversaciones.setVisibility(esPerfil ? View.GONE : View.VISIBLE);
         vistaPerfil.setVisibility(esPerfil ? View.VISIBLE : View.GONE);
+        invalidateOptionsMenu();
 
         if (!esPerfil) {
             cargarBandeja(pantallaActual == R.id.menu_sin_asignar ? "sin_asignar" : "mias");
@@ -107,19 +132,11 @@ public class PrincipalActivity extends AppCompatActivity {
                 }
 
                 JSONArray resultados = new JSONObject(respuesta.cuerpo).getJSONArray("results");
-                List<String> textos = new ArrayList<>();
-                List<Integer> ids = new ArrayList<>();
+                List<JSONObject> filas = new ArrayList<>();
                 for (int i = 0; i < resultados.length(); i++) {
-                    JSONObject conversacion = resultados.getJSONObject(i);
-                    JSONObject contacto = conversacion.getJSONObject("contact");
-                    String nombre = contacto.getString("nombre");
-                    String quien = nombre.isEmpty() ? contacto.getString("identificador_externo") : nombre;
-                    String canal = conversacion.getString("canal_display");
-                    String equipo = conversacion.isNull("team_nombre") ? "sin equipo" : conversacion.getString("team_nombre");
-                    textos.add(canal + " - " + quien + " (" + equipo + ")");
-                    ids.add(conversacion.getInt("id"));
+                    filas.add(resultados.getJSONObject(i));
                 }
-                runOnUiThread(() -> mostrarConversaciones(textos, ids));
+                runOnUiThread(() -> mostrarConversaciones(filas));
             } catch (Exception e) {
                 Log.e(TAG, "Error cargando bandeja", e);
                 runOnUiThread(() -> Toast.makeText(this, "No se pudo conectar con el servidor", Toast.LENGTH_SHORT).show());
@@ -127,10 +144,10 @@ public class PrincipalActivity extends AppCompatActivity {
         }).start();
     }
 
-    private void mostrarConversaciones(List<String> textos, List<Integer> ids) {
-        idsConversaciones.clear();
-        idsConversaciones.addAll(ids);
-        listaConversaciones.setAdapter(new ArrayAdapter<>(this, android.R.layout.simple_list_item_1, textos));
+    private void mostrarConversaciones(List<JSONObject> filas) {
+        conversaciones.clear();
+        conversaciones.addAll(filas);
+        listaConversaciones.setAdapter(new ConversacionesAdapter(this, filas));
     }
 
     /** Trae el perfil del usuario logueado (GET /api/core/users/me/, contrato §1). */

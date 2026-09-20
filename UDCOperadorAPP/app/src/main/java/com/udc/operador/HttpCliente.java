@@ -101,6 +101,10 @@ public class HttpCliente {
         return autenticado(context, "PATCH", url, cuerpoPedido);
     }
 
+    public static Respuesta deleteAutenticado(Context context, String url) throws IOException {
+        return autenticado(context, "DELETE", url, null);
+    }
+
     private static Respuesta autenticado(Context context, String metodo, String url, JSONObject cuerpoPedido) throws IOException {
         Respuesta respuesta = pedido(metodo, url, cuerpoPedido, Sesion.obtenerAccess(context));
         if (respuesta.codigo == 401 && refrescarAccess(context)) {
@@ -110,14 +114,24 @@ public class HttpCliente {
     }
 
     /**
-     * Mensaje legible de una respuesta de error de DRF (contrato §5): `detail`
-     * si está, si no el primer mensaje del primer campo (`{"campo": ["..."]}`).
+     * Mensaje legible de una respuesta de error de la API (contrato §5):
+     * `error.detail` — string directo, lista `["msg", ...]` (error que no es
+     * de un campo puntual) o `{"campo": ["msg", ...]}` para errores de
+     * validación (en ambos casos se usa el primer mensaje).
      */
     public static String mensajeDeError(String cuerpo, String porDefecto) {
         try {
             JSONObject json = new JSONObject(cuerpo);
-            Object valor = json.get(json.has("detail") ? "detail" : json.keys().next());
-            return valor instanceof JSONArray ? ((JSONArray) valor).getString(0) : valor.toString();
+            Object detalle = json.getJSONObject("error").get("detail");
+            if (detalle instanceof JSONObject) {
+                JSONObject campos = (JSONObject) detalle;
+                Object valor = campos.get(campos.keys().next());
+                return valor instanceof JSONArray ? ((JSONArray) valor).getString(0) : valor.toString();
+            }
+            if (detalle instanceof JSONArray) {
+                return ((JSONArray) detalle).getString(0);
+            }
+            return detalle.toString();
         } catch (Exception e) {
             return porDefecto;
         }

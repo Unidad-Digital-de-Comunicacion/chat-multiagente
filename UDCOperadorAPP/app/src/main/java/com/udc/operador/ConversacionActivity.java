@@ -1,11 +1,18 @@
 package com.udc.operador;
 
+import android.content.Context;
+import android.content.Intent;
 import android.os.Bundle;
+import android.text.SpannableStringBuilder;
 import android.util.Log;
+import android.view.Menu;
+import android.view.MenuItem;
+import android.view.View;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.ListView;
+import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.appcompat.app.AlertDialog;
@@ -15,20 +22,52 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
+import java.util.function.Consumer;
 
 /**
- * Detalle de una conversación (contrato §4.2-§4.6): al abrirla la tomamos
- * para el operador logueado, mostramos el hilo completo y permite responder
- * o cerrar. Derivar/etiquetas por conversación/notas internas quedan afuera
- * a propósito — esos endpoints todavía no existen en Core (ver AGENTS.md).
+ * Detalle de una conversación (contrato §4.2-§4.8): al abrirla la tomamos
+ * para el operador logueado, mostramos el hilo completo y permite responder,
+ * cerrar, etiquetar y derivar a otro equipo (menú de los tres puntitos).
+ * Las etiquetas aplicadas se ven arriba y las observaciones dentro del
+ * hilo. Cargar observaciones sueltas y las notas internas todavía no están.
  */
 public class ConversacionActivity extends AppCompatActivity {
 
+    private static final String EXTRA_ID = "conversacion_id";
+    private static final String EXTRA_TITULO = "titulo";
+    private static final String EXTRA_SUBTITULO = "subtitulo";
+    private static final String EXTRA_SOLO_LECTURA = "solo_lectura";
+
     private static final String TAG = "ConversacionActivity";
 
+    // Etiquetas de sistema que Core sólo deja aplicar con una observación (contrato §4.8).
+    private static final List<String> CODIGOS_CON_OBSERVACION = Arrays.asList("resuelto", "rechazado", "en_pausa");
+
+    /**
+     * Abre la conversación de una fila de la lista (GET /conversaciones/). El
+     * contacto viaja en el Intent para mostrarlo arriba sin otro pedido:
+     * su nombre (o su número si no tiene) y el canal.
+     */
+    public static void abrir(Context context, JSONObject conversacion, boolean soloLectura) {
+        JSONObject contacto = conversacion.optJSONObject("contact");
+        String nombre = contacto.optString("nombre");
+        String numero = contacto.optString("identificador_externo");
+        String canal = conversacion.optString("canal_display");
+
+        Intent intent = new Intent(context, ConversacionActivity.class);
+        intent.putExtra(EXTRA_ID, conversacion.optInt("id"));
+        intent.putExtra(EXTRA_TITULO, nombre.isEmpty() ? numero : nombre);
+        intent.putExtra(EXTRA_SUBTITULO, nombre.isEmpty() ? canal : canal + " · " + numero);
+        intent.putExtra(EXTRA_SOLO_LECTURA, soloLectura);
+        context.startActivity(intent);
+    }
+
     private int conversacionId;
+    private boolean soloLectura;
     private ListView listaMensajes;
+    private TextView textEtiquetas;
     private EditText editMensaje;
     private Button botonEnviar;
     private Button botonCerrar;
@@ -38,14 +77,26 @@ public class ConversacionActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_conversacion);
 
-        conversacionId = getIntent().getIntExtra("conversacion_id", -1);
+        conversacionId = getIntent().getIntExtra(EXTRA_ID, -1);
+        soloLectura = getIntent().getBooleanExtra(EXTRA_SOLO_LECTURA, false);
+
+        // Arriba: con quién se está hablando (y si la conversación está cerrada).
+        setTitle(getIntent().getStringExtra(EXTRA_TITULO));
+        getSupportActionBar().setSubtitle(getIntent().getStringExtra(EXTRA_SUBTITULO) + (soloLectura ? " · cerrada" : ""));
         listaMensajes = findViewById(R.id.listaMensajes);
+        textEtiquetas = findViewById(R.id.textEtiquetas);
         editMensaje = findViewById(R.id.editMensaje);
         botonEnviar = findViewById(R.id.botonEnviar);
         botonCerrar = findViewById(R.id.botonCerrar);
 
         botonEnviar.setOnClickListener(v -> onEnviarClick());
         botonCerrar.setOnClickListener(v -> onCerrarClick());
+
+        if (soloLectura) {
+            // Conversación cerrada: se puede leer, pero no responder, cerrar, etiquetar ni derivar.
+            findViewById(R.id.filaRespuesta).setVisibility(View.GONE);
+            botonCerrar.setVisibility(View.GONE);
+        }
 
         tomarYCargarMensajes();
     }
@@ -54,19 +105,225 @@ public class ConversacionActivity extends AppCompatActivity {
         return Config.BASE_URL + "/api/core/conversaciones/" + conversacionId + "/";
     }
 
-    /** Reclama la conversación para este operador (contrato §4.3) y después carga el hilo. */
+    // --- Menú de los tres puntitos: etiquetas y derivar ---
+
+    @Override
+    public boolean onCreateOptionsMenu(Menu menu) {
+        if (soloLectura) {
+            return false;
+        }
+        getMenuInflater().inflate(R.menu.menu_conversacion, menu);
+        return true;
+    }
+
+    @Override
+    public boolean onOptionsItemSelected(MenuItem item) {
+        if (item.getItemId() == R.id.menu_etiquetas) {
+            mostrarEtiquetas();
+            return true;
+        }
+        if (item.getItemId() == R.id.menu_derivar) {
+            mostrarEquipos();
+            return true;
+        }
+        return super.onOptionsItemSelected(item);
+    }
+
+    private interface TareaRed {
+        void ejecutar() throws Exception;
+    }
+
+    /** Corre un pedido de red en background; si falla por conexión avisa con un Toast. */
+    private void enSegundoPlano(TareaRed tarea) {
+        new Thread(() -> {
+            try {
+                tarea.ejecutar();
+            } catch (Exception e) {
+                Log.e(TAG, "Error de red", e);
+                avisar("No se pudo conectar con el servidor");
+            }
+        }).start();
+    }
+
+    private void avisar(String mensaje) {
+        runOnUiThread(() -> Toast.makeText(this, mensaje, Toast.LENGTH_LONG).show());
+    }
+
+    /** Bloqueante: muestra arriba de la conversación las etiquetas hoy aplicadas (GET .../etiquetas/). */
+    private void cargarEtiquetasAplicadas() throws Exception {
+        HttpCliente.Respuesta respuesta = HttpCliente.getAutenticado(this, urlConversacion() + "etiquetas/");
+        if (!respuesta.esExitosa()) {
+            return;
+        }
+        JSONArray aplicadas = new JSONArray(respuesta.cuerpo);
+        JSONArray etiquetas = new JSONArray();
+        for (int i = 0; i < aplicadas.length(); i++) {
+            etiquetas.put(aplicadas.getJSONObject(i).getJSONObject("etiqueta"));
+        }
+        // Mismo dibujo que en las listas: cada etiqueta con su color y el color de su letra.
+        SpannableStringBuilder texto = ConversacionesAdapter.textoDeEtiquetas(etiquetas);
+        runOnUiThread(() -> {
+            textEtiquetas.setText(texto);
+            textEtiquetas.setVisibility(texto.length() == 0 ? View.GONE : View.VISIBLE);
+        });
+    }
+
+    /** Lista todas las etiquetas de la organización; las ya aplicadas llevan ✓. Tocar una la aplica o la quita. */
+    private void mostrarEtiquetas() {
+        enSegundoPlano(() -> {
+            HttpCliente.Respuesta catalogo = HttpCliente.getAutenticado(this, Config.BASE_URL + "/api/core/etiquetas/");
+            HttpCliente.Respuesta aplicadas = HttpCliente.getAutenticado(this, urlConversacion() + "etiquetas/");
+            if (!catalogo.esExitosa() || !aplicadas.esExitosa()) {
+                avisar("No se pudieron cargar las etiquetas");
+                return;
+            }
+
+            List<Integer> idsAplicadas = new ArrayList<>();
+            JSONArray filasAplicadas = new JSONArray(aplicadas.cuerpo);
+            for (int i = 0; i < filasAplicadas.length(); i++) {
+                idsAplicadas.add(filasAplicadas.getJSONObject(i).getJSONObject("etiqueta").getInt("id"));
+            }
+
+            JSONArray etiquetas = new JSONObject(catalogo.cuerpo).getJSONArray("results");
+            List<Integer> ids = new ArrayList<>();
+            List<String> codigos = new ArrayList<>();
+            List<String> nombres = new ArrayList<>();
+            List<String> opciones = new ArrayList<>();
+            for (int i = 0; i < etiquetas.length(); i++) {
+                JSONObject etiqueta = etiquetas.getJSONObject(i);
+                boolean aplicada = idsAplicadas.contains(etiqueta.getInt("id"));
+                ids.add(etiqueta.getInt("id"));
+                codigos.add(etiqueta.getString("codigo"));
+                nombres.add(etiqueta.getString("nombre"));
+                opciones.add((aplicada ? "✓ " : "") + etiqueta.getString("nombre"));
+            }
+
+            runOnUiThread(() -> new AlertDialog.Builder(this)
+                    .setTitle("Etiquetas (tocá para aplicar o quitar)")
+                    .setItems(opciones.toArray(new String[0]), (dialogo, posicion) ->
+                            alternarEtiqueta(ids.get(posicion), codigos.get(posicion), nombres.get(posicion),
+                                    idsAplicadas.contains(ids.get(posicion))))
+                    .show());
+        });
+    }
+
+    private void alternarEtiqueta(int etiquetaId, String codigo, String nombre, boolean yaAplicada) {
+        if (yaAplicada) {
+            quitarEtiqueta(etiquetaId);
+        } else if (CODIGOS_CON_OBSERVACION.contains(codigo)) {
+            pedirObservacion("Motivo para «" + nombre + "»", observacion -> aplicarEtiqueta(etiquetaId, observacion));
+        } else {
+            aplicarEtiqueta(etiquetaId, "");
+        }
+    }
+
+    private void aplicarEtiqueta(int etiquetaId, String observacion) {
+        enSegundoPlano(() -> {
+            JSONObject cuerpo = new JSONObject().put("etiqueta", etiquetaId).put("observacion", observacion);
+            HttpCliente.Respuesta respuesta = HttpCliente.postAutenticado(this, urlConversacion() + "etiquetas/", cuerpo);
+            if (!respuesta.esExitosa()) {
+                avisar(HttpCliente.mensajeDeError(respuesta.cuerpo, "No se pudo aplicar la etiqueta"));
+                return;
+            }
+            avisar("Etiqueta aplicada");
+            cargarEtiquetasAplicadas();
+        });
+    }
+
+    private void quitarEtiqueta(int etiquetaId) {
+        enSegundoPlano(() -> {
+            HttpCliente.Respuesta respuesta = HttpCliente.deleteAutenticado(this, urlConversacion() + "etiquetas/" + etiquetaId + "/");
+            if (!respuesta.esExitosa()) {
+                avisar(HttpCliente.mensajeDeError(respuesta.cuerpo, "No se pudo quitar la etiqueta"));
+                return;
+            }
+            avisar("Etiqueta quitada");
+            cargarEtiquetasAplicadas();
+        });
+    }
+
+    /** Lista los equipos de la organización (GET /teams/) y deriva la conversación al elegido (contrato §4.7). */
+    private void mostrarEquipos() {
+        enSegundoPlano(() -> {
+            HttpCliente.Respuesta respuesta = HttpCliente.getAutenticado(this, Config.BASE_URL + "/api/core/teams/");
+            if (!respuesta.esExitosa()) {
+                avisar("No se pudieron cargar los equipos");
+                return;
+            }
+
+            JSONArray equipos = new JSONObject(respuesta.cuerpo).getJSONArray("results");
+            List<Integer> ids = new ArrayList<>();
+            List<String> nombres = new ArrayList<>();
+            for (int i = 0; i < equipos.length(); i++) {
+                JSONObject equipo = equipos.getJSONObject(i);
+                if (equipo.getBoolean("is_active")) {
+                    ids.add(equipo.getInt("id"));
+                    nombres.add(equipo.getString("name"));
+                }
+            }
+
+            runOnUiThread(() -> new AlertDialog.Builder(this)
+                    .setTitle("Derivar a...")
+                    .setItems(nombres.toArray(new String[0]), (dialogo, posicion) ->
+                            pedirObservacion("Motivo de la derivación", observacion ->
+                                    derivar(ids.get(posicion), nombres.get(posicion), observacion)))
+                    .show());
+        });
+    }
+
+    private void derivar(int equipoId, String equipoNombre, String observacion) {
+        enSegundoPlano(() -> {
+            JSONObject cuerpo = new JSONObject().put("team", equipoId).put("observacion", observacion);
+            HttpCliente.Respuesta respuesta = HttpCliente.postAutenticado(this, urlConversacion() + "derivar/", cuerpo);
+            if (!respuesta.esExitosa()) {
+                avisar(HttpCliente.mensajeDeError(respuesta.cuerpo, "No se pudo derivar la conversación"));
+                return;
+            }
+            avisar("Conversación derivada a " + equipoNombre);
+            // Queda sin operador asignado: ya no es tuya, se vuelve a la lista.
+            runOnUiThread(this::finish);
+        });
+    }
+
+    /** Diálogo con un campo de texto; sólo llama a `alAceptar` si la observación no está vacía. */
+    private void pedirObservacion(String titulo, Consumer<String> alAceptar) {
+        EditText campo = new EditText(this);
+        campo.setHint("Observación");
+        campo.setPadding(48, 32, 48, 32);
+        new AlertDialog.Builder(this)
+                .setTitle(titulo)
+                .setView(campo)
+                .setPositiveButton("Aceptar", (dialogo, boton) -> {
+                    String texto = campo.getText().toString().trim();
+                    if (texto.isEmpty()) {
+                        Toast.makeText(this, "La observación no puede estar vacía", Toast.LENGTH_SHORT).show();
+                    } else {
+                        alAceptar.accept(texto);
+                    }
+                })
+                .setNegativeButton("Cancelar", null)
+                .show();
+    }
+
+    /**
+     * Reclama la conversación para este operador (contrato §4.3) y después carga el hilo.
+     * En solo lectura (conversación cerrada) no la reclama, solo la carga.
+     */
     private void tomarYCargarMensajes() {
         new Thread(() -> {
             try {
-                HttpCliente.Respuesta respuesta = HttpCliente.postAutenticado(this, urlConversacion() + "tomar/", new JSONObject());
-                if (!respuesta.esExitosa()) {
-                    runOnUiThread(() -> {
-                        Toast.makeText(this, "No se pudo tomar la conversación (¿la tiene otro operador?)", Toast.LENGTH_LONG).show();
-                        finish();
-                    });
-                    return;
+                if (!soloLectura) {
+                    HttpCliente.Respuesta respuesta = HttpCliente.postAutenticado(this, urlConversacion() + "tomar/", new JSONObject());
+                    if (!respuesta.esExitosa()) {
+                        runOnUiThread(() -> {
+                            Toast.makeText(this, "No se pudo tomar la conversación (¿la tiene otro operador?)", Toast.LENGTH_LONG).show();
+                            finish();
+                        });
+                        return;
+                    }
                 }
                 cargarMensajes();
+                cargarEtiquetasAplicadas();
             } catch (Exception e) {
                 Log.e(TAG, "Error tomando la conversación", e);
                 runOnUiThread(() -> {
@@ -86,11 +343,27 @@ public class ConversacionActivity extends AppCompatActivity {
                 return;
             }
 
+            // Cada línea es {fecha, texto}: los mensajes y las observaciones se mezclan ordenados por fecha.
+            List<String[]> lineas = new ArrayList<>();
             JSONArray mensajes = new JSONArray(respuesta.cuerpo);
-            List<String> textos = new ArrayList<>();
             for (int i = 0; i < mensajes.length(); i++) {
                 JSONObject mensaje = mensajes.getJSONObject(i);
-                textos.add(mensaje.getString("remitente") + ": " + mensaje.getString("texto"));
+                lineas.add(new String[]{mensaje.getString("creado_at"), mensaje.getString("remitente") + ": " + mensaje.getString("texto")});
+            }
+
+            HttpCliente.Respuesta observaciones = HttpCliente.getAutenticado(this, urlConversacion() + "observaciones/");
+            if (observaciones.esExitosa()) {
+                JSONArray filas = new JSONArray(observaciones.cuerpo);
+                for (int i = 0; i < filas.length(); i++) {
+                    JSONObject fila = filas.getJSONObject(i);
+                    lineas.add(new String[]{fila.getString("creado_at"), "📝 Observación de " + fila.getString("operador_email") + ": " + fila.getString("texto")});
+                }
+            }
+            lineas.sort((a, b) -> a[0].compareTo(b[0]));
+
+            List<String> textos = new ArrayList<>();
+            for (String[] linea : lineas) {
+                textos.add(linea[1]);
             }
             runOnUiThread(() -> listaMensajes.setAdapter(new ArrayAdapter<>(this, android.R.layout.simple_list_item_1, textos)));
         } catch (Exception e) {

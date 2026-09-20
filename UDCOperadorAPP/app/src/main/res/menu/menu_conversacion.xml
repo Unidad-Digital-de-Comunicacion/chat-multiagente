@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Menú de los tres puntitos de la pantalla de una conversación. -->
+<menu xmlns:android="http://schemas.android.com/apk/res/android">
+    <item
+        android:id="@+id/menu_etiquetas"
+        android:title="@string/menu_etiquetas" />
+    <item
+        android:id="@+id/menu_derivar"
+        android:title="@string/menu_derivar" />
+</menu>

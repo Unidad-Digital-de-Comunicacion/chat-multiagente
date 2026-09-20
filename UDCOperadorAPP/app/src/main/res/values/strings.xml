@@ -11,7 +11,9 @@
     <string name="menu_sin_asignar">Sin asignar</string>
     <string name="menu_mias">Mías</string>
     <string name="menu_perfil">Perfil</string>
-    <string name="perfil_conectado_como">Conectado como</string>
+    <string name="menu_ver_cerradas">Ver cerradas</string>
+    <string name="cerradas_titulo">Conversaciones cerradas</string>
+    <string name="cerradas_vacio">No tenés conversaciones cerradas.</string>    <string name="perfil_conectado_como">Conectado como</string>
     <string name="perfil_hint_nombre">Nombre</string>
     <string name="perfil_hint_apellido">Apellido</string>
     <string name="perfil_hint_dni">DNI</string>
@@ -30,4 +32,6 @@
     <string name="conversacion_hint_mensaje">Escribí una respuesta</string>
     <string name="conversacion_boton_enviar">Enviar</string>
     <string name="conversacion_boton_cerrar">Cerrar conversación</string>
+    <string name="menu_etiquetas">Etiquetas</string>
+    <string name="menu_derivar">Derivar a otro equipo</string>
 </resources>
