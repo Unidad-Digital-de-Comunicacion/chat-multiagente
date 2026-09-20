@@ -73,9 +73,6 @@ def test_core_caido_devuelve_503(client, fake_http_client):
 
 
 def test_evento_con_firma_valida_ejecuta_las_acciones_que_devuelve_core(client, fake_http_client, canal_messenger):
-    from app.config import get_settings
-    get_settings().meta_app_secret = "app-secret"
-
     fake_http_client.core_get_response = FakeResponse(200, canal_a_json(canal_messenger))
     fake_http_client.core_post_response = FakeResponse(200, {"acciones": [{"tipo": "enviar_texto", "texto": "¡Bienvenido!"}]})
     fake_http_client.meta_response = FakeResponse(200, {"message_id": "mid.respuesta"})
@@ -100,9 +97,6 @@ def test_evento_con_firma_valida_ejecuta_las_acciones_que_devuelve_core(client, 
 
 
 def test_accion_mostrar_menu_se_manda_con_enviar_menu_por_canal(client, fake_http_client, canal_whatsapp):
-    from app.config import get_settings
-    get_settings().meta_app_secret = "app-secret"
-
     fake_http_client.core_get_response = FakeResponse(200, canal_a_json(canal_whatsapp))
     fake_http_client.core_post_response = FakeResponse(200, {"acciones": [{
         "tipo": "mostrar_menu", "texto": "1. Ventas\n2. Soporte",
@@ -132,9 +126,6 @@ def test_accion_mostrar_menu_se_manda_con_enviar_menu_por_canal(client, fake_htt
 
 
 def test_evento_de_whatsapp_normaliza_y_ejecuta_las_acciones(client, fake_http_client, canal_whatsapp):
-    from app.config import get_settings
-    get_settings().meta_app_secret = "app-secret"
-
     fake_http_client.core_get_response = FakeResponse(200, canal_a_json(canal_whatsapp))
     fake_http_client.core_post_response = FakeResponse(200, {"acciones": [{"tipo": "enviar_texto", "texto": "¡Bienvenido!"}]})
     fake_http_client.meta_response = FakeResponse(200, {"messages": [{"id": "wamid.1"}]})
@@ -165,9 +156,6 @@ def test_evento_de_whatsapp_normaliza_y_ejecuta_las_acciones(client, fake_http_c
 
 
 def test_sin_acciones_de_core_no_manda_nada(client, fake_http_client, canal_messenger):
-    from app.config import get_settings
-    get_settings().meta_app_secret = "app-secret"
-
     fake_http_client.core_get_response = FakeResponse(200, canal_a_json(canal_messenger))
     fake_http_client.core_post_response = FakeResponse(200, {"acciones": []})
 
@@ -187,8 +175,6 @@ def test_sin_acciones_de_core_no_manda_nada(client, fake_http_client, canal_mess
 def test_si_falla_el_envio_de_una_accion_igual_se_confirma_el_webhook(client, fake_http_client, canal_messenger):
     # Meta reintenta si no contestamos 200 rápido — una api_key vencida no
     # debería hacer que Meta reintente el mismo webhook una y otra vez.
-    from app.config import get_settings
-    get_settings().meta_app_secret = "app-secret"
 
     fake_http_client.core_get_response = FakeResponse(200, canal_a_json(canal_messenger))
     fake_http_client.core_post_response = FakeResponse(200, {"acciones": [{"tipo": "enviar_texto", "texto": "¡Bienvenido!"}]})
@@ -207,9 +193,6 @@ def test_si_falla_el_envio_de_una_accion_igual_se_confirma_el_webhook(client, fa
 
 
 def test_evento_con_firma_invalida_se_rechaza(client, fake_http_client):
-    from app.config import get_settings
-    get_settings().meta_app_secret = "app-secret"
-
     raw = b'{"entry": []}'
     response = client.post(
         "/webhooks/messenger/11111111-1111-1111-1111-111111111111",
@@ -217,14 +200,24 @@ def test_evento_con_firma_invalida_se_rechaza(client, fake_http_client):
         headers={"X-Hub-Signature-256": "sha256=firma-inventada", "Content-Type": "application/json"},
     )
     assert response.status_code == 403
-    # La firma se verifica ANTES de pedirle nada a Core.
-    assert fake_http_client.calls == []
+    # Se le pide a Core el secreto de la app (`obtener_meta_app`) ANTES de
+    # verificar la firma, pero nunca se llega a pedir el canal (eso sí
+    # sigue siendo sólo DESPUÉS de una firma válida).
+    assert not any("/internal/canales/" in c[1] for c in fake_http_client.calls)
+
+
+def test_si_no_se_puede_pedir_la_config_de_la_app_da_503(client, fake_http_client):
+    fake_http_client.meta_app_exc = httpx.ConnectError("timeout")
+    raw = b'{"entry": []}'
+    response = client.post(
+        "/webhooks/messenger/11111111-1111-1111-1111-111111111111",
+        content=raw,
+        headers={"X-Hub-Signature-256": "sha256=lo-que-sea", "Content-Type": "application/json"},
+    )
+    assert response.status_code == 503
 
 
 def test_objeto_desconocido_no_procesa_nada(client, fake_http_client, canal_messenger):
-    from app.config import get_settings
-    get_settings().meta_app_secret = "app-secret"
-
     fake_http_client.core_get_response = FakeResponse(200, canal_a_json(canal_messenger))
 
     body = {"object": "user"}  # algo que Meta manda pero no es mensajería
@@ -245,8 +238,6 @@ def test_objeto_del_payload_manda_al_canal_hermano_de_la_misma_organizacion(clie
     # Messenger para las tres suscripciones, un evento de Instagram real
     # llega a esa MISMA URL. Tiene que resolverse con el canal INSTAGRAM de
     # la organización, no con el canal MESSENGER de la URL.
-    from app.config import get_settings
-    get_settings().meta_app_secret = "app-secret"
 
     canal_url = CanalConfig(organization_id=7, tipo="MESSENGER", api_key="msj-token", webhook_secret="x", activo=True)
     canal_hermano = CanalConfig(organization_id=7, tipo="INSTAGRAM", api_key="ig-token", webhook_secret="y", activo=True)
@@ -289,9 +280,6 @@ def test_handshake_con_barra_final_no_redirige(client, fake_http_client, canal_m
 
 
 def test_evento_con_barra_final_se_procesa_sin_redirect(client, fake_http_client, canal_messenger):
-    from app.config import get_settings
-    get_settings().meta_app_secret = "app-secret"
-
     fake_http_client.core_get_response = FakeResponse(200, canal_a_json(canal_messenger))
     fake_http_client.core_post_response = FakeResponse(200, {"acciones": []})
 
@@ -311,9 +299,6 @@ def test_evento_con_barra_final_se_procesa_sin_redirect(client, fake_http_client
 
 
 def test_sin_canal_hermano_configurado_no_rompe(client, fake_http_client, canal_messenger):
-    from app.config import get_settings
-    get_settings().meta_app_secret = "app-secret"
-
     fake_http_client.core_get_response = FakeResponse(200, canal_a_json(canal_messenger))
     # `sibling_get_response` queda en el default (404 -> CanalNoEncontrado).
 

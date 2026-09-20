@@ -6,6 +6,7 @@ from django.contrib.auth.models import Group
 from rest_framework.test import APIClient
 
 from organizations.models import Organization
+from platform_admin.models import ServiceToken
 from users.group_permissions import sync_groups
 from users.models import User
 
@@ -35,3 +36,10 @@ def authenticated_client(user):
     client = APIClient()
     client.force_authenticate(user=user)
     return client
+
+
+def make_service_token(servicio, token, activo=True):
+    """Wrapper fino sobre `ServiceToken.objects.create(...)` — `token` se
+    cifra solo al guardar (`EncryptedTextField`, transparente), esto sólo
+    existe para no repetir la misma llamada en cada test file."""
+    return ServiceToken.objects.create(servicio=servicio, token=token, activo=activo)

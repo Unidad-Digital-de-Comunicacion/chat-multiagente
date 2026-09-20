@@ -20,6 +20,18 @@ class CanalConfig:
 
 
 @dataclass(frozen=True)
+class MetaAppCredenciales:
+    """Lo que devuelve `GET /api/core/internal/meta-app/` en Core — ver
+    `platform_admin.views.InternalMetaAppConfigView`. Credenciales de la
+    app de Meta (Facebook Developers), una sola para toda la plataforma —
+    no confundir con `CanalConfig.api_key`, el token de página/negocio de
+    UN canal puntual."""
+
+    app_id: str
+    app_secret: str
+
+
+@dataclass(frozen=True)
 class MensajeEntrante:
     """Un mensaje normalizado, ya independiente del formato particular de
     cada canal — lo que se manda a `POST /api/core/bot/mensaje-entrante/`

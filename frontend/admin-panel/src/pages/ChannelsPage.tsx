@@ -5,6 +5,7 @@ import Modal from "../components/Modal";
 import { useAuth } from "../auth/AuthContext";
 import { hasPerm } from "../auth/permissions";
 import type { Canal, Paginated } from "../types";
+import { formatearFecha } from "../utils/fecha";
 
 export default function ChannelsPage() {
   const { me } = useAuth();
@@ -190,7 +191,7 @@ function EstadoConexion({ canal }: { canal: Canal }) {
     );
   }
 
-  const fecha = new Date(canal.ultimo_chequeo_at).toLocaleString("es-AR");
+  const fecha = formatearFecha(canal.ultimo_chequeo_at);
 
   return (
     <div>

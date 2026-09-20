@@ -14,6 +14,16 @@ interface AuthState {
 
 const AuthContext = createContext<AuthState | undefined>(undefined);
 
+// El token sigue en `localStorage` (no cookies `httponly` — ver la
+// discusión de arquitectura del 2026-09-20), así que un token robado por
+// XSS seguiría sirviendo igual hasta que expire; esto no soluciona eso.
+// Lo que sí mitiga: si un superusuario desactiva la cuenta o le saca un
+// permiso mientras la pestaña sigue abierta, antes había que esperar hasta
+// 30 minutos (la vida del `access`) a que el usuario recargue o haga un
+// request que dispare un refresh — con esto, la pestaña se entera sola en
+// como mucho este intervalo, sin esperar ninguna acción del usuario.
+const INTERVALO_REVALIDACION_MS = 5 * 60 * 1000;
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [me, setMe] = useState<Me | null>(null);
   const [loading, setLoading] = useState(true);
@@ -40,6 +50,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setLoading(false);
     }
   }, []);
+
+  useEffect(() => {
+    if (!me) return;
+
+    const id = setInterval(loadMe, INTERVALO_REVALIDACION_MS);
+
+    return () => clearInterval(id);
+    // Sólo depende de si hay sesión o no (`Boolean(me)`), no de `me`
+    // entero — no hay que reiniciar el timer cada vez que cambia el
+    // perfil, sólo prenderlo/apagarlo al loguear/desloguear.
+  }, [Boolean(me)]);
 
   async function login(email: string, password: string): Promise<Me> {
     const data = await api.post<{ access: string; refresh: string }>("/api/auth/login/", { email, password });

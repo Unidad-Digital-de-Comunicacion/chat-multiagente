@@ -5,14 +5,7 @@ import { useAuth } from "../auth/AuthContext";
 import { isPlatformSuperuser } from "../auth/permissions";
 import { ApiError } from "../api/client";
 import type { Me } from "../types";
-
-function formatearFechaHora(iso: string): string {
-  try {
-    return new Date(iso).toLocaleString("es-AR", { dateStyle: "short", timeStyle: "short" });
-  } catch {
-    return iso;
-  }
-}
+import { formatearFechaCorta as formatearFechaHora } from "../utils/fecha";
 
 // El superusuario de plataforma no tiene permiso para ver el menú de ninguna organización en
 // particular (ver `App.tsx::Home`, mismo criterio) — no puede aterrizar en "/menu" como todo el

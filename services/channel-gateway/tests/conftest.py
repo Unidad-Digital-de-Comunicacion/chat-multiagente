@@ -29,12 +29,12 @@ class FakeAsyncClient:
     client]` (fixture `fake_http_client` más abajo) — el seam real para los
     tests end-to-end con `TestClient`, en vez de parchear un import.
 
-    `obtener_canal`/`obtener_canal_por_organizacion` sólo hacen GET (contra
-    Core, a dos URLs distintas — se enrutan por `/organizacion/` en el
-    path) y comparten el mismo cliente que `enviar_mensaje_entrante` (POST a
-    Core) y `meta_client` (POST a la Graph API de Meta) en el flujo real de
-    `webhooks.py` — se enruta por URL en vez de asumir un solo GET/POST
-    posible."""
+    `obtener_canal`/`obtener_canal_por_organizacion`/`obtener_meta_app`
+    sólo hacen GET (contra Core, a tres URLs distintas — se enrutan por
+    `/organizacion/` y `/meta-app/` en el path) y comparten el mismo
+    cliente que `enviar_mensaje_entrante` (POST a Core) y `meta_client`
+    (POST a la Graph API de Meta) en el flujo real de `webhooks.py` — se
+    enruta por URL en vez de asumir un solo GET/POST posible."""
 
     def __init__(self):
         self.calls = []
@@ -45,12 +45,22 @@ class FakeAsyncClient:
         # configurado el tipo que se busca.
         self.sibling_get_response = FakeResponse(404)
         self.sibling_get_exc = None
+        # `obtener_meta_app` — "app-secret" por defecto para que los tests
+        # existentes (que firman con ese mismo valor, ver `_firmar` en
+        # `test_webhooks.py`) sigan validando sin tener que configurar esto
+        # a mano en cada uno.
+        self.meta_app_response = FakeResponse(200, {"app_id": "app-id", "app_secret": "app-secret"})
+        self.meta_app_exc = None
         self.core_post_response = FakeResponse(200, {"acciones": []})
         self.meta_response = FakeResponse(200, {"message_id": "mid.1"})
         self.meta_exc = None
 
     async def get(self, url, headers=None):
         self.calls.append(("GET", url, headers, None))
+        if "/meta-app/" in url:
+            if self.meta_app_exc:
+                raise self.meta_app_exc
+            return self.meta_app_response
         if "/organizacion/" in url:
             if self.sibling_get_exc:
                 raise self.sibling_get_exc

@@ -67,8 +67,10 @@ def test_ignora_eventos_de_postback():
 
 
 def test_respuesta_de_quick_reply_se_normaliza_como_el_payload_elegido():
-    # Instagram es el único que manda quick_replies hoy (Messenger volvió a
-    # texto plano, ver `meta_client`) — la normalización es genérica igual.
+    # Ni Messenger ni Instagram mandan `quick_replies` propios hoy (los dos
+    # usan texto plano numerado, ver `meta_client`) — esto cubre la
+    # normalización genérica por si algún día vuelve a hacer falta, o si
+    # Meta lo manda por otro motivo ajeno a nuestro propio envío.
     payload = {"entry": [{"messaging": [{
         "sender": {"id": "PSID123"},
         "message": {

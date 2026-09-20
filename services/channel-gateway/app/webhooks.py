@@ -28,9 +28,9 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel
 
-from .config import get_settings
 from .core_client import (
     CanalNoEncontrado, CoreNoDisponible, enviar_mensaje_entrante, obtener_canal, obtener_canal_por_organizacion,
+    obtener_meta_app,
 )
 from .http_client import get_http_client
 from .meta_client import EnvioFallido, enviar_menu_por_canal, enviar_texto_por_canal
@@ -130,14 +130,19 @@ async def recibir_evento(
     # HMAC antes de confiar en nada — un body-model de FastAPI ya vendría
     # parseado, sin la representación exacta de bytes que firmó Meta.
     raw_body = await request.body()  # noqa: ASF002
-    settings = get_settings()
-    # El secreto se elige por la URL (`canal_tipo_url`), no por el `object`
-    # real del payload — a esta altura todavía no lo leímos, y de última es
-    # justamente por la URL que Meta distingue de qué app viene cada
-    # webhook cuando Instagram está dado de alta aparte (ver docstring de
-    # `meta_app_secret_instagram` en `config.py`).
-    app_secret = settings.meta_app_secret_instagram if canal_tipo_url == "instagram" else settings.meta_app_secret
-    if not verificar_firma(raw_body, x_hub_signature_256, app_secret):
+    try:
+        meta_app = await obtener_meta_app(client)
+    except CoreNoDisponible as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+    if not verificar_firma(raw_body, x_hub_signature_256, meta_app.app_secret):
+        # Nunca el secreto ni la firma completa acá (son credenciales) —
+        # sólo lo mínimo para distinguir "no vino el header" de "vino pero
+        # no matchea con el secreto configurado para este canal", sin lo
+        # cual cada 403 de firma es una caja negra igual de opaca.
+        logger.warning(
+            "firma inválida canal=%s tiene_header=%s largo_body=%s",
+            canal_tipo_url, x_hub_signature_256 is not None, len(raw_body),
+        )
         raise HTTPException(status_code=403, detail="Firma inválida.")
 
     canal_url = await _canal_o_404(client, canal_uuid)

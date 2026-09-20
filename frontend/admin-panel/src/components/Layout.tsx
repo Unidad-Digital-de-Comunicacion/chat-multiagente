@@ -29,6 +29,7 @@ const PLATFORM_NAV_ITEMS = [
   { to: "/plataforma/organizaciones", label: "Organizaciones" },
   { to: "/plataforma/usuarios", label: "Usuarios" },
   { to: "/plataforma/tokens", label: "Tokens internos" },
+  { to: "/plataforma/meta-app", label: "App de Meta" },
   { to: "/plataforma/estadisticas", label: "Estadísticas" },
   { to: "/plataforma/historial-conversaciones", label: "Historial de conversaciones" },
   { to: "/plataforma/manuales", label: "Manuales y API" },

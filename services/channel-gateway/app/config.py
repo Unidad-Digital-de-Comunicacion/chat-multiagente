@@ -21,25 +21,6 @@ class Settings:
         # canal.
         self.core_service_token: str = os.environ.get("CORE_SERVICE_TOKEN", "")
 
-        # Secreto de la app de Meta (Facebook Developers) usado para firmar
-        # CADA webhook que manda (header `X-Hub-Signature-256`) — pensado
-        # como uno solo para toda la plataforma (una app de Meta para
-        # WhatsApp+Messenger+Instagram), a diferencia de `webhook_secret`
-        # (por canal, el "verify token" del handshake `GET`).
-        self.meta_app_secret: str = os.environ.get("META_APP_SECRET", "")
-
-        # Excepción real confirmada en producción (2026-09-18): Instagram
-        # puede quedar dado de alta en el dashboard de Meta bajo una app
-        # DISTINTA a la de WhatsApp/Messenger (pasa si se configuró por
-        # separado) — ahí la firma de sus webhooks viene calculada con OTRO
-        # secreto, y validarla contra `meta_app_secret` siempre da 403 aunque
-        # el secreto "principal" esté perfectamente bien cargado (WhatsApp/
-        # Messenger seguían validando bien con el mismo secreto mientras
-        # Instagram fallaba el 100% de las veces — así se lo detectó). Si no
-        # se configura por separado, cae en `meta_app_secret` (mismo
-        # comportamiento de antes, para el caso común de una sola app).
-        self.meta_app_secret_instagram: str = os.environ.get("META_APP_SECRET_INSTAGRAM", "") or self.meta_app_secret
-
         self.http_timeout_segundos: float = 10.0
 
 

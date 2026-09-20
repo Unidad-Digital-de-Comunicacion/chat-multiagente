@@ -18,9 +18,12 @@ nativas (`message.quick_replies`, Button Template repetido en varios
 mensajes, Generic Template en carrusel) y ninguna funcionó bien en la
 práctica, así que **Messenger manda siempre el texto plano numerado**
 (mismo fallback universal que Core ya arma) y el contacto responde
-escribiendo el número — sin selector táctil. Instagram sí usa
-`quick_replies` (1-13 opciones), que no tuvo el mismo problema reportado.
-Fuera de ese rango también cae a texto plano.
+escribiendo el número — sin selector táctil. **Instagram usa exactamente
+la misma configuración que Messenger** (2026-09-20, pedido explícito):
+antes probaba `message.quick_replies`, pero en producción el menú no le
+llegaba al contacto — se unificó para que ambos canales se comporten
+igual, sin selector táctil en ninguno de los dos, en vez de seguir
+depurando la rama nativa de Instagram por separado.
 
 Cada función recibe el `httpx.AsyncClient` compartido de la app como
 parámetro explícito (ver `http_client.py`/`main.py`) en vez de instanciar
@@ -34,12 +37,6 @@ WHATSAPP_BOTONES_MAX = 3
 WHATSAPP_LISTA_MAX = 10
 WHATSAPP_TITULO_BOTON_MAX = 20
 WHATSAPP_TITULO_FILA_MAX = 24
-
-# Límites reales de la Send API — sólo se usan para Instagram (`quick_
-# replies`); Messenger manda siempre texto plano (ver docstring del módulo).
-MESSENGER_QUICK_REPLIES_MAX = 13
-MESSENGER_TITULO_MAX = 20
-
 
 class EnvioFallido(Exception):
     def __init__(self, detalle: str):
@@ -69,42 +66,6 @@ async def enviar_texto(client: httpx.AsyncClient, *, api_key: str, destinatario_
     return response.json()
 
 
-def _titulo_numerado(opcion: dict) -> str:
-    return f"{opcion['id']}. {opcion['titulo']}"[:MESSENGER_TITULO_MAX]
-
-
-async def _enviar_quick_replies_messenger(
-    client: httpx.AsyncClient, canal, destinatario_id: str, encabezado: str, opciones: list[dict],
-) -> dict:
-    """1 a 13 opciones en Instagram -> `message.quick_replies`, título con
-    la numeración del menú original. El `payload` de cada quick reply es el
-    mismo `id` ("1", "2"...) que `conversations.menu_engine` ya sabe
-    interpretar — `normalize.py` lo lee de vuelta igual que si el contacto
-    hubiera tipeado ese número."""
-    if not canal.api_key:
-        raise EnvioFallido("El canal no tiene api key cargada.")
-
-    url = f"{GRAPH_API_BASE}/me/messages"
-    payload = {
-        "recipient": {"id": destinatario_id},
-        "message": {
-            "text": encabezado or "Elegí una opción:",
-            "quick_replies": [
-                {"content_type": "text", "title": _titulo_numerado(o), "payload": o["id"]}
-                for o in opciones
-            ],
-        },
-    }
-    try:
-        response = await client.post(url, params={"access_token": canal.api_key}, json=payload)
-    except httpx.RequestError as exc:
-        raise EnvioFallido(f"No se pudo conectar con la Graph API: {exc}") from exc
-
-    if response.status_code != 200:
-        raise EnvioFallido(_extraer_error(response))
-    return response.json()
-
-
 async def enviar_texto_por_canal(client: httpx.AsyncClient, canal, destinatario_id: str, texto: str) -> dict:
     """Dispatcher genérico por `canal.tipo` (`schemas.CanalConfig`) — lo
     usan tanto `webhooks.py` (acciones que devuelve Core) como `messages.py`
@@ -120,24 +81,20 @@ async def enviar_texto_por_canal(client: httpx.AsyncClient, canal, destinatario_
 async def enviar_menu_por_canal(
     client: httpx.AsyncClient, canal, destinatario_id: str, texto: str, encabezado: str, opciones: list[dict],
 ) -> dict:
-    """`texto` = fallback completo con numeración (lo único que manda el
+    """`texto` = fallback completo con numeración — lo único que manda el
     texto plano, y lo que WhatsApp muestra COMO CUERPO además de su widget
-    táctil — pedido explícito para ese canal). `encabezado` = sólo el
-    saludo, sin numerar — lo que Instagram usa de cuerpo cuando manda
-    `quick_replies`, porque ahí el título de cada opción YA lleva el número
-    y el nombre; repetir el listado sería redundante. Messenger no entra en
-    ninguna de las dos ramas nativas (ver docstring del módulo) y cae
-    siempre al texto plano de `texto`. `opciones` = `[{id, titulo}]`."""
+    táctil (pedido explícito para ese canal). `encabezado` queda sin usar
+    fuera de WhatsApp: Messenger e Instagram (misma configuración los dos,
+    ver docstring del módulo) caen siempre al texto plano de `texto`.
+    `opciones` = `[{id, titulo}]`."""
     if canal.tipo == "WHATSAPP":
         cantidad = len(opciones)
         if 1 <= cantidad <= WHATSAPP_BOTONES_MAX:
             return await _enviar_botones_whatsapp(client, canal, destinatario_id, texto, opciones)
         if WHATSAPP_BOTONES_MAX < cantidad <= WHATSAPP_LISTA_MAX:
             return await _enviar_lista_whatsapp(client, canal, destinatario_id, texto, opciones)
-    elif canal.tipo == "INSTAGRAM" and 1 <= len(opciones) <= MESSENGER_QUICK_REPLIES_MAX:
-        return await _enviar_quick_replies_messenger(client, canal, destinatario_id, encabezado, opciones)
-    # Fuera de rango, sin opciones, Messenger, o WhatsApp mal configurado ->
-    # texto plano numerado.
+    # Fuera de rango, sin opciones, Messenger/Instagram, o WhatsApp mal
+    # configurado -> texto plano numerado.
     return await enviar_texto_por_canal(client, canal, destinatario_id, texto)
 
 

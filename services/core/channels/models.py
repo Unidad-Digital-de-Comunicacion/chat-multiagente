@@ -19,6 +19,8 @@ import uuid as uuid_lib
 
 from django.db import models
 
+from common.encrypted_fields import EncryptedTextField
+
 
 class Canal(models.Model):
     class Tipo(models.TextChoices):
@@ -42,13 +44,16 @@ class Canal(models.Model):
                    "en Channel Gateway) — no se usa el `id` a propósito para no exponer un correlativo "
                    "adivinable en una URL pública.",
     )
-    api_key = models.TextField(
+    api_key = EncryptedTextField(
         blank=True,
         help_text="Token/credencial del canal. No se devuelve nunca por la API (write-only) — el "
-                   "serializer sólo expone si está cargada y sus últimos 4 caracteres. `TextField` a "
-                   "propósito, no `CharField` con un `max_length` — un token de sistema real de "
-                   "WhatsApp (Cloud API) puede superar los 255 caracteres que alcanzaban para un "
-                   "Page Access Token de Messenger (un `DataError` real lo confirmó en vivo).",
+                   "serializer sólo expone si está cargada y sus últimos 4 caracteres. Cifrado en "
+                   "reposo (`common.encrypted_fields.EncryptedTextField`, 2026-09-20) — antes vivía "
+                   "en texto plano en la base. `TextField`-based a propósito, no `CharField` con un "
+                   "`max_length` — un token de sistema real de WhatsApp (Cloud API) puede superar los "
+                   "255 caracteres que alcanzaban para un Page Access Token de Messenger (un "
+                   "`DataError` real lo confirmó en vivo), y el texto cifrado siempre es más largo "
+                   "todavía que el original.",
     )
     telefono_id = models.CharField(
         max_length=64, blank=True, verbose_name="Phone Number ID",

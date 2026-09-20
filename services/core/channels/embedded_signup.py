@@ -4,10 +4,11 @@ WhatsApp — el SDK de Facebook en el navegador le da al Admin Panel un
 number_id`/`waba_id`, que vienen del mismo callback, no de acá). Esto
 cambia ese `code` por el access_token real contra la Graph API — llamado
 desde `CanalViewSet.whatsapp_exchange`, nunca expuesto directo al
-frontend (necesita `META_APP_SECRET`, un secreto de servidor)."""
-from django.conf import settings
-
+frontend (necesita el `app_secret` de `platform_admin.MetaAppConfig`, un
+secreto de servidor, editable desde Plataforma)."""
 import requests
+
+from platform_admin.models import MetaAppConfig
 
 GRAPH_API_URL = "https://graph.facebook.com/v19.0/oauth/access_token"
 TIMEOUT_SEGUNDOS = 10
@@ -20,13 +21,14 @@ class IntercambioFallido(Exception):
 
 
 def intercambiar_code_por_token(code: str) -> str:
-    if not settings.META_APP_ID or not settings.META_APP_SECRET:
-        raise IntercambioFallido("META_APP_ID/META_APP_SECRET no están configurados en Core.")
+    app = MetaAppConfig.obtener()
+    if not app.app_id or not app.app_secret:
+        raise IntercambioFallido("La app de Meta no está configurada en Plataforma.")
 
     try:
         response = requests.get(
             GRAPH_API_URL,
-            params={"client_id": settings.META_APP_ID, "client_secret": settings.META_APP_SECRET, "code": code},
+            params={"client_id": app.app_id, "client_secret": app.app_secret, "code": code},
             timeout=TIMEOUT_SEGUNDOS,
         )
     except requests.RequestException as exc:

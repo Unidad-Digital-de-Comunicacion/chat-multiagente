@@ -56,6 +56,8 @@ class LoginView(TokenObtainPairView):
                 status=429,
             )
 
+        email_intentado = str(request.data.get("email") or "")[:255]
+
         try:
             # `TokenObtainPairView.post` levanta la excepción (401/400) en vez
             # de devolverla como Response — si no se atrapa acá, se escapa
@@ -64,10 +66,18 @@ class LoginView(TokenObtainPairView):
         except Exception:
             if lockout:
                 lockout.registrar_fallo(max_intentos=MAX_INTENTOS_FALLIDOS, horas_bloqueo=HORAS_BLOQUEO)
+            # Auditoría — nunca la contraseña, sólo con qué email se
+            # intentó, desde qué IP y si eso ya disparó un bloqueo.
+            logger.warning(
+                "login fallido email=%s ip=%s intentos=%s bloqueada=%s",
+                email_intentado, ip, lockout.failed_attempts if lockout else None,
+                lockout.is_blocked if lockout else False,
+            )
             raise
 
         if lockout:
             lockout.registrar_exito()
+        logger.info("login exitoso email=%s ip=%s", email_intentado, ip)
         return response
 
 

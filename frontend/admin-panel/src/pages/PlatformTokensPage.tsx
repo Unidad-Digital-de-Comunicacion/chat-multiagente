@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { api, ApiError } from "../api/client";
 import Modal from "../components/Modal";
 import type { Paginated, ServiceToken } from "../types";
+import { formatearFecha } from "../utils/fecha";
 
 export default function PlatformTokensPage() {
   const [tokens, setTokens] = useState<ServiceToken[] | null>(null);
@@ -97,7 +98,7 @@ export default function PlatformTokensPage() {
                   <span className="text-muted">Sin generar</span>
                 )}
               </td>
-              <td className="text-muted">{t.generado_at ? new Date(t.generado_at).toLocaleString("es-AR") : "—"}</td>
+              <td className="text-muted">{formatearFecha(t.generado_at)}</td>
               <td>
                 <input type="checkbox" checked={t.activo} onChange={() => toggleActivo(t)} />
               </td>

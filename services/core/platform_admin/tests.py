@@ -5,11 +5,13 @@ from django.test import TestCase
 from django.urls import reverse
 
 from channels.models import Canal
-from common.test_utils import authenticated_client, make_organization, make_user
+from common.test_utils import authenticated_client, make_organization, make_service_token, make_user
 from conversations.models import Contact, Conversacion
 from teams.models import Team
 
-from .models import ServiceToken
+from rest_framework.test import APIClient
+
+from .models import MetaAppConfig, ServiceToken
 from .views import DOCUMENTOS_TECNICOS
 
 
@@ -74,6 +76,100 @@ class ServiceTokenViewSetTests(TestCase):
         url = reverse("plataforma-token-servicio-detail", args=[token.id])
         self.assertEqual(authenticated_client(self.superusuario).post(self.list_url).status_code, 405)
         self.assertEqual(authenticated_client(self.superusuario).delete(url).status_code, 405)
+
+
+class MetaAppConfigViewTests(TestCase):
+    """`GET/PATCH /api/core/plataforma/meta-app/` — singleton editable sólo
+    por el superusuario de plataforma (ver `platform_admin.models.
+    MetaAppConfig`)."""
+
+    def setUp(self):
+        self.superusuario = _make_superusuario()
+        self.org = make_organization()
+        self.admin = make_user(self.org, groups=["administradores"])
+        self.url = reverse("plataforma-meta-app")
+
+    def test_get_devuelve_la_fila_unica(self):
+        # `MetaAppConfig.obtener()` ya la creó (la migración de datos la
+        # siembra desde META_APP_ID/META_APP_SECRET la primera vez) — acá
+        # sólo se confirma que sigue siendo una sola fila y que el shape es
+        # el esperado, no un valor puntual (depende del entorno).
+        response = authenticated_client(self.superusuario).get(self.url)
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertIn("app_id", response.data)
+        self.assertIn("app_secret_configurada", response.data)
+        self.assertEqual(MetaAppConfig.objects.count(), 1)
+
+    def test_admin_de_organizacion_no_puede_entrar(self):
+        response = authenticated_client(self.admin).get(self.url)
+        self.assertEqual(response.status_code, 403)
+
+    def test_patch_carga_app_id_y_app_secret(self):
+        response = authenticated_client(self.superusuario).patch(
+            self.url, {"app_id": "1123752986744511", "app_secret": "el-secreto-real"},
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data["app_id"], "1123752986744511")
+        self.assertTrue(response.data["app_secret_configurada"])
+        self.assertEqual(response.data["app_secret_preview"], "••••real")
+        self.assertEqual(response.data["app_secret_valor"], "el-secreto-real")
+        config = MetaAppConfig.obtener()
+        self.assertEqual(config.app_id, "1123752986744511")
+        self.assertEqual(config.app_secret, "el-secreto-real")
+
+    def test_patch_parcial_no_borra_el_otro_campo(self):
+        MetaAppConfig.objects.update_or_create(pk=1, defaults={"app_id": "viejo-id", "app_secret": "viejo-secreto"})
+        response = authenticated_client(self.superusuario).patch(self.url, {"app_id": "nuevo-id"})
+        self.assertEqual(response.status_code, 200, response.data)
+        config = MetaAppConfig.obtener()
+        self.assertEqual(config.app_id, "nuevo-id")
+        self.assertEqual(config.app_secret, "viejo-secreto")
+
+    def test_admin_no_puede_editar(self):
+        MetaAppConfig.objects.update_or_create(pk=1, defaults={"app_id": "viejo-id"})
+        response = authenticated_client(self.admin).patch(self.url, {"app_id": "x"})
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(MetaAppConfig.obtener().app_id, "viejo-id")
+
+
+class InternalMetaAppConfigViewTests(TestCase):
+    """`GET /api/core/internal/meta-app/` — el único lugar donde `app_secret`
+    sale de Core en texto plano, y sólo para Channel Gateway autenticado con
+    su `ServiceToken` (mismo criterio que `InternalCanalConfigView`)."""
+
+    def setUp(self):
+        MetaAppConfig.objects.update_or_create(pk=1, defaults={"app_id": "1123752986744511", "app_secret": "s3cr3t"})
+        self.url = reverse("internal-meta-app")
+        make_service_token(ServiceToken.Servicio.CHANNEL_GATEWAY, "token-de-gateway", activo=True)
+
+    def _get(self, token=None):
+        client = APIClient()
+        if token is not None:
+            client.credentials(HTTP_AUTHORIZATION=f"Service-Token {token}")
+        return client.get(self.url)
+
+    def test_channel_gateway_puede_leer_la_config_con_su_token(self):
+        response = self._get(token="token-de-gateway")
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data["app_id"], "1123752986744511")
+        self.assertEqual(response.data["app_secret"], "s3cr3t")
+
+    def test_token_invalido_es_rechazado(self):
+        response = self._get(token="no-es-el-token-correcto")
+        self.assertEqual(response.status_code, 401)
+
+    def test_jwt_de_superusuario_no_alcanza(self):
+        # Autenticado como usuario real pero sin `ServiceToken` en `request.
+        # auth` -> falla el permiso, no la autenticación (403, no 401) —
+        # mismo criterio que `InternalCanalConfigViewTests`.
+        superusuario = _make_superusuario()
+        response = authenticated_client(superusuario).get(self.url)
+        self.assertEqual(response.status_code, 403)
+
+    def test_token_de_otro_servicio_no_alcanza(self):
+        make_service_token(ServiceToken.Servicio.CONVERSATION_ENGINE, "token-de-otro-servicio", activo=True)
+        response = self._get(token="token-de-otro-servicio")
+        self.assertEqual(response.status_code, 403)
 
 
 class PlatformStatsViewTests(TestCase):

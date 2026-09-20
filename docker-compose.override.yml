@@ -19,30 +19,52 @@ services:
       # entra cómodo.
       - GUNICORN_WORKERS=3
 
+  # Los 5 de acá abajo pisan el CMD del Dockerfile (gunicorn + UvicornWorker,
+  # sin `--reload`) con el mismo gunicorn pero CON `--reload` — mismo
+  # binario/worker class que producción, sólo se agrega el watch de
+  # archivos, en vez de volver a un `uvicorn` suelto distinto del que
+  # corre en producción.
   channel-gateway:
     volumes:
       - ./services/channel-gateway:/app
-    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    command: [
+      "gunicorn", "app.main:app", "--worker-class", "uvicorn.workers.UvicornWorker",
+      "--bind", "0.0.0.0:8000", "--workers", "2", "--reload",
+    ]
 
   conversation-engine:
     volumes:
       - ./services/conversation-engine:/app
-    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    # 1 solo worker acá también — ver el comentario del Dockerfile
+    # (`GestorConexiones` en memoria de proceso, no hay backing compartido).
+    command: [
+      "gunicorn", "app.main:app", "--worker-class", "uvicorn.workers.UvicornWorker",
+      "--bind", "0.0.0.0:8000", "--workers", "1", "--reload",
+    ]
 
   operators-desk:
     volumes:
       - ./services/operators-desk:/app
-    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    command: [
+      "gunicorn", "app.main:app", "--worker-class", "uvicorn.workers.UvicornWorker",
+      "--bind", "0.0.0.0:8000", "--workers", "2", "--reload",
+    ]
 
   analytics:
     volumes:
       - ./services/analytics:/app
-    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    command: [
+      "gunicorn", "app.main:app", "--worker-class", "uvicorn.workers.UvicornWorker",
+      "--bind", "0.0.0.0:8000", "--workers", "2", "--reload",
+    ]
 
   webchat:
     volumes:
       - ./services/webchat:/app
-    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    command: [
+      "gunicorn", "app.main:app", "--worker-class", "uvicorn.workers.UvicornWorker",
+      "--bind", "0.0.0.0:8000", "--workers", "2", "--reload",
+    ]
 
   admin-panel:
     # Usa el stage intermedio del Dockerfile (el que tiene Node) en vez del

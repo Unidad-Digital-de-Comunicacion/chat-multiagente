@@ -4,6 +4,8 @@ internos") en vez del JWT de un usuario humano. Hasta que existió Channel
 Gateway de verdad, estos tokens eran sólo configuración sin nada del otro
 lado que los validara (ver el docstring de `ServiceToken`) — esto es esa
 validación, y Channel Gateway es su primer consumidor real."""
+import hmac
+
 from django.contrib.auth.models import AnonymousUser
 
 from rest_framework.authentication import BaseAuthentication
@@ -33,11 +35,17 @@ class ServiceTokenAuthentication(BaseAuthentication):
         token = header[len(self.keyword) + 1:].strip()
         if not token:
             raise AuthenticationFailed("Falta el token de servicio.")
-        try:
-            service_token = ServiceToken.objects.get(token=token, activo=True)
-        except ServiceToken.DoesNotExist:
-            raise AuthenticationFailed("Token de servicio inválido o inactivo.")
-        return (AnonymousUser(), service_token)
+        # No hay un lookup determinístico posible (`token` está cifrado con
+        # Fernet, que agrega un IV al azar — la MISMA credencial cifrada dos
+        # veces da dos valores distintos en la base, así que un `.get(token=
+        # ...)` directo nunca matchearía). Son sólo 5 filas como mucho (una
+        # por microservicio) — comparar una por una, descifrando, es
+        # trivial en costo. `hmac.compare_digest` evita una diferencia de
+        # tiempo medible según en qué posición del string difiera.
+        for candidato in ServiceToken.objects.filter(activo=True).exclude(token=""):
+            if hmac.compare_digest(candidato.token, token):
+                return (AnonymousUser(), candidato)
+        raise AuthenticationFailed("Token de servicio inválido o inactivo.")
 
     def authenticate_header(self, request):
         return self.keyword

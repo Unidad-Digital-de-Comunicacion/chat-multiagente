@@ -6,6 +6,7 @@ import pytest
 from app.config import get_settings
 from app.core_client import (
     CanalNoEncontrado, CoreNoDisponible, enviar_mensaje_entrante, obtener_canal, obtener_canal_por_organizacion,
+    obtener_meta_app,
 )
 
 
@@ -144,3 +145,24 @@ def test_obtener_canal_por_organizacion_inexistente_da_404():
 
     with pytest.raises(CanalNoEncontrado):
         _run(obtener_canal_por_organizacion(fake_client, 7, "WHATSAPP"))
+
+
+def test_obtener_meta_app_devuelve_las_credenciales():
+    data = {"app_id": "1123752986744511", "app_secret": "el-secreto-real"}
+    fake_client = _FakeAsyncClient(response=_FakeResponse(200, data))
+
+    meta_app = _run(obtener_meta_app(fake_client))
+
+    assert meta_app.app_id == "1123752986744511"
+    assert meta_app.app_secret == "el-secreto-real"
+    metodo, url, headers, _ = fake_client.calls[0]
+    assert metodo == "GET"
+    assert url == "http://core-test/api/core/internal/meta-app/"
+    assert headers["Authorization"] == "Service-Token el-token-de-gateway"
+
+
+def test_obtener_meta_app_si_core_no_responde():
+    fake_client = _FakeAsyncClient(exc=httpx.ConnectError("no responde"))
+
+    with pytest.raises(CoreNoDisponible):
+        _run(obtener_meta_app(fake_client))

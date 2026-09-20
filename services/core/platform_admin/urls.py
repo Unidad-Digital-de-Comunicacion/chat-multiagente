@@ -3,8 +3,9 @@ from rest_framework.routers import DefaultRouter
 from django.urls import include, path
 
 from .views import (
-    DocumentoTecnicoView, ExternalApiHealthView, HistorialConversacionesPlatformView, ManualDownloadView,
-    PlatformRedocView, PlatformSchemaView, PlatformStatsView, PlatformSwaggerView, ServiceTokenViewSet,
+    DocumentoTecnicoView, ExternalApiHealthView, HistorialConversacionesPlatformView, InternalMetaAppConfigView,
+    ManualDownloadView, MetaAppConfigView, PlatformRedocView, PlatformSchemaView, PlatformStatsView,
+    PlatformSwaggerView, ServiceTokenViewSet,
 )
 
 router = DefaultRouter()
@@ -19,6 +20,8 @@ urlpatterns = [
     ),
     path("plataforma/manual/", ManualDownloadView.as_view(), name="plataforma-manual"),
     path("plataforma/manual/<slug:slug>/", DocumentoTecnicoView.as_view(), name="plataforma-manual-documento"),
+    path("plataforma/meta-app/", MetaAppConfigView.as_view(), name="plataforma-meta-app"),
+    path("internal/meta-app/", InternalMetaAppConfigView.as_view(), name="internal-meta-app"),
     path("plataforma/schema/", PlatformSchemaView.as_view(), name="plataforma-schema"),
     path("plataforma/schema/swagger/", PlatformSwaggerView.as_view(url_name="plataforma-schema"), name="plataforma-swagger"),
     path("plataforma/schema/redoc/", PlatformRedocView.as_view(url_name="plataforma-schema"), name="plataforma-redoc"),

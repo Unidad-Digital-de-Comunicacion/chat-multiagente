@@ -12,7 +12,7 @@ seam real para los tests es pasar un cliente falso acá, no parchear
 import httpx
 
 from .config import get_settings
-from .schemas import CanalConfig
+from .schemas import CanalConfig, MetaAppCredenciales
 
 
 class CanalNoEncontrado(Exception):
@@ -61,6 +61,26 @@ async def obtener_canal_por_organizacion(client: httpx.AsyncClient, organization
     settings = get_settings()
     url = f"{settings.core_base_url}/api/core/internal/canales/organizacion/{organization_id}/{tipo}/"
     return await _get_canal(client, url, f"org={organization_id} tipo={tipo}")
+
+
+async def obtener_meta_app(client: httpx.AsyncClient) -> MetaAppCredenciales:
+    """`GET /api/core/internal/meta-app/` — credenciales de la app de Meta,
+    una sola para toda la plataforma (ver `schemas.MetaAppCredenciales`).
+    Se pide de nuevo en cada webhook entrante (no se cachea acá) para que
+    un cambio hecho en Plataforma tenga efecto inmediato, sin reiniciar
+    este servicio — mismo criterio que ya usan `obtener_canal`/`obtener_
+    canal_por_organizacion`."""
+    settings = get_settings()
+    url = f"{settings.core_base_url}/api/core/internal/meta-app/"
+    headers = {"Authorization": f"Service-Token {settings.core_service_token}"}
+    try:
+        response = await client.get(url, headers=headers)
+    except httpx.RequestError as exc:
+        raise CoreNoDisponible(f"No se pudo conectar con Core: {exc}") from exc
+
+    response.raise_for_status()
+    data = response.json()
+    return MetaAppCredenciales(app_id=data["app_id"], app_secret=data["app_secret"])
 
 
 async def enviar_mensaje_entrante(

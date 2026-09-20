@@ -293,6 +293,14 @@ export interface ServiceToken {
   updated_at: string;
 }
 
+export interface MetaAppConfig {
+  app_id: string;
+  app_secret_configurada: boolean;
+  app_secret_preview: string | null;
+  app_secret_valor: string | null;
+  updated_at: string;
+}
+
 export interface PlatformStatsOrg {
   organization_id: number;
   organization_name: string;

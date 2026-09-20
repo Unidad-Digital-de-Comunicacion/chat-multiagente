@@ -1083,6 +1083,14 @@ input, select, textarea {
   padding: 0.75rem;
   margin-bottom: 1rem;
   user-select: all;
+  /* Tokens/secrets largos (ej. un access token de Meta, cientos de
+     caracteres sin espacios) no tienen dónde cortar solos — sin esto
+     desbordan el ancho fijo del cuadro y hacen scrollear la página entera
+     de costado. `break-all` corta la palabra donde haga falta, sin
+     guiones (`hyphens` no aplica a una cadena sin espacios de todos modos). */
+  width: 100%;
+  word-break: break-all;
+  overflow-wrap: anywhere;
 }
 
 .hint-box {

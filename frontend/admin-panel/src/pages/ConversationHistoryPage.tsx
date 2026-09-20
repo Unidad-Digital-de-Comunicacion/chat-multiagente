@@ -4,6 +4,7 @@ import { api, ApiError } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import { isPlatformSuperuser } from "../auth/permissions";
 import { CANAL_TIPO_LABELS, type CanalTipo, type ConversacionHistorialRow, type Paginated } from "../types";
+import { formatearFecha } from "../utils/fecha";
 
 // Vista de sólo lectura para `administradores` (una organización,
 // `conversations.ver_historial_conversacion`) y para el superusuario de
@@ -41,12 +42,6 @@ function construirQuery(filtros: Filtros, page: number): string {
   const query = params.toString();
 
   return query ? `?${query}` : "";
-}
-
-function formatearFecha(iso: string | null): string {
-  if (!iso) return "—";
-
-  return new Date(iso).toLocaleString("es-AR");
 }
 
 function EstadoBadge({ fila }: { fila: ConversacionHistorialRow }) {

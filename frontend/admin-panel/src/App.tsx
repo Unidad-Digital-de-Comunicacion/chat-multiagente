@@ -21,6 +21,7 @@ import ConversationHistoryPage from "./pages/ConversationHistoryPage";
 import PlatformOrganizationsPage from "./pages/PlatformOrganizationsPage";
 import PlatformUsersPage from "./pages/PlatformUsersPage";
 import PlatformTokensPage from "./pages/PlatformTokensPage";
+import PlatformMetaAppPage from "./pages/PlatformMetaAppPage";
 import PlatformStatsPage from "./pages/PlatformStatsPage";
 import PlatformManualsPage from "./pages/PlatformManualsPage";
 
@@ -57,6 +58,7 @@ export default function App() {
             <Route path="/plataforma/organizaciones" element={<PlatformOrganizationsPage />} />
             <Route path="/plataforma/usuarios" element={<PlatformUsersPage />} />
             <Route path="/plataforma/tokens" element={<PlatformTokensPage />} />
+            <Route path="/plataforma/meta-app" element={<PlatformMetaAppPage />} />
             <Route path="/plataforma/estadisticas" element={<PlatformStatsPage />} />
             <Route path="/plataforma/manuales" element={<PlatformManualsPage />} />
             <Route path="/plataforma/historial-conversaciones" element={<ConversationHistoryPage />} />

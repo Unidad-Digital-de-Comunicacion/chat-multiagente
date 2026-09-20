@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 
 import { api, ApiError } from "../api/client";
 import { CANAL_TIPO_LABELS, type ExternalHealthRow, type PlatformStats } from "../types";
+import { formatearFecha } from "../utils/fecha";
 
 export default function PlatformStatsPage() {
   const [stats, setStats] = useState<PlatformStats | null>(null);
@@ -106,7 +107,7 @@ export default function PlatformStatsPage() {
                     <span className={"badge" + (c.ultimo_chequeo_ok ? "" : " badge-warning")}>
                       {c.ultimo_chequeo_ok ? "Conectado" : "Sin conexión"}
                     </span>
-                    <div className="text-muted small">{new Date(c.ultimo_chequeo_at).toLocaleString("es-AR")}</div>
+                    <div className="text-muted small">{formatearFecha(c.ultimo_chequeo_at)}</div>
                   </>
                 )}
               </td>

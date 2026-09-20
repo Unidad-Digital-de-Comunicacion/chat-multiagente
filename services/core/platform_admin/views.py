@@ -20,8 +20,9 @@ from teams.models import Team
 from users.models import User
 
 from .defaults import asegurar_service_tokens
-from .models import ServiceToken
-from .serializers import ServiceTokenSerializer
+from .models import MetaAppConfig, ServiceToken
+from .serializers import MetaAppConfigSerializer, ServiceTokenSerializer
+from .service_auth import IsChannelGatewayService, ServiceTokenAuthentication
 
 MANUAL_PDF_PATH = Path(__file__).resolve().parent / "manual" / "manual-admin-panel.pdf"
 
@@ -45,15 +46,55 @@ class ServiceTokenViewSet(
     @action(detail=True, methods=["post"])
     def generar(self, request, pk=None):
         """Genera un token seguro al azar y lo devuelve en texto plano UNA
-        sola vez en esta respuesta (no se guarda en texto plano en ningún
-        lado) — igual que `users.UserViewSet.reset_password`. A partir de
-        acá, sólo se ve enmascarado (`token_preview`)."""
+        vez en esta respuesta — a partir de acá sólo se ve enmascarado
+        (`token_preview`), aunque a diferencia de `users.UserViewSet.
+        reset_password` el valor real SÍ queda guardado (cifrado, ver
+        `ServiceToken.token`): Core necesita poder reenviarlo tal cual
+        hacia ese microservicio en la dirección inversa."""
         service_token = self.get_object()
         nuevo = secrets.token_urlsafe(32)
         service_token.token = nuevo
         service_token.generado_at = timezone.now()
         service_token.save(update_fields=["token", "generado_at", "updated_at"])
         return Response({"token": nuevo, **self.get_serializer(service_token).data})
+
+
+class MetaAppConfigView(APIView):
+    """Singleton editable desde Plataforma — ver el docstring de
+    `platform_admin.models.MetaAppConfig`. GET siempre existe (`obtener()`
+    la crea vacía la primera vez); PATCH permite cargar/reemplazar `app_id`/
+    `app_secret` sin tocar el servidor a mano. Consumida por Channel
+    Gateway vía `InternalMetaAppConfigView`, no por acá (esto es sólo para
+    el Admin Panel, con el JWT del superusuario)."""
+
+    permission_classes = [IsPlatformSuperuser]
+
+    def get(self, request):
+        return Response(MetaAppConfigSerializer(MetaAppConfig.obtener()).data)
+
+    def patch(self, request):
+        config = MetaAppConfig.obtener()
+        serializer = MetaAppConfigSerializer(config, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(MetaAppConfigSerializer(config).data)
+
+
+class InternalMetaAppConfigView(APIView):
+    """Único lugar donde `app_secret` sale de Core en texto plano — sólo lo
+    puede llamar Channel Gateway (mismo criterio que `channels.views.
+    InternalCanalConfigView`), nunca con el JWT de un usuario humano. Se
+    pide de nuevo en cada webhook entrante (sin cachear del lado de Channel
+    Gateway) para que un cambio hecho en Plataforma tenga efecto inmediato,
+    sin reiniciar ningún contenedor — mismo criterio que ya usa `Canal.
+    api_key`/`webhook_secret`."""
+
+    authentication_classes = [ServiceTokenAuthentication]
+    permission_classes = [IsChannelGatewayService]
+
+    def get(self, request):
+        config = MetaAppConfig.obtener()
+        return Response({"app_id": config.app_id, "app_secret": config.app_secret})
 
 
 class PlatformStatsView(APIView):

@@ -10,7 +10,7 @@ from menu.models import MenuOpcion
 from requests.exceptions import RequestException
 from teams.models import Team
 
-from common.test_utils import authenticated_client, make_organization, make_user
+from common.test_utils import authenticated_client, make_organization, make_service_token, make_user
 from platform_admin.models import ServiceToken
 from rest_framework.test import APIClient
 
@@ -37,9 +37,7 @@ def _service_client(token):
 class MensajeEntranteViewTests(TestCase):
     def setUp(self):
         self.org = make_organization()
-        self.token = ServiceToken.objects.create(
-            servicio=ServiceToken.Servicio.CHANNEL_GATEWAY, token="token-de-gateway", activo=True,
-        )
+        make_service_token(ServiceToken.Servicio.CHANNEL_GATEWAY, "token-de-gateway", activo=True)
         self.url = reverse("bot-mensaje-entrante")
 
     def _body(self, **overrides):
@@ -124,7 +122,7 @@ class ConversacionViewSetTests(TestCase):
         self.otro_operador = make_user(self.org, groups=["operadores"], email="otro@test.com")
         self.admin = make_user(self.org, groups=["administradores"])
 
-        ServiceToken.objects.create(servicio=ServiceToken.Servicio.CHANNEL_GATEWAY, token="tok", activo=True)
+        make_service_token(ServiceToken.Servicio.CHANNEL_GATEWAY, "tok", activo=True)
         gateway_client = _service_client("tok")
 
         gateway_client.post(
@@ -275,7 +273,7 @@ class ConversacionDerivarTests(TestCase):
         self.org = make_organization()
         self.operador = make_user(self.org, groups=["operadores"])
         self.team_destino = Team.objects.create(organization=self.org, name="Soporte")
-        ServiceToken.objects.create(servicio=ServiceToken.Servicio.CHANNEL_GATEWAY, token="tok", activo=True)
+        make_service_token(ServiceToken.Servicio.CHANNEL_GATEWAY, "tok", activo=True)
         _service_client("tok").post(
             reverse("bot-mensaje-entrante"),
             {"organization_id": self.org.id, "channel": "WHATSAPP", "contact_externo_id": "111", "texto": "hola"},
@@ -326,7 +324,7 @@ class ConversacionEtiquetasTests(TestCase):
     def setUp(self):
         self.org = make_organization()
         self.operador = make_user(self.org, groups=["operadores"])
-        ServiceToken.objects.create(servicio=ServiceToken.Servicio.CHANNEL_GATEWAY, token="tok", activo=True)
+        make_service_token(ServiceToken.Servicio.CHANNEL_GATEWAY, "tok", activo=True)
         _service_client("tok").post(
             reverse("bot-mensaje-entrante"),
             {"organization_id": self.org.id, "channel": "WHATSAPP", "contact_externo_id": "111", "texto": "hola"},
@@ -408,7 +406,7 @@ class ConversacionObservacionesTests(TestCase):
     def setUp(self):
         self.org = make_organization()
         self.operador = make_user(self.org, groups=["operadores"])
-        ServiceToken.objects.create(servicio=ServiceToken.Servicio.CHANNEL_GATEWAY, token="tok", activo=True)
+        make_service_token(ServiceToken.Servicio.CHANNEL_GATEWAY, "tok", activo=True)
         _service_client("tok").post(
             reverse("bot-mensaje-entrante"),
             {"organization_id": self.org.id, "channel": "WHATSAPP", "contact_externo_id": "111", "texto": "hola"},
@@ -438,7 +436,7 @@ class ConversacionNotasInternasTests(TestCase):
         self.org = make_organization()
         self.operador = make_user(self.org, groups=["operadores"])
         self.otro_operador = make_user(self.org, groups=["operadores"], email="otro@test.com")
-        ServiceToken.objects.create(servicio=ServiceToken.Servicio.CHANNEL_GATEWAY, token="tok", activo=True)
+        make_service_token(ServiceToken.Servicio.CHANNEL_GATEWAY, "tok", activo=True)
         _service_client("tok").post(
             reverse("bot-mensaje-entrante"),
             {"organization_id": self.org.id, "channel": "WHATSAPP", "contact_externo_id": "111", "texto": "hola"},
@@ -468,7 +466,7 @@ class MenuEngineTests(TestCase):
     def setUp(self):
         self.org = make_organization()
         self.team_ventas = Team.objects.create(organization=self.org, name="Ventas")
-        ServiceToken.objects.create(servicio=ServiceToken.Servicio.CHANNEL_GATEWAY, token="tok", activo=True)
+        make_service_token(ServiceToken.Servicio.CHANNEL_GATEWAY, "tok", activo=True)
         self.client_gateway = _service_client("tok")
         self.url = reverse("bot-mensaje-entrante")
 
@@ -765,7 +763,7 @@ class NotificarEventoTests(TestCase):
 
     @patch("conversations.conversation_engine_client.requests.post")
     def test_con_token_activo_manda_el_evento(self, mock_post):
-        ServiceToken.objects.create(servicio=ServiceToken.Servicio.CONVERSATION_ENGINE, token="tok-ce", activo=True)
+        make_service_token(ServiceToken.Servicio.CONVERSATION_ENGINE, "tok-ce", activo=True)
         notificar_evento(
             tipo="conversacion_actualizada", organization_id=self.org.id, conversacion_id=7,
             team_id=3, operador_id=None,
@@ -780,13 +778,13 @@ class NotificarEventoTests(TestCase):
 
     @patch("conversations.conversation_engine_client.requests.post")
     def test_token_inactivo_no_intenta_nada(self, mock_post):
-        ServiceToken.objects.create(servicio=ServiceToken.Servicio.CONVERSATION_ENGINE, token="tok-ce", activo=False)
+        make_service_token(ServiceToken.Servicio.CONVERSATION_ENGINE, "tok-ce", activo=False)
         notificar_evento(tipo="mensaje_nuevo", organization_id=self.org.id, conversacion_id=1)
         mock_post.assert_not_called()
 
     @patch("conversations.conversation_engine_client.requests.post", side_effect=RequestException("caído"))
     def test_si_falla_la_request_no_propaga_la_excepcion(self, mock_post):
-        ServiceToken.objects.create(servicio=ServiceToken.Servicio.CONVERSATION_ENGINE, token="tok-ce", activo=True)
+        make_service_token(ServiceToken.Servicio.CONVERSATION_ENGINE, "tok-ce", activo=True)
         notificar_evento(tipo="mensaje_nuevo", organization_id=self.org.id, conversacion_id=1)  # no debe levantar
 
 
@@ -798,7 +796,7 @@ class NotificarEventoEnLasActionsTests(TestCase):
     def setUp(self):
         self.org = make_organization()
         self.operador = make_user(self.org, groups=["operadores"])
-        ServiceToken.objects.create(servicio=ServiceToken.Servicio.CHANNEL_GATEWAY, token="tok", activo=True)
+        make_service_token(ServiceToken.Servicio.CHANNEL_GATEWAY, "tok", activo=True)
         _service_client("tok").post(
             reverse("bot-mensaje-entrante"),
             {"organization_id": self.org.id, "channel": "WHATSAPP", "contact_externo_id": "111", "texto": "hola"},
@@ -844,7 +842,7 @@ class ConversacionHistorialTests(TestCase):
         self.admin = make_user(self.org, groups=["administradores"])
         self.operador = make_user(self.org, groups=["operadores"])
         self.team = Team.objects.create(organization=self.org, name="Ventas")
-        ServiceToken.objects.create(servicio=ServiceToken.Servicio.CHANNEL_GATEWAY, token="tok", activo=True)
+        make_service_token(ServiceToken.Servicio.CHANNEL_GATEWAY, "tok", activo=True)
         _service_client("tok").post(
             reverse("bot-mensaje-entrante"),
             {"organization_id": self.org.id, "channel": "WHATSAPP", "contact_externo_id": "111", "texto": "hola"},
@@ -1013,7 +1011,7 @@ class EnviarConReintentosTests(TestCase):
     def setUp(self):
         self.org = make_organization()
         self.canal = Canal.objects.create(organization=self.org, tipo=Canal.Tipo.WHATSAPP, activo=True, api_key="tok")
-        ServiceToken.objects.create(servicio=ServiceToken.Servicio.CHANNEL_GATEWAY, token="tok-gateway", activo=True)
+        make_service_token(ServiceToken.Servicio.CHANNEL_GATEWAY, "tok-gateway", activo=True)
         contact = Contact.objects.create(organization=self.org, canal=Canal.Tipo.WHATSAPP, identificador_externo="5491111111111")
         self.conversacion = Conversacion.objects.create(organization=self.org, contact=contact, canal=Canal.Tipo.WHATSAPP)
 

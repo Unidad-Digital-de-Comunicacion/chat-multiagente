@@ -23,15 +23,16 @@ producción, un canal funcional marcado "sin conexión" por pedirle a `/me`
 un permiso de lectura que el token de mensajería no tiene por qué tener).
 La forma correcta de validar un token SIN depender de qué permisos tenga
 es `/debug_token`, autenticado con las credenciales de la APP
-(`META_APP_ID`/`META_APP_SECRET`, ya usadas en `embedded_signup.py`), no
-con el token del canal — es el mecanismo que la propia Graph API
-documenta para esto (`is_valid`/`scopes`/`expires_at`)."""
+(`platform_admin.MetaAppConfig`, editable desde Plataforma — ya usadas en
+`embedded_signup.py`), no con el token del canal — es el mecanismo que la
+propia Graph API documenta para esto (`is_valid`/`scopes`/`expires_at`)."""
 from datetime import datetime, timezone as dt_timezone
 
-from django.conf import settings
 from django.utils import timezone
 
 import requests
+
+from platform_admin.models import MetaAppConfig
 
 from .models import Canal
 
@@ -78,22 +79,15 @@ def _verificar_whatsapp(canal: Canal) -> Canal:
 
 
 def _verificar_messenger_o_instagram(canal: Canal) -> Canal:
-    # Instagram puede vivir bajo una app de Meta distinta a la de Messenger/
-    # WhatsApp (`config.settings.META_APP_ID_INSTAGRAM`, ver su comentario) —
-    # `/debug_token` tiene que autenticarse con las credenciales de la app
-    # que realmente emitió/gestiona ese token, no con las de la otra.
-    if canal.tipo == Canal.Tipo.INSTAGRAM:
-        app_id, app_secret = settings.META_APP_ID_INSTAGRAM, settings.META_APP_SECRET_INSTAGRAM
-    else:
-        app_id, app_secret = settings.META_APP_ID, settings.META_APP_SECRET
-    if not app_id or not app_secret:
-        return _guardar(canal, ok=False, detalle="Falta configurar META_APP_ID/META_APP_SECRET en el servidor.")
+    app = MetaAppConfig.obtener()
+    if not app.app_id or not app.app_secret:
+        return _guardar(canal, ok=False, detalle="Falta configurar la app de Meta en Plataforma.")
 
     url = f"{GRAPH_API_BASE}/debug_token"
     try:
         response = requests.get(
             url,
-            params={"input_token": canal.api_key, "access_token": f"{app_id}|{app_secret}"},
+            params={"input_token": canal.api_key, "access_token": f"{app.app_id}|{app.app_secret}"},
             timeout=TIMEOUT_SEGUNDOS,
         )
     except requests.RequestException as exc:

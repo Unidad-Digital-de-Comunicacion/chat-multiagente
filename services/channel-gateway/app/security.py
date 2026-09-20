@@ -4,8 +4,10 @@ intercambiables:
 - `hub.verify_token` (handshake `GET`, una vez al suscribir el webhook): se
   compara contra `Canal.webhook_secret` de Core, uno por canal.
 - `X-Hub-Signature-256` (firma de CADA `POST` entrante): HMAC-SHA256 del
-  body crudo con `META_APP_SECRET`, uno solo para toda la plataforma (una
-  única app de Meta) — por eso viene de `config.Settings`, no de Core."""
+  body crudo con el `app_secret` de la app de Meta, uno solo para toda la
+  plataforma (una única app) — se pide a Core en cada webhook (`core_
+  client.obtener_meta_app`, editable desde Plataforma), no vive en la
+  config local de este servicio."""
 import hashlib
 import hmac
 

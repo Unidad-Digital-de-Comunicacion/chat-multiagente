@@ -1,11 +1,11 @@
 from unittest.mock import Mock, patch
 
 import requests
-from django.test import TestCase, override_settings
+from django.test import TestCase
 from django.urls import reverse
 
-from common.test_utils import authenticated_client, make_organization, make_user
-from platform_admin.models import ServiceToken
+from common.test_utils import authenticated_client, make_organization, make_service_token, make_user
+from platform_admin.models import MetaAppConfig, ServiceToken
 from rest_framework.test import APIClient
 
 from .models import Canal
@@ -274,11 +274,11 @@ class CanalVerificarMessengerTests(TestCase):
         self.messenger = Canal.objects.get(organization=self.org, tipo="MESSENGER")
         self.messenger.api_key = "page-access-token"
         self.messenger.save(update_fields=["api_key"])
+        MetaAppConfig.objects.update_or_create(pk=1, defaults={"app_id": "app-id", "app_secret": "app-secret"})
 
     def _verificar(self):
         return authenticated_client(self.admin).post(reverse("canal-verificar", args=[self.messenger.id]))
 
-    @override_settings(META_APP_ID="app-id", META_APP_SECRET="app-secret")
     def test_chequeo_exitoso_consulta_debug_token_con_credenciales_de_la_app(self):
         mock_response = Mock(status_code=200)
         mock_response.json.return_value = {"data": {"is_valid": True, "expires_at": 0}}
@@ -292,7 +292,6 @@ class CanalVerificarMessengerTests(TestCase):
         self.assertTrue(response.data["ultimo_chequeo_ok"])
         self.assertIn("no vence", response.data["ultimo_chequeo_detalle"])
 
-    @override_settings(META_APP_ID="app-id", META_APP_SECRET="app-secret")
     def test_token_con_permiso_de_solo_mensajeria_no_falla_mas_por_me(self):
         # Este es exactamente el caso que reportó un canal andando en
         # producción marcado "sin conexión": el token SÍ es válido para
@@ -306,7 +305,6 @@ class CanalVerificarMessengerTests(TestCase):
             response = self._verificar()
         self.assertTrue(response.data["ultimo_chequeo_ok"])
 
-    @override_settings(META_APP_ID="app-id", META_APP_SECRET="app-secret")
     def test_token_vencido_o_revocado(self):
         mock_response = Mock(status_code=200)
         mock_response.json.return_value = {
@@ -318,14 +316,13 @@ class CanalVerificarMessengerTests(TestCase):
         self.assertIn("Session has expired", response.data["ultimo_chequeo_detalle"])
 
     def test_sin_meta_app_id_o_secret_configurados_no_intenta_conectar(self):
-        with override_settings(META_APP_ID="", META_APP_SECRET=""):
-            with patch("channels.health.requests.get") as mock_get:
-                response = self._verificar()
+        MetaAppConfig.objects.update_or_create(pk=1, defaults={"app_id": "", "app_secret": ""})
+        with patch("channels.health.requests.get") as mock_get:
+            response = self._verificar()
         mock_get.assert_not_called()
         self.assertFalse(response.data["ultimo_chequeo_ok"])
-        self.assertIn("META_APP_ID", response.data["ultimo_chequeo_detalle"])
+        self.assertIn("Plataforma", response.data["ultimo_chequeo_detalle"])
 
-    @override_settings(META_APP_ID="app-id", META_APP_SECRET="app-secret")
     def test_no_se_pudo_conectar(self):
         with patch("channels.health.requests.get", side_effect=requests.ConnectionError("timeout")):
             response = self._verificar()
@@ -392,9 +389,7 @@ class InternalCanalConfigViewTests(TestCase):
         self.messenger.api_key = "page-access-token-secreto"
         self.messenger.save(update_fields=["api_key"])
         self.url = reverse("internal-canal-config", args=[self.messenger.uuid])
-        self.token = ServiceToken.objects.create(
-            servicio=ServiceToken.Servicio.CHANNEL_GATEWAY, token="token-de-gateway", activo=True,
-        )
+        self.token = make_service_token(ServiceToken.Servicio.CHANNEL_GATEWAY, "token-de-gateway", activo=True)
 
     def _get(self, token=None, header_scheme="Service-Token"):
         client = APIClient()
@@ -421,9 +416,7 @@ class InternalCanalConfigViewTests(TestCase):
         self.assertEqual(response.status_code, 401)
 
     def test_token_de_otro_servicio_no_alcanza(self):
-        ServiceToken.objects.create(
-            servicio=ServiceToken.Servicio.CONVERSATION_ENGINE, token="token-de-otro-servicio", activo=True,
-        )
+        make_service_token(ServiceToken.Servicio.CONVERSATION_ENGINE, "token-de-otro-servicio", activo=True)
         response = self._get(token="token-de-otro-servicio")
         self.assertEqual(response.status_code, 403)
 
@@ -462,9 +455,7 @@ class InternalCanalPorOrganizacionViewTests(TestCase):
         self.instagram = Canal.objects.get(organization=self.org, tipo="INSTAGRAM")
         self.instagram.api_key = "ig-token"
         self.instagram.save(update_fields=["api_key"])
-        ServiceToken.objects.create(
-            servicio=ServiceToken.Servicio.CHANNEL_GATEWAY, token="token-de-gateway", activo=True,
-        )
+        make_service_token(ServiceToken.Servicio.CHANNEL_GATEWAY, "token-de-gateway", activo=True)
         self.url = reverse("internal-canal-por-organizacion", args=[self.org.id, "instagram"])
 
     def _get(self, token="token-de-gateway"):

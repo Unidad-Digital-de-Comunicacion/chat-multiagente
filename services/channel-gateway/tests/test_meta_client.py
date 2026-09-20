@@ -193,32 +193,24 @@ def test_menu_para_messenger_con_muchas_opciones_tambien_manda_texto_plano():
     assert capture["json"]["message"]["text"] == "1. Opción 1\n..."
 
 
-def test_menu_para_instagram_manda_quick_replies():
+def test_menu_para_instagram_siempre_manda_texto_plano_numerado():
+    # Misma configuración que Messenger (pedido explícito, 2026-09-20): con
+    # Instagram dado de alta bajo la misma app de Meta, `quick_replies` no
+    # le llegaba al contacto en producción — se unificó a texto plano.
     capture = {}
     fake_client = _FakeAsyncClient(_FakeResponse(200, {"message_id": "mid.1"}), capture)
 
     canal = CanalConfig(organization_id=1, tipo="INSTAGRAM", api_key="token", webhook_secret="x", activo=True)
-    opciones = [{"id": "1", "titulo": "Ventas"}]
-    _run(enviar_menu_por_canal(fake_client, canal, "PSID", "1. Ventas", "Elegí:", opciones))
+    opciones = [{"id": "1", "titulo": "Ventas"}, {"id": "2", "titulo": "Soporte"}]
+    _run(enviar_menu_por_canal(fake_client, canal, "PSID", "1. Ventas\n2. Soporte", "¿En qué te ayudo?", opciones))
 
+    assert capture["url"].endswith("/me/messages")
     assert "attachment" not in capture["json"]["message"]
-    assert capture["json"]["message"]["quick_replies"][0]["payload"] == "1"
+    assert "quick_replies" not in capture["json"]["message"]
+    assert capture["json"]["message"]["text"] == "1. Ventas\n2. Soporte"
 
 
-def test_quick_replies_de_instagram_recortan_titulos_largos_al_limite():
-    capture = {}
-    fake_client = _FakeAsyncClient(_FakeResponse(200, {"message_id": "mid.1"}), capture)
-
-    canal = CanalConfig(organization_id=1, tipo="INSTAGRAM", api_key="token", webhook_secret="x", activo=True)
-    titulo_largo = "Un título de opción larguísimo que supera el límite"
-    opciones = [{"id": "1", "titulo": titulo_largo}]
-    _run(enviar_menu_por_canal(fake_client, canal, "PSID", "texto", "Elegí:", opciones))
-
-    titulo_enviado = capture["json"]["message"]["quick_replies"][0]["title"]
-    assert len(titulo_enviado) == 20
-
-
-def test_menu_con_mas_de_13_opciones_cae_a_texto_plano_en_instagram():
+def test_menu_para_instagram_con_muchas_opciones_tambien_manda_texto_plano():
     capture = {}
     fake_client = _FakeAsyncClient(_FakeResponse(200, {"message_id": "mid.1"}), capture)
 

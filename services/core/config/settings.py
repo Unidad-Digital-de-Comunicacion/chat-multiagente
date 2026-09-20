@@ -21,6 +21,17 @@ def _env_list(name, default=""):
 
 
 SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "dev-insecure-secret-key-change-me")
+
+# Clave simétrica (Fernet) para cifrar en reposo las credenciales que Core
+# necesita poder RECUPERAR en texto plano para reusarlas de verdad
+# (`Canal.api_key`, `platform_admin.MetaAppConfig.app_secret`) — ver
+# `common.encrypted_fields`. Nunca en la base, nunca en el repo, sólo acá
+# (mismo criterio que `DJANGO_SECRET_KEY`) — perder esta clave hace
+# irrecuperable todo lo cifrado con ella, no hay otro backup que el propio
+# `.env`. Generarla una vez con
+# `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`.
+FIELD_ENCRYPTION_KEY = os.environ.get("FIELD_ENCRYPTION_KEY", "")
+
 DEBUG = _env_bool("DJANGO_DEBUG", False)
 ALLOWED_HOSTS = _env_list("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1")
 
@@ -138,6 +149,15 @@ X_FRAME_OPTIONS = "DENY"
 SESSION_COOKIE_SECURE = not DEBUG
 CSRF_COOKIE_SECURE = not DEBUG
 
+# Límite explícito de tamaño de request (mitiga un payload gigante como
+# vector de DoS) — antes quedaba en el default sin documentar de Django
+# (2.5MB), que ya alcanzaba pero no era una decisión consciente. 5MB deja
+# margen real para el único body grande de la API (`PATCH /users/me/` con
+# `avatar`, una foto de celular comprimida) sin abrir la puerta a
+# cualquier tamaño.
+DATA_UPLOAD_MAX_MEMORY_SIZE = 5 * 1024 * 1024
+FILE_UPLOAD_MAX_MEMORY_SIZE = 5 * 1024 * 1024
+
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": (
         "rest_framework_simplejwt.authentication.JWTAuthentication",
@@ -242,15 +262,6 @@ CONVERSATION_ENGINE_INTERNAL_URL = os.environ.get(
 META_APP_ID = os.environ.get("META_APP_ID", "")
 META_APP_SECRET = os.environ.get("META_APP_SECRET", "")
 
-# Excepción real confirmada en producción (2026-09-18, ver channels/
-# health.py): Instagram puede quedar dado de alta bajo una app de Meta
-# DISTINTA a la de arriba — ahí `/debug_token` (el chequeo de conexión) y la
-# verificación de firma de channel-gateway necesitan las credenciales de ESA
-# otra app, no las de WhatsApp/Messenger. Sin configurar, cae en las de
-# arriba (mismo comportamiento de antes, para el caso común de una sola app).
-META_APP_ID_INSTAGRAM = os.environ.get("META_APP_ID_INSTAGRAM", "") or META_APP_ID
-META_APP_SECRET_INSTAGRAM = os.environ.get("META_APP_SECRET_INSTAGRAM", "") or META_APP_SECRET
-
 # --------------------------------------------------------------------------- #
 # JWT (RS256): Core firma con la clave privada; todos los servicios (FastAPI
 # incluidos) validan con la pública, publicada en /api/auth/jwks/. Evita tener
@@ -280,4 +291,28 @@ SIMPLE_JWT = {
     "AUTH_HEADER_TYPES": ("Bearer",),
     "USER_ID_FIELD": "id",
     "USER_ID_CLAIM": "user_id",
+}
+
+# --------------------------------------------------------------------------- #
+# Sin esto, un `logger.info(...)` de cualquier módulo propio (ej. la
+# auditoría de login de `authentication.views`) queda descartado en
+# silencio: Django no configura un handler para loggers con nombre propio
+# por default, sólo para su propio namespace `django.*` — mismo bug real
+# confirmado en producción del lado de `channel-gateway` (2026-09-20, ver
+# `services/channel-gateway/app/main.py`). `disable_existing_loggers=False`
+# para no pisar el logging que gunicorn/Django ya configuran solos.
+# --------------------------------------------------------------------------- #
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "simple": {"format": "%(levelname)s %(name)s %(message)s"},
+    },
+    "handlers": {
+        "console": {"class": "logging.StreamHandler", "formatter": "simple"},
+    },
+    "root": {
+        "handlers": ["console"],
+        "level": "INFO",
+    },
 }
