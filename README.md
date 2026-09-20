@@ -48,3 +48,6 @@ incluida la parte de etiquetas/observaciones/chat interno que queda
 explícitamente para la Fase 4/5 (Conversation Engine/Operators Desk), y la
 conexión real de cada canal (Embedded Signup, webhooks, envío) que es
 Channel Gateway, Fase 3.
+
+
+Pasa a Version 0.0.2
