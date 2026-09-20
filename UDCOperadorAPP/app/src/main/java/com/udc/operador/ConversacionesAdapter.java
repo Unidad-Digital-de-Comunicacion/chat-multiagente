@@ -49,7 +49,11 @@ public class ConversacionesAdapter extends ArrayAdapter<JSONObject> {
 
         TextView textObservacion = vista.findViewById(R.id.textFilaObservacion);
         JSONObject observacion = conversacion.optJSONObject("ultima_observacion");
-        textObservacion.setText(observacion == null ? "" : "📝 " + observacion.optString("texto"));
+        SpannableStringBuilder textoObservacion = new SpannableStringBuilder();
+        if (observacion != null) {
+            textoObservacion.append("📝 ").append(Marcado.aplicar(observacion.optString("texto")));
+        }
+        textObservacion.setText(textoObservacion);
         textObservacion.setVisibility(observacion == null ? View.GONE : View.VISIBLE);
 
         return vista;
