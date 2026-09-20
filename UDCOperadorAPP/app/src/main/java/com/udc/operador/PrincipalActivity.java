@@ -50,6 +50,13 @@ public class PrincipalActivity extends AppCompatActivity {
     private ConversacionesAdapter adaptador;
     private int pantallaActual = R.id.menu_sin_asignar;
 
+    // Paginación: Core devuelve de a 25. Cada "Ver más" suma una página, y el refresco automático
+    // vuelve a pedir todas las páginas ya cargadas para no perder lo que el operador ya abrió.
+    private int paginasPedidas = 1;
+    private View pieVerMas;
+    private Button botonVerMas;
+    private boolean pieVerMasAgregado;
+
     private final Handler manejador = new Handler(Looper.getMainLooper());
     private final Runnable sondeo = new Runnable() {
         @Override
@@ -87,9 +94,14 @@ public class PrincipalActivity extends AppCompatActivity {
         listaConversaciones.setOnItemClickListener((parent, view, position, id) ->
                 ConversacionActivity.abrir(this, conversaciones.get(position), false));
 
+        pieVerMas = getLayoutInflater().inflate(R.layout.pie_ver_mas, listaConversaciones, false);
+        botonVerMas = pieVerMas.findViewById(R.id.botonVerMas);
+        botonVerMas.setOnClickListener(v -> verMas());
+
         BottomNavigationView menu = findViewById(R.id.menuInferior);
         menu.setOnItemSelectedListener(item -> {
             pantallaActual = item.getItemId();
+            paginasPedidas = 1;
             mostrarPantallaActual();
             return true;
         });
@@ -155,27 +167,40 @@ public class PrincipalActivity extends AppCompatActivity {
     /** `avisarSiFalla` es false en el refresco automático, para no llenar la pantalla de avisos si no hay conexión. */
     private void cargarBandeja(String bandeja, boolean avisarSiFalla) {
         String url = Config.BASE_URL + "/api/core/conversaciones/?bandeja=" + bandeja;
+        int paginas = paginasPedidas;
         new Thread(() -> {
             try {
-                HttpCliente.Respuesta respuesta = HttpCliente.getAutenticado(this, url);
-                if (sesionVencida(respuesta)) {
-                    return;
-                }
-                if (!respuesta.esExitosa()) {
-                    if (avisarSiFalla) {
-                        runOnUiThread(() -> Toast.makeText(this, "No se pudo cargar la bandeja", Toast.LENGTH_SHORT).show());
-                    }
-                    return;
-                }
-
-                JSONArray resultados = new JSONObject(respuesta.cuerpo).getJSONArray("results");
                 List<JSONObject> filas = new ArrayList<>();
-                for (int i = 0; i < resultados.length(); i++) {
-                    filas.add(resultados.getJSONObject(i));
+                boolean hayMas = false;
+                for (int pagina = 1; pagina <= paginas; pagina++) {
+                    HttpCliente.Respuesta respuesta = HttpCliente.getAutenticado(this, url + "&page=" + pagina);
+                    if (sesionVencida(respuesta)) {
+                        return;
+                    }
+                    if (!respuesta.esExitosa()) {
+                        runOnUiThread(this::restaurarBotonVerMas);
+                        if (avisarSiFalla) {
+                            runOnUiThread(() -> Toast.makeText(this, "No se pudo cargar la bandeja", Toast.LENGTH_SHORT).show());
+                        }
+                        return;
+                    }
+
+                    JSONObject json = new JSONObject(respuesta.cuerpo);
+                    JSONArray resultados = json.getJSONArray("results");
+                    for (int i = 0; i < resultados.length(); i++) {
+                        filas.add(resultados.getJSONObject(i));
+                    }
+                    // `next` es null en la última página; si no hay más, no se pide una página que no existe.
+                    hayMas = !json.isNull("next");
+                    if (!hayMas) {
+                        break;
+                    }
                 }
-                runOnUiThread(() -> mostrarConversaciones(bandeja, filas));
+                boolean hayMasFinal = hayMas;
+                runOnUiThread(() -> mostrarConversaciones(bandeja, filas, hayMasFinal));
             } catch (Exception e) {
                 Log.e(TAG, "Error cargando bandeja", e);
+                runOnUiThread(this::restaurarBotonVerMas);
                 if (avisarSiFalla) {
                     runOnUiThread(() -> Toast.makeText(this, "No se pudo conectar con el servidor", Toast.LENGTH_SHORT).show());
                 }
@@ -183,7 +208,7 @@ public class PrincipalActivity extends AppCompatActivity {
         }).start();
     }
 
-    private void mostrarConversaciones(String bandeja, List<JSONObject> filas) {
+    private void mostrarConversaciones(String bandeja, List<JSONObject> filas, boolean hayMas) {
         // Si mientras llegaba la respuesta se cambió de pestaña, esta lista ya no corresponde.
         if (pantallaActual == R.id.menu_perfil || !bandeja.equals(nombreBandeja())) {
             return;
@@ -191,6 +216,29 @@ public class PrincipalActivity extends AppCompatActivity {
         conversaciones.clear();
         conversaciones.addAll(filas);
         adaptador.notifyDataSetChanged();
+        restaurarBotonVerMas();
+
+        // El botón sólo está al final de la lista cuando Core dice que hay otra página.
+        if (hayMas && !pieVerMasAgregado) {
+            listaConversaciones.addFooterView(pieVerMas, null, false);
+            pieVerMasAgregado = true;
+        } else if (!hayMas && pieVerMasAgregado) {
+            listaConversaciones.removeFooterView(pieVerMas);
+            pieVerMasAgregado = false;
+        }
+    }
+
+    /** Pide una página más (25 conversaciones) y vuelve a cargar la lista con todas las páginas. */
+    private void verMas() {
+        paginasPedidas++;
+        botonVerMas.setEnabled(false);
+        botonVerMas.setText(R.string.ver_mas_cargando);
+        cargarBandeja(nombreBandeja(), true);
+    }
+
+    private void restaurarBotonVerMas() {
+        botonVerMas.setEnabled(true);
+        botonVerMas.setText(R.string.ver_mas);
     }
 
     /** Trae el perfil del usuario logueado (GET /api/core/users/me/, contrato §1). */

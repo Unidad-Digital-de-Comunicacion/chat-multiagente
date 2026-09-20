@@ -12,6 +12,8 @@
     <string name="menu_mias">Mías</string>
     <string name="menu_perfil">Perfil</string>
     <string name="menu_ver_cerradas">Ver cerradas</string>
+    <string name="ver_mas">Ver más</string>
+    <string name="ver_mas_cargando">Cargando...</string>
     <string name="cerradas_titulo">Conversaciones cerradas</string>
     <string name="cerradas_vacio">No tenés conversaciones cerradas.</string>    <string name="perfil_conectado_como">Conectado como</string>
     <string name="perfil_hint_nombre">Nombre</string>
