@@ -36,22 +36,49 @@ enteramente responsabilidad del backend.
 
 ## Estado actual del código
 
-- `LoginActivity` — pantalla de login real, ya le pega a
-  `POST /api/auth/login/` (ver contrato §1) y guarda el `access` token con
-  `Sesion`.
-- `HttpCliente` — wrapper mínimo sobre `HttpURLConnection` (sin librería
-  externa todavía). Corre las llamadas en un `Thread` aparte a mano — toda
-  pantalla nueva que haga red tiene que seguir ese mismo patrón (nunca red
-  en el hilo principal).
-- `Sesion` — persiste el token en `SharedPreferences`. **Pendiente**: hoy
-  sólo guarda `access` (vence a los 30 minutos) — falta guardar también
-  `refresh` y usar `POST /api/auth/refresh/` cuando un pedido devuelva 401,
-  antes de forzar un logout.
+Pantallas (todas extienden `ActividadBase`):
+
+- `LoginActivity` — login (`POST /api/auth/login/`); si ya hay sesión guardada
+  salta directo a la principal.
+- `PrincipalActivity` — menú inferior: "Sin asignar", "Mías" y "Perfil". En
+  "Mías", el menú de tres puntitos lleva a `CerradasActivity`.
+- `ConversacionActivity` — el hilo como burbujas, responder, cerrar, etiquetar
+  y derivar (menú de tres puntitos). Una cerrada se abre en solo lectura.
+- `NotasInternasActivity`, `CambiarPasswordActivity`, `CerradasActivity`.
+
+Piezas compartidas — usarlas en vez de repetir código en una pantalla nueva:
+
+- `ActividadBase` — `enSegundoPlano(...)` corre un pedido de red en un `Thread`
+  (nunca red en el hilo principal) y avisa con un Toast si no hay conexión;
+  `enSegundoPlanoBloqueando(boton, "Enviando...", ...)` además deja el botón
+  deshabilitado con ese texto mientras corre.
+- `ApiCore` + `HttpCliente` — **Retrofit/OkHttp**. `ApiCore` es la lista de
+  todos los endpoints de Core (un método por cada uno): un endpoint nuevo se
+  agrega ahí, no armando URLs en las pantallas. Se usa así:
+  `ejecutar(api().mensajes(id))` (con `import static` de `HttpCliente`). El
+  token lo agrega `HttpCliente` solo y, si Core contesta 401, lo renueva con
+  `POST /api/auth/refresh/` y reintenta una vez. Los cuerpos se arman con
+  `json(new JSONObject()...)` y las respuestas se leen con org.json.
+- `Sondeo` — repite una tarea de background mientras la pantalla está a la
+  vista (`iniciar()` en `onResume`, `detener()` en `onPause`), silencioso y sin
+  apilar corridas; `ahora()` la corre una vez ya. Contrato §7.3.
+- `ListaConversaciones` — lista + indicador de carga + texto vacío + "Ver más"
+  (Core devuelve de a 25). La usan "Sin asignar", "Mías" y "Cerradas".
+- `PerfilSeccion` (perfil), `AccionesConversacion` (etiquetas y derivar),
+  `Sesion` (tokens en `SharedPreferences`), `App` (contexto para la capa de
+  red), `Marcado` (`**negrita**`, `_cursiva_`, `~tachado~`, `` `mono` ``) y los
+  adaptadores `ConversacionesAdapter` / `MensajesAdapter`.
+
+Todavía no existe: WebSocket (se usa polling), notificaciones push, reabrir una
+conversación cerrada ni mostrar qué operador escribió cada mensaje (Core no
+guarda ese dato).
 
 Package base: `com.udc.operador`. Nombres de variables/métodos/comentarios
 en español, igual que el resto del repo (`services/core` está en español
 salvo nombres de módulos nuevos en inglés) — seguí esa convención acá
 también.
+Textos: los de layouts y menús van en `strings.xml`; los avisos (Toast) y
+diálogos armados en el Java van como literales en el mismo archivo.
 
 ## Red: URL base según dónde corra
 
@@ -61,12 +88,10 @@ también.
 - Celular físico en la misma red que el servidor: la IP LAN real de esa PC
   (no `10.0.2.2`, no le sirve a un dispositivo físico).
 - Servidor real (cuando exista un dominio/IP pública para `core`): esa URL,
-  sin cambiar nada del resto del código — la base URL debería vivir en un
-  solo lugar (constante o `BuildConfig`, no repetida en cada Activity) para
-  poder cambiarla sin buscar en todo el proyecto. Si el código actual
-  todavía tiene la URL hardcodeada en más de un lugar (`LoginActivity` hoy
-  la tiene sólo ahí), centralizarla es una mejora real a hacer apenas se
-  toque una segunda pantalla que necesite hacer red.
+  sin cambiar nada del resto del código — la base URL vive en un solo
+  lugar, `Config.BASE_URL`. Con `usesCleartextTraffic="false"` la app solo
+  acepta `https`; para desarrollar contra un Core local por `http` hay que
+  volver a ponerlo en `true` mientras tanto.
 
 ## Convenciones a seguir para pantallas nuevas
 

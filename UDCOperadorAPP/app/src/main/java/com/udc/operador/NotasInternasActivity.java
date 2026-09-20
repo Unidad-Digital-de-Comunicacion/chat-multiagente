@@ -1,20 +1,18 @@
 package com.udc.operador;
 
+import static com.udc.operador.HttpCliente.api;
+import static com.udc.operador.HttpCliente.ejecutar;
+import static com.udc.operador.HttpCliente.json;
+
 import android.content.Context;
 import android.content.Intent;
 import android.os.Bundle;
-import android.os.Handler;
-import android.os.Looper;
-import android.util.Log;
 import android.view.View;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.ListView;
 import android.widget.TextView;
-import android.widget.Toast;
-
-import androidx.appcompat.app.AppCompatActivity;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -26,11 +24,10 @@ import java.util.List;
  * Notas internas entre operadores de una conversación (contrato §4.10):
  * GET/POST /api/core/conversaciones/{id}/notas-internas/. Nunca salen hacia
  * el contacto, a diferencia de los mensajes. Se refrescan cada 5 segundos
- * mientras la pantalla está a la vista (contrato §7.3).
+ * mientras la pantalla está a la vista.
  */
-public class NotasInternasActivity extends AppCompatActivity {
+public class NotasInternasActivity extends ActividadBase {
 
-    private static final String TAG = "NotasInternas";
     private static final String EXTRA_ID = "conversacion_id";
     private static final String EXTRA_CONTACTO = "contacto";
     private static final String EXTRA_SOLO_LECTURA = "solo_lectura";
@@ -55,15 +52,7 @@ public class NotasInternasActivity extends AppCompatActivity {
     private TextView textSinNotas;
     private EditText editNota;
     private Button botonEnviar;
-
-    private final Handler manejador = new Handler(Looper.getMainLooper());
-    private final Runnable sondeo = new Runnable() {
-        @Override
-        public void run() {
-            cargarNotas(false);
-            manejador.postDelayed(this, INTERVALO_SONDEO_MS);
-        }
-    };
+    private final Sondeo sondeo = new Sondeo(this, INTERVALO_SONDEO_MS, () -> cargarNotas(false));
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -91,55 +80,34 @@ public class NotasInternasActivity extends AppCompatActivity {
     @Override
     protected void onResume() {
         super.onResume();
-        cargarNotas(true);
-        manejador.removeCallbacks(sondeo);
-        manejador.postDelayed(sondeo, INTERVALO_SONDEO_MS);
+        enSegundoPlano(() -> cargarNotas(true));
+        sondeo.iniciar();
     }
 
     /** En segundo plano no se sigue consultando. */
     @Override
     protected void onPause() {
         super.onPause();
-        manejador.removeCallbacks(sondeo);
+        sondeo.detener();
     }
 
-    /** La flecha de "volver" de la barra de arriba. */
-    @Override
-    public boolean onSupportNavigateUp() {
-        finish();
-        return true;
-    }
-
-    private String urlNotas() {
-        return Config.BASE_URL + "/api/core/conversaciones/" + conversacionId + "/notas-internas/";
-    }
-
-    /** `avisarSiFalla` es false en el refresco automático, para no llenar la pantalla de avisos si no hay conexión. */
-    private void cargarNotas(boolean avisarSiFalla) {
-        new Thread(() -> {
-            try {
-                HttpCliente.Respuesta respuesta = HttpCliente.getAutenticado(this, urlNotas());
-                if (!respuesta.esExitosa()) {
-                    if (avisarSiFalla) {
-                        runOnUiThread(() -> Toast.makeText(this, "No se pudieron cargar las notas", Toast.LENGTH_SHORT).show());
-                    }
-                    return;
-                }
-
-                JSONArray notas = new JSONArray(respuesta.cuerpo);
-                List<String> textos = new ArrayList<>();
-                for (int i = 0; i < notas.length(); i++) {
-                    JSONObject nota = notas.getJSONObject(i);
-                    textos.add(nota.optString("operador_email") + ": " + nota.optString("texto"));
-                }
-                runOnUiThread(() -> mostrarNotas(textos));
-            } catch (Exception e) {
-                Log.e(TAG, "Error cargando notas", e);
-                if (avisarSiFalla) {
-                    runOnUiThread(() -> Toast.makeText(this, "No se pudo conectar con el servidor", Toast.LENGTH_SHORT).show());
-                }
+    /** Bloqueante: `avisarSiFalla` es false en el refresco automático, que es silencioso. */
+    private void cargarNotas(boolean avisarSiFalla) throws Exception {
+        HttpCliente.Respuesta respuesta = ejecutar(api().notas(conversacionId));
+        if (!respuesta.esExitosa()) {
+            if (avisarSiFalla) {
+                avisar("No se pudieron cargar las notas");
             }
-        }).start();
+            return;
+        }
+
+        JSONArray notas = new JSONArray(respuesta.cuerpo);
+        List<String> textos = new ArrayList<>();
+        for (int i = 0; i < notas.length(); i++) {
+            JSONObject nota = notas.getJSONObject(i);
+            textos.add(nota.optString("operador_email") + ": " + nota.optString("texto"));
+        }
+        runOnUiThread(() -> mostrarNotas(textos));
     }
 
     private void mostrarNotas(List<String> textos) {
@@ -160,30 +128,14 @@ public class NotasInternasActivity extends AppCompatActivity {
             return;
         }
 
-        // Mientras se envía se bloquea todo, para que se vea que algo está pasando.
-        editNota.setEnabled(false);
-        botonEnviar.setEnabled(false);
-        botonEnviar.setText("Enviando...");
-        new Thread(() -> {
-            try {
-                JSONObject cuerpo = new JSONObject().put("texto", texto);
-                HttpCliente.Respuesta respuesta = HttpCliente.postAutenticado(this, urlNotas(), cuerpo);
-                if (respuesta.esExitosa()) {
-                    runOnUiThread(() -> editNota.setText(""));
-                    cargarNotas(true);
-                } else {
-                    String mensaje = HttpCliente.mensajeDeError(respuesta.cuerpo, "No se pudo enviar la nota");
-                    runOnUiThread(() -> Toast.makeText(this, mensaje, Toast.LENGTH_LONG).show());
-                }
-            } catch (Exception e) {
-                Log.e(TAG, "Error enviando nota", e);
-                runOnUiThread(() -> Toast.makeText(this, "No se pudo conectar con el servidor", Toast.LENGTH_SHORT).show());
+        enSegundoPlanoBloqueando(botonEnviar, "Enviando...", () -> {
+            HttpCliente.Respuesta respuesta = ejecutar(api().agregarNota(conversacionId, json(new JSONObject().put("texto", texto))));
+            if (!respuesta.esExitosa()) {
+                avisar(HttpCliente.mensajeDeError(respuesta.cuerpo, "No se pudo enviar la nota"));
+                return;
             }
-            runOnUiThread(() -> {
-                editNota.setEnabled(true);
-                botonEnviar.setEnabled(true);
-                botonEnviar.setText(R.string.conversacion_boton_enviar);
-            });
-        }).start();
+            runOnUiThread(() -> editNota.setText(""));
+            cargarNotas(true);
+        }, editNota);
     }
 }

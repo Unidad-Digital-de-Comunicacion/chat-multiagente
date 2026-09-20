@@ -4,16 +4,10 @@ import android.content.Context;
 import android.content.SharedPreferences;
 
 /**
- * Guarda y lee los tokens JWT en el celular usando SharedPreferences: la
- * forma default/estándar de Android para persistir datos chicos (queda
- * guardado aunque cierres la app y la vuelvas a abrir). Para algo tan
- * simple como dos tokens no hace falta ni una base de datos ni una
- * librería externa.
- *
- * Se guardan los dos tokens del login (contrato §1): `access` (vence a los
- * 30 minutos, es el que se manda en cada pedido) y `refresh` (vence a los
- * 7 días, sirve para pedir un `access` nuevo sin loguear de nuevo — ver
- * HttpCliente.getAutenticado/postAutenticado).
+ * Guarda los tokens del login (contrato §1) en SharedPreferences, así la
+ * sesión sobrevive a cerrar la app: `access` (vence a los 30 minutos, se
+ * manda en cada pedido) y `refresh` (vence a los 7 días, sirve para pedir un
+ * `access` nuevo sin loguear de nuevo, ver {@link HttpCliente}).
  */
 public class Sesion {
 

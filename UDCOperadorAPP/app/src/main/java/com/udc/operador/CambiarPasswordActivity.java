@@ -1,13 +1,13 @@
 package com.udc.operador;
 
+import static com.udc.operador.HttpCliente.api;
+import static com.udc.operador.HttpCliente.ejecutar;
+import static com.udc.operador.HttpCliente.json;
+
 import android.os.Bundle;
-import android.util.Log;
 import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
-import android.widget.Toast;
-
-import androidx.appcompat.app.AppCompatActivity;
 
 import org.json.JSONObject;
 
@@ -18,11 +18,9 @@ import org.json.JSONObject;
  * le reseteó la contraseña): en ese caso, si el operador vuelve atrás sin
  * cambiarla, PrincipalActivity vuelve a abrir esta pantalla.
  */
-public class CambiarPasswordActivity extends AppCompatActivity {
+public class CambiarPasswordActivity extends ActividadBase {
 
     public static final String EXTRA_OBLIGATORIO = "obligatorio";
-
-    private static final String TAG = "CambiarPassword";
 
     private EditText editPasswordActual;
     private EditText editPasswordNueva;
@@ -40,41 +38,26 @@ public class CambiarPasswordActivity extends AppCompatActivity {
         if (getIntent().getBooleanExtra(EXTRA_OBLIGATORIO, false)) {
             findViewById(R.id.textAvisoObligatorio).setVisibility(View.VISIBLE);
         }
-
-        botonCambiar.setOnClickListener(v -> onCambiarClick());
+        botonCambiar.setOnClickListener(v -> cambiar());
     }
 
-    private void onCambiarClick() {
+    private void cambiar() {
         String actual = editPasswordActual.getText().toString();
         String nueva = editPasswordNueva.getText().toString();
         if (actual.isEmpty() || nueva.isEmpty()) {
-            Toast.makeText(this, "Completá los dos campos", Toast.LENGTH_SHORT).show();
+            avisar("Completá los dos campos");
             return;
         }
 
-        botonCambiar.setEnabled(false);
-        botonCambiar.setText("Cambiando...");
-        new Thread(() -> {
-            try {
-                JSONObject cuerpo = new JSONObject().put("current_password", actual).put("new_password", nueva);
-                HttpCliente.Respuesta respuesta = HttpCliente.postAutenticado(this, Config.BASE_URL + "/api/core/users/me/cambiar-password/", cuerpo);
-                if (respuesta.esExitosa()) {
-                    runOnUiThread(() -> {
-                        Toast.makeText(this, "Contraseña actualizada", Toast.LENGTH_SHORT).show();
-                        finish();
-                    });
-                    return;
-                }
-                String mensaje = HttpCliente.mensajeDeError(respuesta.cuerpo, "No se pudo cambiar la contraseña");
-                runOnUiThread(() -> Toast.makeText(this, mensaje, Toast.LENGTH_LONG).show());
-            } catch (Exception e) {
-                Log.e(TAG, "Error cambiando la contraseña", e);
-                runOnUiThread(() -> Toast.makeText(this, "No se pudo conectar con el servidor", Toast.LENGTH_SHORT).show());
+        enSegundoPlanoBloqueando(botonCambiar, "Cambiando...", () -> {
+            HttpCliente.Respuesta respuesta = ejecutar(api().cambiarPassword(
+                    json(new JSONObject().put("current_password", actual).put("new_password", nueva))));
+            if (respuesta.esExitosa()) {
+                avisar("Contraseña actualizada");
+                runOnUiThread(this::finish);
+                return;
             }
-            runOnUiThread(() -> {
-                botonCambiar.setEnabled(true);
-                botonCambiar.setText(R.string.password_boton_cambiar);
-            });
-        }).start();
+            avisar(HttpCliente.mensajeDeError(respuesta.cuerpo, "No se pudo cambiar la contraseña"));
+        });
     }
 }

@@ -1,32 +1,36 @@
 package com.udc.operador;
 
-import android.content.Context;
-
 import org.json.JSONArray;
 import org.json.JSONObject;
 
-import java.io.BufferedReader;
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.io.OutputStream;
-import java.net.HttpURLConnection;
-import java.net.URL;
-import java.nio.charset.StandardCharsets;
+import java.util.concurrent.TimeUnit;
+
+import okhttp3.Interceptor;
+import okhttp3.MediaType;
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
+import okhttp3.RequestBody;
+import okhttp3.Response;
+import okhttp3.ResponseBody;
+import okhttp3.Route;
+import retrofit2.Call;
+import retrofit2.Retrofit;
 
 /**
- * Todo el detalle feo de HttpURLConnection (armar el pedido, mandarlo, leer
- * la respuesta byte a byte) vive acá adentro, una sola vez. El resto de la
- * app sólo llama a {@link #post} (sin token, ej. login) o a
- * {@link #getAutenticado}/{@link #postAutenticado}/{@link #patchAutenticado}
- * (con el token guardado en {@link Sesion}, y refresh automático si
- * venció) y recibe una {@link Respuesta} simple.
- *
- * IMPORTANTE: esto corre en un hilo aparte del principal — quien llame acá
- * tiene que hacerlo desde un Thread de background, nunca directo desde un
- * click.
+ * La conexión con Core: un cliente Retrofit ({@link #api}) que agrega el token
+ * de {@link Sesion} a cada pedido y, si Core contesta 401 porque el token
+ * venció, pide uno nuevo con el refresh y reintenta una vez (contrato §1).
+ * Si el refresh también venció, el 401 llega a la pantalla, que decide mandar
+ * al login. Hay que llamarlo desde un hilo de background
+ * (ver {@link ActividadBase#enSegundoPlano}).
  */
 public class HttpCliente {
+
+    private static final MediaType JSON = MediaType.get("application/json; charset=utf-8");
+    private static final Object CERROJO_RENOVACION = new Object();
+
+    private static ApiCore api;
 
     /** Resultado de un pedido: el código HTTP y el texto de la respuesta. */
     public static class Respuesta {
@@ -43,74 +47,28 @@ public class HttpCliente {
         }
     }
 
-    /** POST sin token (login y refresh). */
-    public static Respuesta post(String url, JSONObject cuerpoPedido) throws IOException {
-        return pedido("POST", url, cuerpoPedido, null);
-    }
-
-    private static Respuesta pedido(String metodo, String url, JSONObject cuerpoPedido, String token) throws IOException {
-        HttpURLConnection conexion = (HttpURLConnection) new URL(url).openConnection();
-        conexion.setRequestMethod(metodo);
-        conexion.setRequestProperty("Content-Type", "application/json");
-        if (token != null) {
-            conexion.setRequestProperty("Authorization", "Bearer " + token);
+    public static synchronized ApiCore api() {
+        if (api == null) {
+            OkHttpClient cliente = new OkHttpClient.Builder()
+                    .readTimeout(30, TimeUnit.SECONDS) // responder espera a que Channel Gateway entregue el mensaje
+                    .addInterceptor(HttpCliente::agregarToken)
+                    .authenticator(HttpCliente::renovarYReintentar)
+                    .build();
+            api = new Retrofit.Builder().baseUrl(Config.BASE_URL + "/").client(cliente).build().create(ApiCore.class);
         }
-
-        if (cuerpoPedido != null) {
-            conexion.setDoOutput(true);
-            try (OutputStream salida = conexion.getOutputStream()) {
-                salida.write(cuerpoPedido.toString().getBytes(StandardCharsets.UTF_8));
-            }
-        }
-
-        int codigo = conexion.getResponseCode();
-        InputStream stream = (codigo >= 200 && codigo < 300) ? conexion.getInputStream() : conexion.getErrorStream();
-        return new Respuesta(codigo, leerStream(stream));
+        return api;
     }
 
-    private static String leerStream(InputStream stream) throws IOException {
-        if (stream == null) {
-            return "";
-        }
-        StringBuilder resultado = new StringBuilder();
-        BufferedReader lector = new BufferedReader(new InputStreamReader(stream, StandardCharsets.UTF_8));
-        String linea;
-        while ((linea = lector.readLine()) != null) {
-            resultado.append(linea);
-        }
-        return resultado.toString();
+    /** Ejecuta un pedido de {@link ApiCore} y devuelve el código y el texto de la respuesta (también si fue un error). */
+    public static Respuesta ejecutar(Call<ResponseBody> llamada) throws IOException {
+        retrofit2.Response<ResponseBody> respuesta = llamada.execute();
+        ResponseBody cuerpo = respuesta.isSuccessful() ? respuesta.body() : respuesta.errorBody();
+        return new Respuesta(respuesta.code(), cuerpo == null ? "" : cuerpo.string());
     }
 
-    // --- Pedidos autenticados, con refresh automático (contrato §1) ---
-
-    /**
-     * GET a Core usando el access guardado. Si vino vencido (401), pide uno
-     * nuevo con el refresh guardado y reintenta UNA vez. Si el refresh
-     * también venció, devuelve el 401 tal cual — la pantalla que llamó
-     * decide mandar al login.
-     */
-    public static Respuesta getAutenticado(Context context, String url) throws IOException {
-        return autenticado(context, "GET", url, null);
-    }
-
-    public static Respuesta postAutenticado(Context context, String url, JSONObject cuerpoPedido) throws IOException {
-        return autenticado(context, "POST", url, cuerpoPedido);
-    }
-
-    public static Respuesta patchAutenticado(Context context, String url, JSONObject cuerpoPedido) throws IOException {
-        return autenticado(context, "PATCH", url, cuerpoPedido);
-    }
-
-    public static Respuesta deleteAutenticado(Context context, String url) throws IOException {
-        return autenticado(context, "DELETE", url, null);
-    }
-
-    private static Respuesta autenticado(Context context, String metodo, String url, JSONObject cuerpoPedido) throws IOException {
-        Respuesta respuesta = pedido(metodo, url, cuerpoPedido, Sesion.obtenerAccess(context));
-        if (respuesta.codigo == 401 && refrescarAccess(context)) {
-            respuesta = pedido(metodo, url, cuerpoPedido, Sesion.obtenerAccess(context));
-        }
-        return respuesta;
+    /** El cuerpo JSON de un pedido. */
+    public static RequestBody json(JSONObject objeto) {
+        return RequestBody.create(objeto.toString(), JSON);
     }
 
     /**
@@ -137,19 +95,51 @@ public class HttpCliente {
         }
     }
 
+    // --- Token de acceso ---
+
+    /** Los pedidos de `api/auth/` (login y refresh) van sin token: uno vencido haría fallar hasta el refresh. */
+    private static boolean esDeAutenticacion(Request pedido) {
+        return pedido.url().encodedPath().startsWith("/api/auth/");
+    }
+
+    private static Response agregarToken(Interceptor.Chain cadena) throws IOException {
+        Request pedido = cadena.request();
+        String access = Sesion.obtenerAccess(App.contexto());
+        if (access != null && !esDeAutenticacion(pedido)) {
+            pedido = pedido.newBuilder().header("Authorization", "Bearer " + access).build();
+        }
+        return cadena.proceed(pedido);
+    }
+
+    /** OkHttp llama a esto cuando Core contesta 401: devuelve el pedido con el token nuevo, o null para rendirse. */
+    private static Request renovarYReintentar(Route ruta, Response respuesta) {
+        String usado = respuesta.request().header("Authorization");
+        if (usado == null || esDeAutenticacion(respuesta.request()) || respuesta.priorResponse() != null) {
+            return null;
+        }
+        synchronized (CERROJO_RENOVACION) {
+            // Si otro pedido ya renovó el token mientras este esperaba, alcanza con reintentar con el nuevo.
+            if (usado.equals("Bearer " + Sesion.obtenerAccess(App.contexto())) && !renovarAccess()) {
+                return null;
+            }
+            return respuesta.request().newBuilder()
+                    .header("Authorization", "Bearer " + Sesion.obtenerAccess(App.contexto()))
+                    .build();
+        }
+    }
+
     /** Pide un access nuevo con el refresh guardado. false si el refresh también venció. */
-    private static boolean refrescarAccess(Context context) throws IOException {
-        String refresh = Sesion.obtenerRefresh(context);
+    private static boolean renovarAccess() {
+        String refresh = Sesion.obtenerRefresh(App.contexto());
         if (refresh == null) {
             return false;
         }
         try {
-            JSONObject cuerpo = new JSONObject().put("refresh", refresh);
-            Respuesta respuesta = post(Config.BASE_URL + "/api/auth/refresh/", cuerpo);
+            Respuesta respuesta = ejecutar(api().renovarToken(json(new JSONObject().put("refresh", refresh))));
             if (!respuesta.esExitosa()) {
                 return false;
             }
-            Sesion.guardarAccess(context, new JSONObject(respuesta.cuerpo).getString("access"));
+            Sesion.guardarAccess(App.contexto(), new JSONObject(respuesta.cuerpo).getString("access"));
             return true;
         } catch (Exception e) {
             return false;
