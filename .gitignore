@@ -249,3 +249,6 @@ services/db/data/
 # credenciales cifradas). Nunca al repo: ver incidente 2026-09-20 donde un
 # dump quedó commiteado (purgado del historial con git-filter-repo).
 backups/
+
+# APK firmado del operador, versionado a propósito
+!UDCOperadorAPP/apk/*.apk
