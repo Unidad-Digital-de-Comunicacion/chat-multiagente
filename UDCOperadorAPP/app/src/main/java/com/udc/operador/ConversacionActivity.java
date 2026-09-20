@@ -3,6 +3,8 @@ package com.udc.operador;
 import android.content.Context;
 import android.content.Intent;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.text.SpannableStringBuilder;
 import android.util.Log;
 import android.view.Menu;
@@ -64,6 +66,20 @@ public class ConversacionActivity extends AppCompatActivity {
         context.startActivity(intent);
     }
 
+    // Cada cuánto se refresca el hilo mientras la pantalla está a la vista (contrato §7.3).
+    private static final long INTERVALO_SONDEO_MS = 5_000;
+
+    private final List<String> lineasMostradas = new ArrayList<>();
+    private ArrayAdapter<String> adaptadorMensajes;
+    private final Handler manejador = new Handler(Looper.getMainLooper());
+    private final Runnable sondeo = new Runnable() {
+        @Override
+        public void run() {
+            refrescarEnSilencio();
+            manejador.postDelayed(this, INTERVALO_SONDEO_MS);
+        }
+    };
+
     private int conversacionId;
     private boolean soloLectura;
     private ListView listaMensajes;
@@ -84,6 +100,9 @@ public class ConversacionActivity extends AppCompatActivity {
         setTitle(getIntent().getStringExtra(EXTRA_TITULO));
         getSupportActionBar().setSubtitle(getIntent().getStringExtra(EXTRA_SUBTITULO) + (soloLectura ? " · cerrada" : ""));
         listaMensajes = findViewById(R.id.listaMensajes);
+        // Un solo adaptador que se actualiza en el lugar: así el refresco automático no mueve la lectura.
+        adaptadorMensajes = new ArrayAdapter<>(this, android.R.layout.simple_list_item_1, lineasMostradas);
+        listaMensajes.setAdapter(adaptadorMensajes);
         textEtiquetas = findViewById(R.id.textEtiquetas);
         editMensaje = findViewById(R.id.editMensaje);
         botonEnviar = findViewById(R.id.botonEnviar);
@@ -99,6 +118,22 @@ public class ConversacionActivity extends AppCompatActivity {
         }
 
         tomarYCargarMensajes();
+    }
+
+    /** Una conversación cerrada no cambia, así que sólo las abiertas se refrescan. Se pausa en segundo plano. */
+    @Override
+    protected void onResume() {
+        super.onResume();
+        if (!soloLectura) {
+            manejador.removeCallbacks(sondeo);
+            manejador.postDelayed(sondeo, INTERVALO_SONDEO_MS);
+        }
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        manejador.removeCallbacks(sondeo);
     }
 
     private String urlConversacion() {
@@ -336,10 +371,17 @@ public class ConversacionActivity extends AppCompatActivity {
 
     /** Bloqueante: llamar sólo desde un hilo de background (los que ya tienen el pedido anterior). */
     private void cargarMensajes() {
+        cargarMensajes(true);
+    }
+
+    /** `avisarSiFalla` es false en el refresco automático, para no llenar la pantalla de avisos si no hay conexión. */
+    private void cargarMensajes(boolean avisarSiFalla) {
         try {
             HttpCliente.Respuesta respuesta = HttpCliente.getAutenticado(this, urlConversacion() + "mensajes/");
             if (!respuesta.esExitosa()) {
-                runOnUiThread(() -> Toast.makeText(this, "No se pudo cargar el hilo", Toast.LENGTH_SHORT).show());
+                if (avisarSiFalla) {
+                    runOnUiThread(() -> Toast.makeText(this, "No se pudo cargar el hilo", Toast.LENGTH_SHORT).show());
+                }
                 return;
             }
 
@@ -365,11 +407,34 @@ public class ConversacionActivity extends AppCompatActivity {
             for (String[] linea : lineas) {
                 textos.add(linea[1]);
             }
-            runOnUiThread(() -> listaMensajes.setAdapter(new ArrayAdapter<>(this, android.R.layout.simple_list_item_1, textos)));
+            runOnUiThread(() -> {
+                // Si hay líneas nuevas (o es la primera carga) se baja al final, como en cualquier chat.
+                boolean hayNuevas = textos.size() > lineasMostradas.size();
+                lineasMostradas.clear();
+                lineasMostradas.addAll(textos);
+                adaptadorMensajes.notifyDataSetChanged();
+                if (hayNuevas) {
+                    listaMensajes.setSelection(textos.size() - 1);
+                }
+            });
         } catch (Exception e) {
             Log.e(TAG, "Error cargando mensajes", e);
-            runOnUiThread(() -> Toast.makeText(this, "No se pudo conectar con el servidor", Toast.LENGTH_SHORT).show());
+            if (avisarSiFalla) {
+                runOnUiThread(() -> Toast.makeText(this, "No se pudo conectar con el servidor", Toast.LENGTH_SHORT).show());
+            }
         }
+    }
+
+    /** Refresco automático del hilo y de las etiquetas (contrato §7.3); sin avisos de error. */
+    private void refrescarEnSilencio() {
+        new Thread(() -> {
+            try {
+                cargarMensajes(false);
+                cargarEtiquetasAplicadas();
+            } catch (Exception e) {
+                Log.e(TAG, "Error en el refresco automático", e);
+            }
+        }).start();
     }
 
     /** Mientras hay un pedido en curso se bloquea todo, para que se vea que algo está pasando. */
