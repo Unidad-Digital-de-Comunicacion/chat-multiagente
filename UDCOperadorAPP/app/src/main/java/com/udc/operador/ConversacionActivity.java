@@ -71,8 +71,8 @@ public class ConversacionActivity extends AppCompatActivity {
     // El bloqueo dura 2 minutos en Core; se renueva a la mitad de ese tiempo (contrato §4.3).
     private static final long INTERVALO_RENOVACION_MS = 60_000;
 
-    private final List<String> lineasMostradas = new ArrayList<>();
-    private ArrayAdapter<String> adaptadorMensajes;
+    private final List<MensajesAdapter.Linea> lineasMostradas = new ArrayList<>();
+    private MensajesAdapter adaptadorMensajes;
     private final Handler manejador = new Handler(Looper.getMainLooper());
     private final Runnable sondeo = new Runnable() {
         @Override
@@ -112,7 +112,7 @@ public class ConversacionActivity extends AppCompatActivity {
         getSupportActionBar().setSubtitle(getIntent().getStringExtra(EXTRA_SUBTITULO) + (soloLectura ? " · cerrada" : ""));
         listaMensajes = findViewById(R.id.listaMensajes);
         // Un solo adaptador que se actualiza en el lugar: así el refresco automático no mueve la lectura.
-        adaptadorMensajes = new ArrayAdapter<>(this, android.R.layout.simple_list_item_1, lineasMostradas);
+        adaptadorMensajes = new MensajesAdapter(this, lineasMostradas);
         listaMensajes.setAdapter(adaptadorMensajes);
         textEtiquetas = findViewById(R.id.textEtiquetas);
         textNotas = findViewById(R.id.textNotas);
@@ -455,12 +455,29 @@ public class ConversacionActivity extends AppCompatActivity {
                 return;
             }
 
-            // Cada línea es {fecha, texto}: los mensajes y las observaciones se mezclan ordenados por fecha.
-            List<String[]> lineas = new ArrayList<>();
+            // Los mensajes y las observaciones se mezclan en un solo hilo, ordenados por fecha.
+            List<MensajesAdapter.Linea> lineas = new ArrayList<>();
+            String contacto = getIntent().getStringExtra(EXTRA_TITULO);
             JSONArray mensajes = new JSONArray(respuesta.cuerpo);
             for (int i = 0; i < mensajes.length(); i++) {
                 JSONObject mensaje = mensajes.getJSONObject(i);
-                lineas.add(new String[]{mensaje.getString("creado_at"), mensaje.getString("remitente") + ": " + mensaje.getString("texto")});
+                MensajesAdapter.Tipo tipo;
+                String remitente;
+                switch (mensaje.getString("remitente")) {
+                    case "CONTACTO":
+                        tipo = MensajesAdapter.Tipo.CONTACTO;
+                        remitente = contacto;
+                        break;
+                    case "OPERADOR":
+                        tipo = MensajesAdapter.Tipo.OPERADOR;
+                        // Core todavía no dice qué operador escribió cada mensaje; cuando lo mande (`operador_email`), se muestra.
+                        remitente = mensaje.isNull("operador_email") ? "Operador" : mensaje.getString("operador_email");
+                        break;
+                    default:
+                        tipo = MensajesAdapter.Tipo.SISTEMA;
+                        remitente = "Sistema";
+                }
+                lineas.add(new MensajesAdapter.Linea(tipo, remitente, mensaje.getString("texto"), mensaje.getString("creado_at")));
             }
 
             HttpCliente.Respuesta observaciones = HttpCliente.getAutenticado(this, urlConversacion() + "observaciones/");
@@ -468,23 +485,20 @@ public class ConversacionActivity extends AppCompatActivity {
                 JSONArray filas = new JSONArray(observaciones.cuerpo);
                 for (int i = 0; i < filas.length(); i++) {
                     JSONObject fila = filas.getJSONObject(i);
-                    lineas.add(new String[]{fila.getString("creado_at"), "📝 Observación de " + fila.getString("operador_email") + ": " + fila.getString("texto")});
+                    lineas.add(new MensajesAdapter.Linea(MensajesAdapter.Tipo.OBSERVACION,
+                            "📝 Observación · " + fila.optString("operador_email"), fila.getString("texto"), fila.getString("creado_at")));
                 }
             }
-            lineas.sort((a, b) -> a[0].compareTo(b[0]));
+            lineas.sort((a, b) -> a.momento().compareTo(b.momento()));
 
-            List<String> textos = new ArrayList<>();
-            for (String[] linea : lineas) {
-                textos.add(linea[1]);
-            }
             runOnUiThread(() -> {
                 // Si hay líneas nuevas (o es la primera carga) se baja al final, como en cualquier chat.
-                boolean hayNuevas = textos.size() > lineasMostradas.size();
+                boolean hayNuevas = lineas.size() > lineasMostradas.size();
                 lineasMostradas.clear();
-                lineasMostradas.addAll(textos);
+                lineasMostradas.addAll(lineas);
                 adaptadorMensajes.notifyDataSetChanged();
                 if (hayNuevas) {
-                    listaMensajes.setSelection(textos.size() - 1);
+                    listaMensajes.setSelection(lineas.size() - 1);
                 }
             });
         } catch (Exception e) {

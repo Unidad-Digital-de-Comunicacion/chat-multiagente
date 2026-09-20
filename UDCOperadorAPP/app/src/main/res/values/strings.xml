@@ -12,6 +12,8 @@
     <string name="menu_mias">Mías</string>
     <string name="menu_perfil">Perfil</string>
     <string name="menu_ver_cerradas">Ver cerradas</string>
+    <string name="lista_vacia_sin_asignar">No hay conversaciones sin asignar.</string>
+    <string name="lista_vacia_mias">No tenés conversaciones asignadas.</string>
     <string name="ver_mas">Ver más</string>
     <string name="ver_mas_cargando">Cargando...</string>
     <string name="cerradas_titulo">Conversaciones cerradas</string>

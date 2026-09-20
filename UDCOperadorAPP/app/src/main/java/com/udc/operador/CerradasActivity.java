@@ -25,6 +25,7 @@ public class CerradasActivity extends AppCompatActivity {
     private static final String TAG = "CerradasActivity";
 
     private ListView listaCerradas;
+    private View progresoCerradas;
     private TextView textSinCerradas;
     private final List<JSONObject> conversaciones = new ArrayList<>();
 
@@ -36,6 +37,7 @@ public class CerradasActivity extends AppCompatActivity {
         getSupportActionBar().setDisplayHomeAsUpEnabled(true);
 
         listaCerradas = findViewById(R.id.listaCerradas);
+        progresoCerradas = findViewById(R.id.progresoCerradas);
         textSinCerradas = findViewById(R.id.textSinCerradas);
 
         listaCerradas.setOnItemClickListener((parent, view, position, id) ->
@@ -72,12 +74,16 @@ public class CerradasActivity extends AppCompatActivity {
                 runOnUiThread(() -> mostrarConversaciones(filas));
             } catch (Exception e) {
                 Log.e(TAG, "Error cargando cerradas", e);
-                runOnUiThread(() -> Toast.makeText(this, "No se pudo conectar con el servidor", Toast.LENGTH_SHORT).show());
+                runOnUiThread(() -> {
+                    progresoCerradas.setVisibility(View.GONE);
+                    Toast.makeText(this, "No se pudo conectar con el servidor", Toast.LENGTH_SHORT).show();
+                });
             }
         }).start();
     }
 
     private void mostrarConversaciones(List<JSONObject> filas) {
+        progresoCerradas.setVisibility(View.GONE);
         conversaciones.clear();
         conversaciones.addAll(filas);
         listaCerradas.setAdapter(new ConversacionesAdapter(this, filas));

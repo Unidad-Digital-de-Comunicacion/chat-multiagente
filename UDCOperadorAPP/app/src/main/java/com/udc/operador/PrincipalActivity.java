@@ -57,6 +57,9 @@ public class PrincipalActivity extends AppCompatActivity {
     private Button botonVerMas;
     private boolean pieVerMasAgregado;
 
+    private View progresoLista;
+    private TextView textListaVacia;
+
     private final Handler manejador = new Handler(Looper.getMainLooper());
     private final Runnable sondeo = new Runnable() {
         @Override
@@ -74,6 +77,8 @@ public class PrincipalActivity extends AppCompatActivity {
         setContentView(R.layout.activity_principal);
 
         listaConversaciones = findViewById(R.id.listaConversaciones);
+        progresoLista = findViewById(R.id.progresoLista);
+        textListaVacia = findViewById(R.id.textListaVacia);
         vistaPerfil = findViewById(R.id.vistaPerfil);
         textEmail = findViewById(R.id.textEmail);
         editNombre = findViewById(R.id.editNombre);
@@ -102,6 +107,9 @@ public class PrincipalActivity extends AppCompatActivity {
         menu.setOnItemSelectedListener(item -> {
             pantallaActual = item.getItemId();
             paginasPedidas = 1;
+            // Se vacía la lista para no mostrar las conversaciones de la pestaña anterior mientras carga la nueva.
+            conversaciones.clear();
+            adaptador.notifyDataSetChanged();
             mostrarPantallaActual();
             return true;
         });
@@ -155,7 +163,10 @@ public class PrincipalActivity extends AppCompatActivity {
         vistaPerfil.setVisibility(esPerfil ? View.VISIBLE : View.GONE);
         invalidateOptionsMenu();
 
-        if (!esPerfil) {
+        if (esPerfil) {
+            progresoLista.setVisibility(View.GONE);
+            textListaVacia.setVisibility(View.GONE);
+        } else {
             cargarBandeja(nombreBandeja(), true);
         }
     }
@@ -168,6 +179,12 @@ public class PrincipalActivity extends AppCompatActivity {
     private void cargarBandeja(String bandeja, boolean avisarSiFalla) {
         String url = Config.BASE_URL + "/api/core/conversaciones/?bandeja=" + bandeja;
         int paginas = paginasPedidas;
+
+        // El indicador es sólo para la primera carga de una pestaña; en el refresco automático no parpadea.
+        if (avisarSiFalla && conversaciones.isEmpty()) {
+            progresoLista.setVisibility(View.VISIBLE);
+            textListaVacia.setVisibility(View.GONE);
+        }
         new Thread(() -> {
             try {
                 List<JSONObject> filas = new ArrayList<>();
@@ -178,7 +195,7 @@ public class PrincipalActivity extends AppCompatActivity {
                         return;
                     }
                     if (!respuesta.esExitosa()) {
-                        runOnUiThread(this::restaurarBotonVerMas);
+                        runOnUiThread(this::terminarCarga);
                         if (avisarSiFalla) {
                             runOnUiThread(() -> Toast.makeText(this, "No se pudo cargar la bandeja", Toast.LENGTH_SHORT).show());
                         }
@@ -200,7 +217,7 @@ public class PrincipalActivity extends AppCompatActivity {
                 runOnUiThread(() -> mostrarConversaciones(bandeja, filas, hayMasFinal));
             } catch (Exception e) {
                 Log.e(TAG, "Error cargando bandeja", e);
-                runOnUiThread(this::restaurarBotonVerMas);
+                runOnUiThread(this::terminarCarga);
                 if (avisarSiFalla) {
                     runOnUiThread(() -> Toast.makeText(this, "No se pudo conectar con el servidor", Toast.LENGTH_SHORT).show());
                 }
@@ -216,7 +233,10 @@ public class PrincipalActivity extends AppCompatActivity {
         conversaciones.clear();
         conversaciones.addAll(filas);
         adaptador.notifyDataSetChanged();
-        restaurarBotonVerMas();
+        terminarCarga();
+
+        textListaVacia.setText(pantallaActual == R.id.menu_sin_asignar ? R.string.lista_vacia_sin_asignar : R.string.lista_vacia_mias);
+        textListaVacia.setVisibility(filas.isEmpty() ? View.VISIBLE : View.GONE);
 
         // El botón sólo está al final de la lista cuando Core dice que hay otra página.
         if (hayMas && !pieVerMasAgregado) {
@@ -236,7 +256,9 @@ public class PrincipalActivity extends AppCompatActivity {
         cargarBandeja(nombreBandeja(), true);
     }
 
-    private void restaurarBotonVerMas() {
+    /** Fin de una carga (bien o mal): se apaga el indicador y el botón "Ver más" vuelve a estar disponible. */
+    private void terminarCarga() {
+        progresoLista.setVisibility(View.GONE);
         botonVerMas.setEnabled(true);
         botonVerMas.setText(R.string.ver_mas);
     }
