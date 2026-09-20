@@ -129,7 +129,7 @@ public class HttpCliente {
     }
 
     /** Pide un access nuevo con el refresh guardado. false si el refresh también venció. */
-    private static boolean renovarAccess() {
+    public static boolean renovarAccess() {
         String refresh = Sesion.obtenerRefresh(App.contexto());
         if (refresh == null) {
             return false;

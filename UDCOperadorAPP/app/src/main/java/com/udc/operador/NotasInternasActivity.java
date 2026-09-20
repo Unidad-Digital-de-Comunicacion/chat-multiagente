@@ -52,7 +52,7 @@ public class NotasInternasActivity extends ActividadBase {
     private TextView textSinNotas;
     private EditText editNota;
     private Button botonEnviar;
-    private final Sondeo sondeo = new Sondeo(this, INTERVALO_SONDEO_MS, () -> cargarNotas(false));
+    private final Sondeo sondeo = new Sondeo(this, INTERVALO_SONDEO_MS, () -> cargarNotas(false)).conTiempoReal();
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {

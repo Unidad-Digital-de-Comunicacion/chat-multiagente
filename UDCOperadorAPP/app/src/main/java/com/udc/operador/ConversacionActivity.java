@@ -76,7 +76,7 @@ public class ConversacionActivity extends ActividadBase {
     private Button botonEnviar;
     private Button botonCerrar;
 
-    private final Sondeo sondeo = new Sondeo(this, INTERVALO_SONDEO_MS, this::refrescar);
+    private final Sondeo sondeo = new Sondeo(this, INTERVALO_SONDEO_MS, this::refrescar).conTiempoReal();
     private final Sondeo renovacion = new Sondeo(this, INTERVALO_RENOVACION_MS, this::renovarBloqueo);
 
     @Override

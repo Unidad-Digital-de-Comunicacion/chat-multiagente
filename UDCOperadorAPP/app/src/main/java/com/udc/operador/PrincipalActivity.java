@@ -25,7 +25,7 @@ public class PrincipalActivity extends ActividadBase {
     private int pantallaActual = R.id.menu_sin_asignar;
     private boolean saliendo;
 
-    private final Sondeo sondeo = new Sondeo(this, INTERVALO_SONDEO_MS, () -> lista.refrescar());
+    private final Sondeo sondeo = new Sondeo(this, INTERVALO_SONDEO_MS, () -> lista.refrescar()).conTiempoReal();
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {

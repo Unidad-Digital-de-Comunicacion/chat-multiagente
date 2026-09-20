@@ -9,4 +9,6 @@ package com.udc.operador;
  */
 public class Config {
     public static final String BASE_URL = "https://api.udcchat.com.ar"; // https://api.udcchat.com.ar
+    // WebSocket de Conversation Engine (local: "ws://10.0.2.2:8003" o la IP LAN de la PC).
+    public static final String REALTIME_URL = "wss://realtime.udcchat.com.ar";
 }
