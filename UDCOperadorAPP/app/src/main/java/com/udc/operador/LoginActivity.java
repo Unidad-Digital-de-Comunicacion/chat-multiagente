@@ -81,7 +81,7 @@ public class LoginActivity extends AppCompatActivity {
                 runOnUiThread(() -> onLoginExitoso(access, refresh));
             } else {
                 runOnUiThread(() -> onLoginError("Usuario o contraseña incorrectos"));
-                Log.d(TAG, "Login -> código " + respuesta.cuerpo);
+                Log.e(TAG, "Login -> error " + respuesta.cuerpo);
             }
         } catch (Exception e) {
             // Ej.: Core apagado, sin conexión, IP mal escrita, etc.

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Menú de los tres puntitos de la pestaña "Mías". -->
+<menu xmlns:android="http://schemas.android.com/apk/res/android">
+    <item
+        android:id="@+id/menu_ver_cerradas"
+        android:title="@string/menu_ver_cerradas" />
+</menu>
