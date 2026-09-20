@@ -186,6 +186,9 @@ REST_FRAMEWORK = {
         "username_reset": "5/hour",
     },
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
+    # Envuelve toda respuesta de error en `{"error": {"code", "detail"}}`
+    # (BUENAS-PRACTICAS-API-REST.md §4) — ver `common.exceptions`.
+    "EXCEPTION_HANDLER": "common.exceptions.exception_handler",
 }
 
 # Esquema/documentación autogenerada de la API de Core (sección "Plataforma"

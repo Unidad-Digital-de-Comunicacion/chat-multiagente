@@ -359,7 +359,7 @@ class ConversacionEtiquetasTests(TestCase):
     def test_resolver_sin_observacion_falla(self):
         response = authenticated_client(self.operador).post(self.url, {"etiqueta": self.resuelto.id})
         self.assertEqual(response.status_code, 400)
-        self.assertIn("observacion", response.data)
+        self.assertIn("observacion", response.data["error"]["detail"])
         self.assertEqual(ConversacionEtiqueta.objects.count(), 0)
 
     def test_resolver_con_observacion_la_crea_tambien(self):

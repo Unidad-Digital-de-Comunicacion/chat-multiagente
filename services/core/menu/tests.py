@@ -40,7 +40,7 @@ class MenuOpcionViewSetTests(TestCase):
         payload = {"texto": "Hablar con un operador", "tipo": MenuOpcion.Tipo.DERIVACION}
         response = authenticated_client(self.admin).post(self.list_url, payload)
         self.assertEqual(response.status_code, 400)
-        self.assertIn("team", response.data)
+        self.assertIn("team", response.data["error"]["detail"])
 
     def test_derivacion_con_equipo_de_otra_organizacion_falla(self):
         team_ajeno = Team.objects.create(organization=self.otra_org, name="Ventas")
@@ -57,7 +57,7 @@ class MenuOpcionViewSetTests(TestCase):
         payload = {"texto": "Horario de atención", "tipo": MenuOpcion.Tipo.RESPUESTA}
         response = authenticated_client(self.admin).post(self.list_url, payload)
         self.assertEqual(response.status_code, 400)
-        self.assertIn("respuesta_texto", response.data)
+        self.assertIn("respuesta_texto", response.data["error"]["detail"])
 
     def test_operador_no_puede_crear_opciones(self):
         payload = {"texto": "Menú", "tipo": MenuOpcion.Tipo.SUBMENU}

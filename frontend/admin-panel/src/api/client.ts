@@ -53,24 +53,30 @@ export class ApiError extends Error {
   }
 }
 
-/** Errores de validación de DRF llegan como `{campo: string[]]}` — único
- * lugar del código que asume esa forma, para no repetir el chequeo de tipo
- * en cada pantalla que hace un POST/PATCH (antes estaba duplicado 11 veces).
- * `err` es lo que cae en un `catch`, TypeScript nunca puede tiparlo más
- * específico que `unknown`. */
+/** Errores de la API llegan como `{"error": {"code", "detail"}}`
+ * (BUENAS-PRACTICAS-API-REST.md §4) — `detail` es un string para la
+ * mayoría de los errores, o `{campo: string[]}` para errores de validación
+ * de DRF. Único lugar del código que asume esa forma, para no repetir el
+ * chequeo de tipo en cada pantalla que hace un POST/PATCH. `err` es lo que
+ * cae en un `catch`, TypeScript nunca puede tiparlo más específico que
+ * `unknown`. */
 // oxlint-disable-next-line anti-slop/no-unknown-parameters
 export function extraerMensajeDeError(err: unknown): string | null {
   if (!(err instanceof ApiError) || !err.data) return null;
 
   // No hay librería de validación de esquemas en este proyecto; este es el
   // único punto que necesita angostar `unknown` a un objeto antes de asumir
-  // la forma de DRF (ver SAFETY abajo).
+  // la forma de la API (ver SAFETY abajo).
   // oxlint-disable-next-line anti-slop/no-runtime-typeof
   if (typeof err.data !== "object") return null;
 
-  // SAFETY: ya confirmamos arriba que `err.data` es un objeto no nulo; DRF
-  // devuelve errores de validación como `{campo: string[]}`.
-  return Object.values(err.data as Record<string, string[]>).flat().join(" ");
+  // SAFETY: ya confirmamos arriba que `err.data` es un objeto no nulo.
+  const detalle = (err.data as { error?: { detail?: unknown } }).error?.detail;
+  if (detalle == null) return null;
+  if (typeof detalle === "string") return detalle;
+
+  // SAFETY: si no es string, DRF lo generó como `{campo: string[]}` (error de validación).
+  return Object.values(detalle as Record<string, string[]>).flat().join(" ");
 }
 
 async function refreshAccessToken(): Promise<boolean> {

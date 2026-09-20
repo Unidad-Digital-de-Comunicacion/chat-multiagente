@@ -50,8 +50,11 @@ class LoginView(TokenObtainPairView):
         if lockout and lockout.is_blocked:
             return Response(
                 {
-                    "detail": "Demasiados intentos fallidos desde esta IP. Probá de nuevo más tarde.",
-                    "blocked_until": lockout.blocked_until,
+                    "error": {
+                        "code": "throttled",
+                        "detail": "Demasiados intentos fallidos desde esta IP. Probá de nuevo más tarde.",
+                        "blocked_until": lockout.blocked_until,
+                    },
                 },
                 status=429,
             )

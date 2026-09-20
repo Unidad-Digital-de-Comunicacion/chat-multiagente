@@ -46,10 +46,10 @@ export default function LoginPage() {
       if (err instanceof ApiError && err.status === 401) {
         setError("Email o contraseña incorrectos.");
       } else if (err instanceof ApiError && err.status === 429) {
-        // SAFETY: el back devuelve `{blocked_until}` en el body del 429 de
-        // login-lockout (ver `authentication.views`).
-        const data = err.data as { blocked_until?: string } | null;
-        const hasta = data?.blocked_until ? ` (hasta ${formatearFechaHora(data.blocked_until)})` : "";
+        // SAFETY: el back devuelve `{error: {blocked_until}}` en el body del
+        // 429 de login-lockout (ver `authentication.views`).
+        const data = err.data as { error?: { blocked_until?: string } } | null;
+        const hasta = data?.error?.blocked_until ? ` (hasta ${formatearFechaHora(data.error.blocked_until)})` : "";
         setError(`Demasiados intentos fallidos desde esta conexión. Probá de nuevo más tarde${hasta}.`);
       } else {
         setError("No se pudo conectar con el servidor.");

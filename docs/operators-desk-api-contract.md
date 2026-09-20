@@ -434,18 +434,34 @@ quien la tiene tomada).
 
 ## 5. Formato de errores
 
-Estándar DRF, igual en todos los endpoints:
+Toda respuesta de error, en todos los endpoints, tiene la misma forma
+(BUENAS-PRACTICAS-API-REST.md §4, implementado en
+`common.exceptions.exception_handler`):
 
-- **400** — validación: `{"campo": ["mensaje"]}` (uno o más campos) o, para
-  un error que no es de un campo puntual, `{"detail": ["mensaje"]}` /
-  `{"non_field_errors": ["mensaje"]}`.
-- **401** — falta o venció el JWT: `{"detail": "..."}`.
-- **403** — autenticado pero sin permiso (ej. un operador tratando de crear
-  un equipo): `{"detail": "..."}`.
-- **404** — no existe, o existe pero es de otra organización (nunca se
-  distingue una cosa de la otra en la respuesta — un operador no debería
-  poder inferir que algo existe en otra organización).
-- **429** — throttle o bloqueo por fuerza bruta (§1).
+```json
+{"error": {"code": "<código de máquina>", "detail": "<mensaje o dict de campos>"}}
+```
+
+`code` es un identificador estable en snake_case para lógica de cliente;
+`detail` es un string para la mayoría de los errores, o un dict
+`{"campo": ["mensaje"]}` cuando el error es de validación de uno o más
+campos de un serializer.
+
+- **400** `validation_error` — validación de campo(s):
+  `{"error": {"code": "validation_error", "detail": {"campo": ["mensaje"]}}}`.
+- **401** `not_authenticated` — falta o venció el JWT:
+  `{"error": {"code": "not_authenticated", "detail": "..."}}`.
+- **403** `permission_denied` — autenticado pero sin permiso (ej. un operador
+  tratando de crear un equipo): `{"error": {"code": "permission_denied", "detail": "..."}}`.
+- **404** `not_found` — no existe, o existe pero es de otra organización
+  (nunca se distingue una cosa de la otra en la respuesta — un operador no
+  debería poder inferir que algo existe en otra organización).
+- **429** `throttled` — throttle general, o bloqueo por fuerza bruta de login
+  (§1), que además incluye `blocked_until`:
+  `{"error": {"code": "throttled", "detail": "...", "blocked_until": "2026-09-20T18:00:00Z"}}`.
+- **500** `internal_error` — bug no controlado; nunca expone el traceback
+  real (queda sólo en el log del servidor):
+  `{"error": {"code": "internal_error", "detail": "Ocurrió un error interno. Volvé a intentar más tarde."}}`.
 
 ## 6. Paginación
 
