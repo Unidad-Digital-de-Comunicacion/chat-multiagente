@@ -1,0 +1,356 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="1610" viewBox="0 0 1800 1610" font-family="Segoe UI, Roboto, Helvetica, Arial, sans-serif">
+<title>UDC Operador: cómo funciona la app Android</title>
+<desc>Pantallas de la app, piezas internas, polling, sesión y servidores con los que se comunica.</desc>
+<defs>
+<marker id="an" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#333333"/></marker>
+<marker id="at" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#00897B"/></marker>
+<marker id="ag" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#9E9E9E"/></marker>
+<marker id="ar" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#C62828"/></marker>
+<marker id="av" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#2E7D32"/></marker>
+<marker id="ap" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#6B4FBB"/></marker>
+</defs>
+<rect width="1800" height="1610" fill="#FAFAFC"/>
+<text x="40" y="48" font-size="28" font-weight="bold" fill="#2B1B5E" text-anchor="start" font-style="normal">UDC Operador · cómo funciona la app Android</text>
+<text x="40" y="78" font-size="14.5" font-weight="normal" fill="#444" text-anchor="start" font-style="normal">La app le habla únicamente a Core (Django). Core decide todo el negocio; Channel Gateway y Meta quedan detrás de Core y la app ni sabe que existen.</text>
+<polyline points="1190,40 1240,40" fill="none" stroke="#333333" stroke-width="2.4" marker-end="url(#an)"/>
+<text x="1250" y="45" font-size="12.5" font-weight="normal" fill="#2B2B33" text-anchor="start" font-style="normal">pedido REST (HTTPS + token)</text>
+<polyline points="1190,64 1240,64" fill="none" stroke="#00897B" stroke-width="2.4" stroke-dasharray="7 5" marker-end="url(#at)"/>
+<text x="1250" y="69" font-size="12.5" font-weight="normal" fill="#2B2B33" text-anchor="start" font-style="normal">polling (consulta periódica)</text>
+<polyline points="1520,40 1570,40" fill="none" stroke="#9E9E9E" stroke-width="2.4" stroke-dasharray="3 5" marker-end="url(#ag)"/>
+<text x="1580" y="45" font-size="12.5" font-weight="normal" fill="#2B2B33" text-anchor="start" font-style="normal">existe, pero la app no lo usa</text>
+<rect x="30" y="115" width="1090" height="800" rx="26" fill="#F5F1FF" stroke="#6B4FBB" stroke-width="3"/>
+<text x="55" y="148" font-size="16" font-weight="bold" fill="#4527A0" text-anchor="start" font-style="normal">App Android · com.udc.operador · Java (solo Retrofit/OkHttp como librería de red)</text>
+<rect x="55" y="185" width="190" height="152" rx="12" fill="#FFFFFF" stroke="#6B4FBB" stroke-width="2"/>
+<text x="67" y="209" font-size="14.5" font-weight="bold" fill="#2B1B5E" text-anchor="start" font-style="normal">LoginActivity</text>
+<text x="67" y="231" font-size="12.5" font-weight="normal" fill="#2B2B33" text-anchor="start" font-style="normal">email + contraseña;</text>
+<text x="67" y="248" font-size="12.5" font-weight="normal" fill="#2B2B33" text-anchor="start" font-style="normal">guarda access y refresh.</text>
+<text x="67" y="265" font-size="12.5" font-weight="normal" fill="#2B2B33" text-anchor="start" font-style="normal">Con sesión guardada salta</text>
+<text x="67" y="282" font-size="12.5" font-weight="normal" fill="#2B2B33" text-anchor="start" font-style="normal">directo a Principal.</text>
+<text x="67" y="325" font-size="11" font-weight="normal" fill="#6A6A78" text-anchor="start" font-style="italic">POST auth/login</text>
+<rect x="300" y="170" width="400" height="232" rx="12" fill="#FFFFFF" stroke="#6B4FBB" stroke-width="2"/>
+<text x="312" y="194" font-size="14.5" font-weight="bold" fill="#2B1B5E" text-anchor="start" font-style="normal">PrincipalActivity</text>
+<text x="312" y="270" font-size="12.5" font-weight="normal" fill="#2B2B33" text-anchor="start" font-style="normal">Lista: canal · contacto · equipo, etiquetas con su color</text>
+<text x="312" y="287" font-size="12.5" font-weight="normal" fill="#2B2B33" text-anchor="start" font-style="normal">y la última observación (con formato). 25 por página +</text>
+<text x="312" y="304" font-size="12.5" font-weight="normal" fill="#2B2B33" text-anchor="start" font-style="normal">«Ver más».</text>
+<text x="312" y="321" font-size="12.5" font-weight="normal" fill="#2B2B33" text-anchor="start" font-style="normal">Perfil: nombre, apellido, DNI, cambiar contraseña, cerrar</text>
+<text x="312" y="338" font-size="12.5" font-weight="normal" fill="#2B2B33" text-anchor="start" font-style="normal">sesión.</text>
+<text x="312" y="390" font-size="11" font-weight="normal" fill="#6A6A78" text-anchor="start" font-style="italic">GET conversaciones · GET/PATCH users/me</text>
+<rect x="312" y="204" width="112" height="28" rx="14" fill="#EDE7FF" stroke="#6B4FBB"/>
+<text x="368" y="223" font-size="12.5" font-weight="bold" fill="#4527A0" text-anchor="middle" font-style="normal">Sin asignar</text>
+<rect x="436" y="204" width="112" height="28" rx="14" fill="#EDE7FF" stroke="#6B4FBB"/>
+<text x="492" y="223" font-size="12.5" font-weight="bold" fill="#4527A0" text-anchor="middle" font-style="normal">Mías</text>
+<rect x="560" y="204" width="112" height="28" rx="14" fill="#EDE7FF" stroke="#6B4FBB"/>
+<text x="616" y="223" font-size="12.5" font-weight="bold" fill="#4527A0" text-anchor="middle" font-style="normal">Perfil</text>
+<text x="312" y="254" font-size="12" font-weight="normal" fill="#00695C" text-anchor="start" font-style="italic">menú inferior · refresca solo (polling 10 s)</text>
+<rect x="760" y="170" width="330" height="100" rx="12" fill="#FFFFFF" stroke="#6B4FBB" stroke-width="2"/>
+<text x="772" y="194" font-size="14.5" font-weight="bold" fill="#2B1B5E" text-anchor="start" font-style="normal">CambiarPasswordActivity</text>
+<text x="772" y="216" font-size="12.5" font-weight="normal" fill="#2B2B33" text-anchor="start" font-style="normal">Desde Perfil, o forzada si un admin reseteó la</text>
+<text x="772" y="233" font-size="12.5" font-weight="normal" fill="#2B2B33" text-anchor="start" font-style="normal">contraseña (must_change_password).</text>
+<text x="772" y="258" font-size="11" font-weight="normal" fill="#6A6A78" text-anchor="start" font-style="italic">POST users/me/cambiar-password</text>
+<rect x="760" y="300" width="330" height="108" rx="12" fill="#FFFFFF" stroke="#6B4FBB" stroke-width="2"/>
+<text x="772" y="324" font-size="14.5" font-weight="bold" fill="#2B1B5E" text-anchor="start" font-style="normal">CerradasActivity</text>
+<text x="772" y="346" font-size="12.5" font-weight="normal" fill="#2B2B33" text-anchor="start" font-style="normal">Mías ⋮ → «Ver cerradas». Solo lectura: no</text>
+<text x="772" y="363" font-size="12.5" font-weight="normal" fill="#2B2B33" text-anchor="start" font-style="normal">responde ni cierra. Sin polling: no cambian.</text>
+<text x="772" y="396" font-size="11" font-weight="normal" fill="#6A6A78" text-anchor="start" font-style="italic">GET conversaciones?bandeja=cerradas</text>
+<rect x="300" y="450" width="400" height="232" rx="12" fill="#FFFFFF" stroke="#6B4FBB" stroke-width="2"/>
+<text x="312" y="474" font-size="14.5" font-weight="bold" fill="#2B1B5E" text-anchor="start" font-style="normal">ConversacionActivity</text>
+<text x="312" y="496" font-size="12.5" font-weight="normal" fill="#2B2B33" text-anchor="start" font-style="normal">Al abrir toma la conversación (bloqueo de</text>
+<text x="312" y="513" font-size="12.5" font-weight="normal" fill="#2B2B33" text-anchor="start" font-style="normal">2 min).</text>
+<text x="312" y="530" font-size="12.5" font-weight="normal" fill="#2B2B33" text-anchor="start" font-style="normal">Hilo en burbujas con fecha y hora.</text>
+<text x="312" y="547" font-size="12.5" font-weight="normal" fill="#2B2B33" text-anchor="start" font-style="normal">Etiquetas con color y aviso «Existen N</text>
+<text x="312" y="564" font-size="12.5" font-weight="normal" fill="#2B2B33" text-anchor="start" font-style="normal">notas internas».</text>
+<text x="312" y="581" font-size="12.5" font-weight="normal" fill="#2B2B33" text-anchor="start" font-style="normal">Botones Enviar y Cerrar.</text>
+<text x="312" y="598" font-size="12.5" font-weight="normal" fill="#2B2B33" text-anchor="start" font-style="normal">⋮ Etiquetas · Notas internas · Derivar.</text>
+<text x="312" y="656" font-size="11" font-weight="normal" fill="#6A6A78" text-anchor="start" font-style="italic">tomar · mensajes · observaciones · responder · cerrar ·</text>
+<text x="312" y="670" font-size="11" font-weight="normal" fill="#6A6A78" text-anchor="start" font-style="italic">etiquetas · derivar · notas</text>
+<rect x="592" y="480" width="88" height="20" rx="9" fill="#E8E8E8"/>
+<text x="636" y="494" font-size="10.5" font-weight="normal" fill="#111" text-anchor="middle" font-style="normal">contacto</text>
+<rect x="592" y="506" width="88" height="20" rx="9" fill="#D6E4FF"/>
+<text x="636" y="520" font-size="10.5" font-weight="normal" fill="#111" text-anchor="middle" font-style="normal">sistema (bot)</text>
+<rect x="610" y="532" width="80" height="20" rx="9" fill="#6B4FBB"/>
+<text x="650" y="546" font-size="10.5" font-weight="normal" fill="#fff" text-anchor="middle" font-style="normal">operador</text>
+<rect x="600" y="558" width="90" height="20" rx="9" fill="#FFF3C4"/>
+<text x="645" y="572" font-size="10.5" font-weight="normal" fill="#111" text-anchor="middle" font-style="normal">observación</text>
+<text x="592" y="596" font-size="10.5" font-weight="normal" fill="#666" text-anchor="start" font-style="normal">izquierda: contacto</text>
+<text x="592" y="610" font-size="10.5" font-weight="normal" fill="#666" text-anchor="start" font-style="normal">y sistema</text>
+<text x="592" y="626" font-size="10.5" font-weight="normal" fill="#666" text-anchor="start" font-style="normal">derecha: operadores</text>
+<rect x="760" y="470" width="330" height="130" rx="12" fill="#FFFFFF" stroke="#6B4FBB" stroke-width="2"/>
+<text x="772" y="494" font-size="14.5" font-weight="bold" fill="#2B1B5E" text-anchor="start" font-style="normal">NotasInternasActivity</text>
+<text x="772" y="516" font-size="12.5" font-weight="normal" fill="#2B2B33" text-anchor="start" font-style="normal">Hilo entre operadores (nunca llega al contacto)</text>
+<text x="772" y="533" font-size="12.5" font-weight="normal" fill="#2B2B33" text-anchor="start" font-style="normal">y caja para escribir. En una conversación</text>
+<text x="772" y="550" font-size="12.5" font-weight="normal" fill="#2B2B33" text-anchor="start" font-style="normal">cerrada es solo lectura. Polling 5 s.</text>
+<text x="772" y="588" font-size="11" font-weight="normal" fill="#6A6A78" text-anchor="start" font-style="italic">GET/POST conversaciones/{id}/notas-internas</text>
+<polyline points="245,244 300,244" fill="none" stroke="#333333" stroke-width="2.4" marker-end="url(#an)"/>
+<text x="272" y="236" font-size="10.5" font-weight="normal" fill="#444" text-anchor="middle" font-style="normal">login</text>
+<polyline points="700,222 760,222" fill="none" stroke="#333333" stroke-width="2.4" marker-end="url(#an)"/>
+<text x="730" y="214" font-size="10.5" font-weight="normal" fill="#444" text-anchor="middle" font-style="normal">Perfil</text>
+<polyline points="700,350 760,350" fill="none" stroke="#333333" stroke-width="2.4" marker-end="url(#an)"/>
+<text x="730" y="342" font-size="10.5" font-weight="normal" fill="#444" text-anchor="middle" font-style="normal">Mías ⋮</text>
+<polyline points="500,402 500,450" fill="none" stroke="#333333" stroke-width="2.4" marker-end="url(#an)"/>
+<text x="560" y="432" font-size="10.5" font-weight="normal" fill="#444" text-anchor="middle" font-style="normal">tocar una fila</text>
+<polyline points="925,408 925,430 720,430 700,470" fill="none" stroke="#333333" stroke-width="2.4" marker-end="url(#an)"/>
+<text x="830" y="424" font-size="10.5" font-weight="normal" fill="#444" text-anchor="middle" font-style="normal">abre en solo lectura</text>
+<polyline points="700,540 760,540" fill="none" stroke="#333333" stroke-width="2.4" marker-end="url(#an)"/>
+<text x="730" y="532" font-size="10.5" font-weight="normal" fill="#444" text-anchor="middle" font-style="normal">banner / ⋮</text>
+<text x="58" y="693" font-size="14" font-weight="bold" fill="#4527A0" text-anchor="start" font-style="normal">Por dentro: todas las pantallas comparten estas piezas</text>
+<rect x="55" y="705" width="165" height="195" rx="12" fill="#FFFFFF" stroke="#6B4FBB" stroke-width="2"/>
+<text x="67" y="729" font-size="14.5" font-weight="bold" fill="#2B1B5E" text-anchor="start" font-style="normal">ActividadBase</text>
+<text x="67" y="747" font-size="11.5" font-weight="normal" fill="#2B2B33" text-anchor="start" font-style="normal">enSegundoPlano: cada</text>
+<text x="67" y="762.5" font-size="11.5" font-weight="normal" fill="#2B2B33" text-anchor="start" font-style="normal">pedido de red en un</text>
+<text x="67" y="778.0" font-size="11.5" font-weight="normal" fill="#2B2B33" text-anchor="start" font-style="normal">Thread, con aviso</text>
+<text x="67" y="793.5" font-size="11.5" font-weight="normal" fill="#2B2B33" text-anchor="start" font-style="normal">(Toast) si no hay</text>
+<text x="67" y="809.0" font-size="11.5" font-weight="normal" fill="#2B2B33" text-anchor="start" font-style="normal">conexión.</text>
+<text x="67" y="824.5" font-size="11.5" font-weight="normal" fill="#2B2B33" text-anchor="start" font-style="normal">...Bloqueando: el botón</text>
+<text x="67" y="840.0" font-size="11.5" font-weight="normal" fill="#2B2B33" text-anchor="start" font-style="normal">queda en «Enviando…».</text>
+<rect x="235" y="705" width="165" height="195" rx="12" fill="#E0F2F1" stroke="#00897B" stroke-width="2"/>
+<text x="247" y="729" font-size="14.5" font-weight="bold" fill="#00695C" text-anchor="start" font-style="normal">Sondeo</text>
+<text x="247" y="747" font-size="11.5" font-weight="normal" fill="#2B2B33" text-anchor="start" font-style="normal">Repite una tarea</text>
+<text x="247" y="762.5" font-size="11.5" font-weight="normal" fill="#2B2B33" text-anchor="start" font-style="normal">mientras la pantalla</text>
+<text x="247" y="778.0" font-size="11.5" font-weight="normal" fill="#2B2B33" text-anchor="start" font-style="normal">está a la vista.</text>
+<text x="247" y="793.5" font-size="11.5" font-weight="normal" fill="#2B2B33" text-anchor="start" font-style="normal">Silencioso, no apila</text>
+<text x="247" y="809.0" font-size="11.5" font-weight="normal" fill="#2B2B33" text-anchor="start" font-style="normal">corridas, se frena en</text>
+<text x="247" y="824.5" font-size="11.5" font-weight="normal" fill="#2B2B33" text-anchor="start" font-style="normal">onPause.</text>
+<rect x="415" y="705" width="175" height="195" rx="12" fill="#FFFFFF" stroke="#6B4FBB" stroke-width="2"/>
+<text x="427" y="729" font-size="14.5" font-weight="bold" fill="#2B1B5E" text-anchor="start" font-style="normal">ListaConversaciones</text>
+<text x="427" y="747" font-size="11.5" font-weight="normal" fill="#2B2B33" text-anchor="start" font-style="normal">Carga con indicador,</text>
+<text x="427" y="762.5" font-size="11.5" font-weight="normal" fill="#2B2B33" text-anchor="start" font-style="normal">texto de lista vacía y</text>
+<text x="427" y="778.0" font-size="11.5" font-weight="normal" fill="#2B2B33" text-anchor="start" font-style="normal">«Ver más» (25 por</text>
+<text x="427" y="793.5" font-size="11.5" font-weight="normal" fill="#2B2B33" text-anchor="start" font-style="normal">página).</text>
+<text x="427" y="809.0" font-size="11.5" font-weight="normal" fill="#2B2B33" text-anchor="start" font-style="normal">Usada por Sin asignar,</text>
+<text x="427" y="824.5" font-size="11.5" font-weight="normal" fill="#2B2B33" text-anchor="start" font-style="normal">Mías y Cerradas.</text>
+<rect x="605" y="705" width="165" height="195" rx="12" fill="#FFFFFF" stroke="#6B4FBB" stroke-width="2"/>
+<text x="617" y="729" font-size="14.5" font-weight="bold" fill="#2B1B5E" text-anchor="start" font-style="normal">ApiCore (Retrofit)</text>
+<text x="617" y="747" font-size="11.5" font-weight="normal" fill="#2B2B33" text-anchor="start" font-style="normal">Un método por endpoint</text>
+<text x="617" y="762.5" font-size="11.5" font-weight="normal" fill="#2B2B33" text-anchor="start" font-style="normal">de Core: login, perfil,</text>
+<text x="617" y="778.0" font-size="11.5" font-weight="normal" fill="#2B2B33" text-anchor="start" font-style="normal">conversaciones,</text>
+<text x="617" y="793.5" font-size="11.5" font-weight="normal" fill="#2B2B33" text-anchor="start" font-style="normal">etiquetas, notas,</text>
+<text x="617" y="809.0" font-size="11.5" font-weight="normal" fill="#2B2B33" text-anchor="start" font-style="normal">equipos…</text>
+<text x="617" y="824.5" font-size="11.5" font-weight="normal" fill="#2B2B33" text-anchor="start" font-style="normal">Ninguna pantalla arma</text>
+<text x="617" y="840.0" font-size="11.5" font-weight="normal" fill="#2B2B33" text-anchor="start" font-style="normal">URLs.</text>
+<rect x="785" y="705" width="310" height="118" rx="12" fill="#FFFFFF" stroke="#6B4FBB" stroke-width="2"/>
+<text x="797" y="729" font-size="14.5" font-weight="bold" fill="#2B1B5E" text-anchor="start" font-style="normal">HttpCliente (OkHttp)</text>
+<text x="797" y="747" font-size="11.5" font-weight="normal" fill="#2B2B33" text-anchor="start" font-style="normal">Agrega el token a cada pedido.</text>
+<text x="797" y="762.5" font-size="11.5" font-weight="normal" fill="#2B2B33" text-anchor="start" font-style="normal">Si Core contesta 401: renueva el token con el</text>
+<text x="797" y="778.0" font-size="11.5" font-weight="normal" fill="#2B2B33" text-anchor="start" font-style="normal">refresh y reintenta una vez.</text>
+<text x="797" y="793.5" font-size="11.5" font-weight="normal" fill="#2B2B33" text-anchor="start" font-style="normal">Espera hasta 30 s por respuesta.</text>
+<rect x="785" y="833" width="310" height="67" rx="12" fill="#FFFFFF" stroke="#6B4FBB" stroke-width="2"/>
+<text x="797" y="857" font-size="14.5" font-weight="bold" fill="#2B1B5E" text-anchor="start" font-style="normal">Sesion (SharedPreferences)</text>
+<text x="797" y="875" font-size="11.5" font-weight="normal" fill="#2B2B33" text-anchor="start" font-style="normal">access: 30 min · refresh: 7 días · sobrevive a</text>
+<text x="797" y="890.5" font-size="11.5" font-weight="normal" fill="#2B2B33" text-anchor="start" font-style="normal">cerrar la app</text>
+<polyline points="687,682 687,705" fill="none" stroke="#6B4FBB" stroke-width="2.4" marker-end="url(#ap)"/>
+<text x="560" y="698" font-size="10.5" font-weight="normal" fill="#4527A0" text-anchor="middle" font-style="normal">toda pantalla habla con Core solo por ApiCore</text>
+<polyline points="770,764 785,764" fill="none" stroke="#6B4FBB" stroke-width="2.4" marker-end="url(#ap)"/>
+<polyline points="940,823 940,833" fill="none" stroke="#6B4FBB" stroke-width="2.4" marker-end="url(#ap)" marker-start="url(#ap)"/>
+<rect x="1190" y="140" width="275" height="175" rx="12" fill="#F2F2F2" stroke="#9E9E9E" stroke-width="2" stroke-dasharray="7 5"/>
+<text x="1202" y="164" font-size="14.5" font-weight="bold" fill="#616161" text-anchor="start" font-style="normal">Conversation Engine</text>
+<text x="1202" y="186" font-size="12" font-weight="normal" fill="#2B2B33" text-anchor="start" font-style="normal">FastAPI · WebSocket /ws/operador. Existe</text>
+<text x="1202" y="203" font-size="12" font-weight="normal" fill="#2B2B33" text-anchor="start" font-style="normal">y avisa «algo cambió», pero la app NO lo</text>
+<text x="1202" y="220" font-size="12" font-weight="normal" fill="#2B2B33" text-anchor="start" font-style="normal">usa: hace polling (hoy el WebSocket de</text>
+<text x="1202" y="237" font-size="12" font-weight="normal" fill="#2B2B33" text-anchor="start" font-style="normal">producción devuelve 500).</text>
+<rect x="1190" y="400" width="275" height="430" rx="12" fill="#E8F5E9" stroke="#2E7D32" stroke-width="2"/>
+<text x="1202" y="424" font-size="14.5" font-weight="bold" fill="#1B5E20" text-anchor="start" font-style="normal">Core · Django + DRF</text>
+<text x="1202" y="446" font-size="12.5" font-weight="normal" fill="#2B2B33" text-anchor="start" font-style="normal">api.udcchat.com.ar (dev:</text>
+<text x="1202" y="463" font-size="12.5" font-weight="normal" fill="#2B2B33" text-anchor="start" font-style="normal">localhost:8001)</text>
+<text x="1202" y="480" font-size="12.5" font-weight="normal" fill="#2B2B33" text-anchor="start" font-style="normal"></text>
+<text x="1202" y="497" font-size="12.5" font-weight="normal" fill="#2B2B33" text-anchor="start" font-style="normal">Única fuente de verdad del negocio.</text>
+<text x="1202" y="514" font-size="12.5" font-weight="normal" fill="#2B2B33" text-anchor="start" font-style="normal">Todo va scopeado a la organización del</text>
+<text x="1202" y="531" font-size="12.5" font-weight="normal" fill="#2B2B33" text-anchor="start" font-style="normal">JWT.</text>
+<text x="1202" y="548" font-size="12.5" font-weight="normal" fill="#2B2B33" text-anchor="start" font-style="normal"></text>
+<text x="1202" y="565" font-size="12.5" font-weight="normal" fill="#2B2B33" text-anchor="start" font-style="normal">• login y tokens (JWT)</text>
+<text x="1202" y="582" font-size="12.5" font-weight="normal" fill="#2B2B33" text-anchor="start" font-style="normal">• bandejas de conversaciones</text>
+<text x="1202" y="599" font-size="12.5" font-weight="normal" fill="#2B2B33" text-anchor="start" font-style="normal">• bloqueo de 2 min al tomar</text>
+<text x="1202" y="616" font-size="12.5" font-weight="normal" fill="#2B2B33" text-anchor="start" font-style="normal">• etiquetas, observaciones y notas</text>
+<text x="1202" y="633" font-size="12.5" font-weight="normal" fill="#2B2B33" text-anchor="start" font-style="normal">• equipos y derivaciones</text>
+<text x="1202" y="650" font-size="12.5" font-weight="normal" fill="#2B2B33" text-anchor="start" font-style="normal">• menú y horario del bot</text>
+<text x="1202" y="667" font-size="12.5" font-weight="normal" fill="#2B2B33" text-anchor="start" font-style="normal">• permisos por grupo (operadores)</text>
+<ellipse cx="1327" cy="864" rx="80" ry="15" fill="#E8F5E9" stroke="#2E7D32" stroke-width="2"/>
+<path d="M1247,864 L1247,896 A80,15 0 0 0 1407,896 L1407,864" fill="#E8F5E9" stroke="#2E7D32" stroke-width="2"/>
+<text x="1327" y="892" font-size="12.5" font-weight="bold" fill="#1B5E20" text-anchor="middle" font-style="normal">PostgreSQL</text>
+<polyline points="1327,830 1327,851" fill="none" stroke="#2E7D32" stroke-width="2.4" marker-end="url(#av)"/>
+<rect x="1520" y="400" width="250" height="135" rx="12" fill="#E3F0FF" stroke="#1565C0" stroke-width="2"/>
+<text x="1532" y="424" font-size="14.5" font-weight="bold" fill="#0D47A1" text-anchor="start" font-style="normal">Channel Gateway</text>
+<text x="1532" y="446" font-size="12" font-weight="normal" fill="#2B2B33" text-anchor="start" font-style="normal">FastAPI. Recibe los webhooks de Meta</text>
+<text x="1532" y="463" font-size="12" font-weight="normal" fill="#2B2B33" text-anchor="start" font-style="normal">y entrega los mensajes salientes. La</text>
+<text x="1532" y="480" font-size="12" font-weight="normal" fill="#2B2B33" text-anchor="start" font-style="normal">app nunca le habla.</text>
+<rect x="1520" y="590" width="250" height="92" rx="12" fill="#FFF1E0" stroke="#EF6C00" stroke-width="2"/>
+<text x="1532" y="614" font-size="14.5" font-weight="bold" fill="#E65100" text-anchor="start" font-style="normal">Meta</text>
+<text x="1532" y="636" font-size="12.5" font-weight="normal" fill="#2B2B33" text-anchor="start" font-style="normal">WhatsApp · Messenger · Instagram</text>
+<rect x="1520" y="740" width="250" height="92" rx="12" fill="#FFFFFF" stroke="#78909C" stroke-width="2"/>
+<text x="1532" y="764" font-size="14.5" font-weight="bold" fill="#37474F" text-anchor="start" font-style="normal">Contacto</text>
+<text x="1532" y="786" font-size="12.5" font-weight="normal" fill="#2B2B33" text-anchor="start" font-style="normal">La persona que escribe desde su</text>
+<text x="1532" y="803" font-size="12.5" font-weight="normal" fill="#2B2B33" text-anchor="start" font-style="normal">celular.</text>
+<polyline points="1095,752 1190,752" fill="none" stroke="#333333" stroke-width="2.4" marker-end="url(#an)"/>
+<text x="1143" y="742" font-size="11" font-weight="normal" fill="#444" text-anchor="middle" font-style="normal">REST + JWT</text>
+<polyline points="1095,792 1190,792" fill="none" stroke="#00897B" stroke-width="2.4" stroke-dasharray="7 5" marker-end="url(#at)"/>
+<text x="1143" y="812" font-size="11" font-weight="normal" fill="#00695C" text-anchor="middle" font-style="normal">polling</text>
+<polyline points="1120,228 1190,228" fill="none" stroke="#9E9E9E" stroke-width="2.4" stroke-dasharray="3 5" marker-end="url(#ag)"/>
+<text x="1155" y="218" font-size="10.5" font-weight="normal" fill="#757575" text-anchor="middle" font-style="normal">no se usa</text>
+<polyline points="1327,315 1327,400" fill="none" stroke="#9E9E9E" stroke-width="2.4" stroke-dasharray="3 5" marker-end="url(#ag)"/>
+<text x="1385" y="362" font-size="10.5" font-weight="normal" fill="#757575" text-anchor="middle" font-style="normal">eventos (ignorados)</text>
+<polyline points="1465,445 1520,445" fill="none" stroke="#333333" stroke-width="2.4" marker-end="url(#an)"/>
+<text x="1492" y="436" font-size="10.5" font-weight="normal" fill="#444" text-anchor="middle" font-style="normal">responder</text>
+<polyline points="1520,500 1465,500" fill="none" stroke="#333333" stroke-width="2.4" marker-end="url(#an)"/>
+<text x="1492" y="517" font-size="10.5" font-weight="normal" fill="#444" text-anchor="middle" font-style="normal">entrante</text>
+<polyline points="1645,535 1645,590" fill="none" stroke="#333333" stroke-width="2.4" marker-end="url(#an)" marker-start="url(#an)"/>
+<polyline points="1645,682 1645,740" fill="none" stroke="#333333" stroke-width="2.4" marker-end="url(#an)" marker-start="url(#an)"/>
+<rect x="30" y="940" width="1090" height="352" rx="18" fill="#FFFFFF" stroke="#00897B" stroke-width="2.5"/>
+<text x="50" y="970" font-size="17" font-weight="bold" fill="#00695C" text-anchor="start" font-style="normal">Polling: cada pantalla le pregunta a Core mientras está a la vista</text>
+<rect x="45" y="992" width="1060" height="40" rx="6" fill="#F1F8F7"/>
+<text x="55" y="1009" font-size="12.5" font-weight="bold" fill="#263238" text-anchor="start" font-style="normal">Conversación abierta · cada 5 s</text>
+<text x="55" y="1024" font-size="11" font-weight="normal" fill="#607D8B" text-anchor="start" font-style="normal">mensajes + observaciones + etiquetas + notas</text>
+<circle cx="409.5" cy="1012" r="3.8" fill="#00897B"/>
+<circle cx="439.0" cy="1012" r="3.8" fill="#00897B"/>
+<circle cx="468.5" cy="1012" r="3.8" fill="#00897B"/>
+<circle cx="498.0" cy="1012" r="3.8" fill="#00897B"/>
+<circle cx="527.5" cy="1012" r="3.8" fill="#00897B"/>
+<circle cx="557.0" cy="1012" r="3.8" fill="#00897B"/>
+<circle cx="586.5" cy="1012" r="3.8" fill="#00897B"/>
+<circle cx="616.0" cy="1012" r="3.8" fill="#00897B"/>
+<circle cx="645.5" cy="1012" r="3.8" fill="#00897B"/>
+<circle cx="675.0" cy="1012" r="3.8" fill="#00897B"/>
+<circle cx="704.5" cy="1012" r="3.8" fill="#00897B"/>
+<circle cx="734.0" cy="1012" r="3.8" fill="#00897B"/>
+<circle cx="763.5" cy="1012" r="3.8" fill="#00897B"/>
+<circle cx="793.0" cy="1012" r="3.8" fill="#00897B"/>
+<circle cx="822.5" cy="1012" r="3.8" fill="#00897B"/>
+<circle cx="852.0" cy="1012" r="3.8" fill="#00897B"/>
+<circle cx="881.5" cy="1012" r="3.8" fill="#00897B"/>
+<circle cx="911.0" cy="1012" r="3.8" fill="#00897B"/>
+<circle cx="940.5" cy="1012" r="3.8" fill="#00897B"/>
+<circle cx="970.0" cy="1012" r="3.8" fill="#00897B"/>
+<circle cx="999.5" cy="1012" r="3.8" fill="#00897B"/>
+<circle cx="1029.0" cy="1012" r="3.8" fill="#00897B"/>
+<circle cx="1058.5" cy="1012" r="3.8" fill="#00897B"/>
+<circle cx="1088.0" cy="1012" r="3.8" fill="#00897B"/>
+<text x="55" y="1051" font-size="12.5" font-weight="bold" fill="#263238" text-anchor="start" font-style="normal">Notas internas · cada 5 s</text>
+<text x="55" y="1066" font-size="11" font-weight="normal" fill="#607D8B" text-anchor="start" font-style="normal">GET notas-internas</text>
+<circle cx="409.5" cy="1054" r="3.8" fill="#00897B"/>
+<circle cx="439.0" cy="1054" r="3.8" fill="#00897B"/>
+<circle cx="468.5" cy="1054" r="3.8" fill="#00897B"/>
+<circle cx="498.0" cy="1054" r="3.8" fill="#00897B"/>
+<circle cx="527.5" cy="1054" r="3.8" fill="#00897B"/>
+<circle cx="557.0" cy="1054" r="3.8" fill="#00897B"/>
+<circle cx="586.5" cy="1054" r="3.8" fill="#00897B"/>
+<circle cx="616.0" cy="1054" r="3.8" fill="#00897B"/>
+<circle cx="645.5" cy="1054" r="3.8" fill="#00897B"/>
+<circle cx="675.0" cy="1054" r="3.8" fill="#00897B"/>
+<circle cx="704.5" cy="1054" r="3.8" fill="#00897B"/>
+<circle cx="734.0" cy="1054" r="3.8" fill="#00897B"/>
+<circle cx="763.5" cy="1054" r="3.8" fill="#00897B"/>
+<circle cx="793.0" cy="1054" r="3.8" fill="#00897B"/>
+<circle cx="822.5" cy="1054" r="3.8" fill="#00897B"/>
+<circle cx="852.0" cy="1054" r="3.8" fill="#00897B"/>
+<circle cx="881.5" cy="1054" r="3.8" fill="#00897B"/>
+<circle cx="911.0" cy="1054" r="3.8" fill="#00897B"/>
+<circle cx="940.5" cy="1054" r="3.8" fill="#00897B"/>
+<circle cx="970.0" cy="1054" r="3.8" fill="#00897B"/>
+<circle cx="999.5" cy="1054" r="3.8" fill="#00897B"/>
+<circle cx="1029.0" cy="1054" r="3.8" fill="#00897B"/>
+<circle cx="1058.5" cy="1054" r="3.8" fill="#00897B"/>
+<circle cx="1088.0" cy="1054" r="3.8" fill="#00897B"/>
+<rect x="45" y="1076" width="1060" height="40" rx="6" fill="#F1F8F7"/>
+<text x="55" y="1093" font-size="12.5" font-weight="bold" fill="#263238" text-anchor="start" font-style="normal">Lista Sin asignar / Mías · cada 10 s</text>
+<text x="55" y="1108" font-size="11" font-weight="normal" fill="#607D8B" text-anchor="start" font-style="normal">GET conversaciones (todas las páginas cargadas)</text>
+<circle cx="439.0" cy="1096" r="4.6" fill="#00695C"/>
+<circle cx="498.0" cy="1096" r="4.6" fill="#00695C"/>
+<circle cx="557.0" cy="1096" r="4.6" fill="#00695C"/>
+<circle cx="616.0" cy="1096" r="4.6" fill="#00695C"/>
+<circle cx="675.0" cy="1096" r="4.6" fill="#00695C"/>
+<circle cx="734.0" cy="1096" r="4.6" fill="#00695C"/>
+<circle cx="793.0" cy="1096" r="4.6" fill="#00695C"/>
+<circle cx="852.0" cy="1096" r="4.6" fill="#00695C"/>
+<circle cx="911.0" cy="1096" r="4.6" fill="#00695C"/>
+<circle cx="970.0" cy="1096" r="4.6" fill="#00695C"/>
+<circle cx="1029.0" cy="1096" r="4.6" fill="#00695C"/>
+<circle cx="1088.0" cy="1096" r="4.6" fill="#00695C"/>
+<text x="55" y="1135" font-size="12.5" font-weight="bold" fill="#263238" text-anchor="start" font-style="normal">Renovar bloqueo · cada 60 s</text>
+<text x="55" y="1150" font-size="11" font-weight="normal" fill="#607D8B" text-anchor="start" font-style="normal">POST tomar (el bloqueo dura 2 min)</text>
+<circle cx="734.0" cy="1138" r="7" fill="#6B4FBB"/>
+<circle cx="1088.0" cy="1138" r="7" fill="#6B4FBB"/>
+<rect x="45" y="1160" width="1060" height="40" rx="6" fill="#F1F8F7"/>
+<text x="55" y="1177" font-size="12.5" font-weight="bold" fill="#263238" text-anchor="start" font-style="normal">Cerradas · sin polling</text>
+<text x="55" y="1192" font-size="11" font-weight="normal" fill="#607D8B" text-anchor="start" font-style="normal">no cambian</text>
+<text x="386" y="1184" font-size="11.5" font-weight="normal" fill="#9E9E9E" text-anchor="start" font-style="italic">— ninguna consulta automática —</text>
+<line x1="380" y1="1208" x2="1092" y2="1208" stroke="#607D8B" stroke-width="1.5"/>
+<line x1="380.0" y1="1208" x2="380.0" y2="1214" stroke="#607D8B"/>
+<text x="380.0" y="1228" font-size="10.5" font-weight="normal" fill="#607D8B" text-anchor="middle" font-style="normal">0 s</text>
+<line x1="439.0" y1="1208" x2="439.0" y2="1214" stroke="#607D8B"/>
+<text x="439.0" y="1228" font-size="10.5" font-weight="normal" fill="#607D8B" text-anchor="middle" font-style="normal">10 s</text>
+<line x1="498.0" y1="1208" x2="498.0" y2="1214" stroke="#607D8B"/>
+<text x="498.0" y="1228" font-size="10.5" font-weight="normal" fill="#607D8B" text-anchor="middle" font-style="normal">20 s</text>
+<line x1="557.0" y1="1208" x2="557.0" y2="1214" stroke="#607D8B"/>
+<text x="557.0" y="1228" font-size="10.5" font-weight="normal" fill="#607D8B" text-anchor="middle" font-style="normal">30 s</text>
+<line x1="616.0" y1="1208" x2="616.0" y2="1214" stroke="#607D8B"/>
+<text x="616.0" y="1228" font-size="10.5" font-weight="normal" fill="#607D8B" text-anchor="middle" font-style="normal">40 s</text>
+<line x1="675.0" y1="1208" x2="675.0" y2="1214" stroke="#607D8B"/>
+<text x="675.0" y="1228" font-size="10.5" font-weight="normal" fill="#607D8B" text-anchor="middle" font-style="normal">50 s</text>
+<line x1="734.0" y1="1208" x2="734.0" y2="1214" stroke="#607D8B"/>
+<text x="734.0" y="1228" font-size="10.5" font-weight="normal" fill="#607D8B" text-anchor="middle" font-style="normal">60 s</text>
+<line x1="793.0" y1="1208" x2="793.0" y2="1214" stroke="#607D8B"/>
+<text x="793.0" y="1228" font-size="10.5" font-weight="normal" fill="#607D8B" text-anchor="middle" font-style="normal">70 s</text>
+<line x1="852.0" y1="1208" x2="852.0" y2="1214" stroke="#607D8B"/>
+<text x="852.0" y="1228" font-size="10.5" font-weight="normal" fill="#607D8B" text-anchor="middle" font-style="normal">80 s</text>
+<line x1="911.0" y1="1208" x2="911.0" y2="1214" stroke="#607D8B"/>
+<text x="911.0" y="1228" font-size="10.5" font-weight="normal" fill="#607D8B" text-anchor="middle" font-style="normal">90 s</text>
+<line x1="970.0" y1="1208" x2="970.0" y2="1214" stroke="#607D8B"/>
+<text x="970.0" y="1228" font-size="10.5" font-weight="normal" fill="#607D8B" text-anchor="middle" font-style="normal">100 s</text>
+<line x1="1029.0" y1="1208" x2="1029.0" y2="1214" stroke="#607D8B"/>
+<text x="1029.0" y="1228" font-size="10.5" font-weight="normal" fill="#607D8B" text-anchor="middle" font-style="normal">110 s</text>
+<line x1="1088.0" y1="1208" x2="1088.0" y2="1214" stroke="#607D8B"/>
+<text x="1088.0" y="1228" font-size="10.5" font-weight="normal" fill="#607D8B" text-anchor="middle" font-style="normal">120 s</text>
+<line x1="1088.0" y1="992" x2="1088.0" y2="1208" stroke="#C62828" stroke-width="2" stroke-dasharray="6 5"/>
+<text x="1082.0" y="1240" font-size="11" font-weight="bold" fill="#C62828" text-anchor="end" font-style="normal">a los 120 s sin renovar, el bloqueo vence</text>
+<text x="50" y="1262" font-size="12" font-weight="normal" fill="#37474F" text-anchor="start" font-style="normal">• Todo se detiene en onPause (app en segundo plano) y vuelve en onResume.</text>
+<text x="50" y="1280" font-size="12" font-weight="normal" fill="#37474F" text-anchor="start" font-style="normal">• Si la consulta anterior sigue en curso (red lenta) se salta ese ciclo; los errores de red no muestran avisos.</text>
+<text x="600" y="1262" font-size="12" font-weight="normal" fill="#37474F" text-anchor="start" font-style="normal">• Al volver de otra pantalla (ej. Notas) refresca ya, sin esperar el ciclo.</text>
+<rect x="1150" y="940" width="620" height="352" rx="18" fill="#FFFFFF" stroke="#C62828" stroke-width="2.5"/>
+<text x="1170" y="970" font-size="17" font-weight="bold" fill="#B71C1C" text-anchor="start" font-style="normal">Sesión: qué pasa cuando vence el token</text>
+<rect x="1170" y="988" width="580" height="44" rx="9" fill="#FFFFFF" stroke="#607D8B" stroke-width="2"/>
+<text x="1184" y="1007" font-size="12.5" font-weight="normal" fill="#2B2B33" text-anchor="start" font-style="normal">1  Pedido a Core con «Authorization: Bearer &lt;access&gt;».</text>
+<polyline points="1460,1032 1460,1044" fill="none" stroke="#607D8B" stroke-width="2" marker-end="url(#an)"/>
+<rect x="1170" y="1044" width="580" height="44" rx="9" fill="#FFEBEE" stroke="#C62828" stroke-width="2"/>
+<text x="1184" y="1063" font-size="12.5" font-weight="normal" fill="#2B2B33" text-anchor="start" font-style="normal">2  Core contesta 401: el access venció (dura 30 min).</text>
+<polyline points="1460,1088 1460,1100" fill="none" stroke="#C62828" stroke-width="2" marker-end="url(#ar)"/>
+<rect x="1170" y="1100" width="580" height="44" rx="9" fill="#FFFFFF" stroke="#6B4FBB" stroke-width="2"/>
+<text x="1184" y="1119" font-size="12.5" font-weight="normal" fill="#2B2B33" text-anchor="start" font-style="normal">3  OkHttp pide POST auth/refresh con el refresh (dura 7 días).</text>
+<polyline points="1460,1144 1460,1156" fill="none" stroke="#6B4FBB" stroke-width="2" marker-end="url(#an)"/>
+<rect x="1170" y="1156" width="580" height="44" rx="9" fill="#E8F5E9" stroke="#2E7D32" stroke-width="2"/>
+<text x="1184" y="1175" font-size="12.5" font-weight="normal" fill="#2B2B33" text-anchor="start" font-style="normal">4  Guarda el access nuevo y reintenta el pedido, una sola vez.</text>
+<polyline points="1460,1200 1460,1212" fill="none" stroke="#2E7D32" stroke-width="2" marker-end="url(#an)"/>
+<rect x="1170" y="1212" width="580" height="50" rx="9" fill="#FFF3E0" stroke="#EF6C00" stroke-width="2"/>
+<text x="1184" y="1231" font-size="12.5" font-weight="normal" fill="#2B2B33" text-anchor="start" font-style="normal">5  Si el refresh también venció: el 401 llega a la pantalla, Principal borra la</text>
+<text x="1184" y="1247" font-size="12.5" font-weight="normal" fill="#2B2B33" text-anchor="start" font-style="normal">sesión y abre el Login.</text>
+<rect x="30" y="1318" width="1740" height="262" rx="18" fill="#FFFFFF" stroke="#6B4FBB" stroke-width="2.5"/>
+<text x="50" y="1350" font-size="17" font-weight="bold" fill="#4527A0" text-anchor="start" font-style="normal">Reglas de negocio: las decide Core, la app solo las muestra</text>
+<rect x="45" y="1368" width="412" height="196" rx="12" fill="#F8F5FF" stroke="#B39DDB" stroke-width="1.5"/>
+<text x="57" y="1392" font-size="14.5" font-weight="bold" fill="#4527A0" text-anchor="start" font-style="normal">Bandejas</text>
+<text x="57" y="1412" font-size="12" font-weight="normal" fill="#2B2B33" text-anchor="start" font-style="normal">• Sin asignar: conversaciones abiertas sin operador, o cuyo</text>
+<text x="57" y="1428" font-size="12" font-weight="normal" fill="#2B2B33" text-anchor="start" font-style="normal">bloqueo ya venció.</text>
+<text x="57" y="1444" font-size="12" font-weight="normal" fill="#2B2B33" text-anchor="start" font-style="normal">• Mías: abiertas asignadas a vos.</text>
+<text x="57" y="1460" font-size="12" font-weight="normal" fill="#2B2B33" text-anchor="start" font-style="normal">• Cerradas: las cerradas que tenías asignadas (solo lectura;</text>
+<text x="57" y="1476" font-size="12" font-weight="normal" fill="#2B2B33" text-anchor="start" font-style="normal">todavía no se pueden reabrir).</text>
+<text x="57" y="1492" font-size="12" font-weight="normal" fill="#2B2B33" text-anchor="start" font-style="normal">• Cada lista trae 25 por página.</text>
+<rect x="477" y="1368" width="412" height="196" rx="12" fill="#F8F5FF" stroke="#B39DDB" stroke-width="1.5"/>
+<text x="489" y="1392" font-size="14.5" font-weight="bold" fill="#4527A0" text-anchor="start" font-style="normal">Bloqueo de 2 minutos</text>
+<text x="489" y="1412" font-size="12" font-weight="normal" fill="#2B2B33" text-anchor="start" font-style="normal">• Abrir una conversación la toma para vos y nadie más puede</text>
+<text x="489" y="1428" font-size="12" font-weight="normal" fill="#2B2B33" text-anchor="start" font-style="normal">tomarla.</text>
+<text x="489" y="1444" font-size="12" font-weight="normal" fill="#2B2B33" text-anchor="start" font-style="normal">• Responder y la renovación automática cada 60 s extienden el</text>
+<text x="489" y="1460" font-size="12" font-weight="normal" fill="#2B2B33" text-anchor="start" font-style="normal">bloqueo.</text>
+<text x="489" y="1476" font-size="12" font-weight="normal" fill="#2B2B33" text-anchor="start" font-style="normal">• Si otro operador la tomó cuando venció, Core contesta 400:</text>
+<text x="489" y="1492" font-size="12" font-weight="normal" fill="#2B2B33" text-anchor="start" font-style="normal">la app avisa y cierra la pantalla.</text>
+<rect x="909" y="1368" width="412" height="196" rx="12" fill="#F8F5FF" stroke="#B39DDB" stroke-width="1.5"/>
+<text x="921" y="1392" font-size="14.5" font-weight="bold" fill="#4527A0" text-anchor="start" font-style="normal">Etiquetas y derivar</text>
+<text x="921" y="1412" font-size="12" font-weight="normal" fill="#2B2B33" text-anchor="start" font-style="normal">• Las etiquetas de sistema son excluyentes entre sí. Resuelto,</text>
+<text x="921" y="1428" font-size="12" font-weight="normal" fill="#2B2B33" text-anchor="start" font-style="normal">Rechazado y En pausa exigen una observación.</text>
+<text x="921" y="1444" font-size="12" font-weight="normal" fill="#2B2B33" text-anchor="start" font-style="normal">• Los colores de cada etiqueta vienen de Core.</text>
+<text x="921" y="1460" font-size="12" font-weight="normal" fill="#2B2B33" text-anchor="start" font-style="normal">• Derivar la deja sin operador en otro equipo y exige un</text>
+<text x="921" y="1476" font-size="12" font-weight="normal" fill="#2B2B33" text-anchor="start" font-style="normal">motivo.</text>
+<rect x="1341" y="1368" width="412" height="196" rx="12" fill="#F8F5FF" stroke="#B39DDB" stroke-width="1.5"/>
+<text x="1353" y="1392" font-size="14.5" font-weight="bold" fill="#4527A0" text-anchor="start" font-style="normal">Mensajes y notas</text>
+<text x="1353" y="1412" font-size="12" font-weight="normal" fill="#2B2B33" text-anchor="start" font-style="normal">• Responder: Core guarda el mensaje y se lo pide a Channel</text>
+<text x="1353" y="1428" font-size="12" font-weight="normal" fill="#2B2B33" text-anchor="start" font-style="normal">Gateway → Meta → contacto.</text>
+<text x="1353" y="1444" font-size="12" font-weight="normal" fill="#2B2B33" text-anchor="start" font-style="normal">• Si no se entrega (entregado: false) la app avisa igual.</text>
+<text x="1353" y="1460" font-size="12" font-weight="normal" fill="#2B2B33" text-anchor="start" font-style="normal">• Las notas internas y las observaciones nunca salen hacia el</text>
+<text x="1353" y="1476" font-size="12" font-weight="normal" fill="#2B2B33" text-anchor="start" font-style="normal">contacto.</text>
+<text x="1353" y="1492" font-size="12" font-weight="normal" fill="#2B2B33" text-anchor="start" font-style="normal">• Formato: **negrita** _cursiva_ ~tachado~ `mono`.</text>
+</svg>
