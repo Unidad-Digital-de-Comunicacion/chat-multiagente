@@ -8,5 +8,5 @@ package com.udc.operador;
  * "http://10.0.2.2:8001" (emulador) o la IP LAN de la PC (celular físico).
  */
 public class Config {
-    public static final String BASE_URL = "https://api.udcchat.com.ar";
+    public static final String BASE_URL = "https://api.udcchat.com.ar"; // https://api.udcchat.com.ar
 }

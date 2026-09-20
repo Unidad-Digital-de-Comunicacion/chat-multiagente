@@ -14,7 +14,8 @@ import org.json.JSONObject;
 /**
  * Pantalla de login. Le pega de verdad a Core (POST /api/auth/login/,
  * contrato §1) y, si el usuario/contraseña son correctos, guarda los dos
- * JWT que devuelve con {@link Sesion} y abre la bandeja de conversaciones.
+ * JWT que devuelve con {@link Sesion} y abre la pantalla principal. Si ya
+ * hay una sesión guardada, salta directo a la pantalla principal.
  */
 public class LoginActivity extends AppCompatActivity {
 
@@ -28,6 +29,13 @@ public class LoginActivity extends AppCompatActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+
+        // Si ya hay una sesión guardada no hace falta volver a loguearse.
+        if (Sesion.obtenerAccess(this) != null) {
+            abrirPrincipal();
+            return;
+        }
+
         setContentView(R.layout.activity_login);
 
         editUsuario = findViewById(R.id.editUsuario);
@@ -73,6 +81,7 @@ public class LoginActivity extends AppCompatActivity {
                 runOnUiThread(() -> onLoginExitoso(access, refresh));
             } else {
                 runOnUiThread(() -> onLoginError("Usuario o contraseña incorrectos"));
+                Log.d(TAG, "Login -> código " + respuesta.cuerpo);
             }
         } catch (Exception e) {
             // Ej.: Core apagado, sin conexión, IP mal escrita, etc.
@@ -85,7 +94,11 @@ public class LoginActivity extends AppCompatActivity {
 
     private void onLoginExitoso(String access, String refresh) {
         Sesion.guardarTokens(this, access, refresh);
-        startActivity(new Intent(this, BandejaActivity.class));
+        abrirPrincipal();
+    }
+
+    private void abrirPrincipal() {
+        startActivity(new Intent(this, PrincipalActivity.class));
         finish();
     }
 

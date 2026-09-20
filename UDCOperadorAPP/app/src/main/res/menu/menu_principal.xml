@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Menú inferior de la pantalla principal: los ids los usa PrincipalActivity para saber qué mostrar. -->
+<menu xmlns:android="http://schemas.android.com/apk/res/android">
+    <item
+        android:id="@+id/menu_sin_asignar"
+        android:icon="@drawable/ic_sin_asignar"
+        android:title="@string/menu_sin_asignar" />
+    <item
+        android:id="@+id/menu_mias"
+        android:icon="@drawable/ic_mias"
+        android:title="@string/menu_mias" />
+    <item
+        android:id="@+id/menu_perfil"
+        android:icon="@drawable/ic_perfil"
+        android:title="@string/menu_perfil" />
+</menu>

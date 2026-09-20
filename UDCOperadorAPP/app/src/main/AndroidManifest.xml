@@ -27,12 +27,17 @@
         </activity>
 
         <activity
-            android:name=".BandejaActivity"
+            android:name=".PrincipalActivity"
+            android:exported="false" />
+
+        <activity
+            android:name=".CambiarPasswordActivity"
             android:exported="false" />
 
         <activity
             android:name=".ConversacionActivity"
-            android:exported="false" />
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize" />
 
     </application>
 
