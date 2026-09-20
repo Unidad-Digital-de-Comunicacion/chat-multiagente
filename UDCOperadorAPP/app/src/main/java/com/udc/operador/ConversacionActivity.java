@@ -93,6 +93,8 @@ public class ConversacionActivity extends AppCompatActivity {
     private boolean soloLectura;
     private ListView listaMensajes;
     private TextView textEtiquetas;
+    private TextView textNotas;
+    private boolean yaMostrada;
     private EditText editMensaje;
     private Button botonEnviar;
     private Button botonCerrar;
@@ -113,6 +115,8 @@ public class ConversacionActivity extends AppCompatActivity {
         adaptadorMensajes = new ArrayAdapter<>(this, android.R.layout.simple_list_item_1, lineasMostradas);
         listaMensajes.setAdapter(adaptadorMensajes);
         textEtiquetas = findViewById(R.id.textEtiquetas);
+        textNotas = findViewById(R.id.textNotas);
+        textNotas.setOnClickListener(v -> abrirNotas());
         editMensaje = findViewById(R.id.editMensaje);
         botonEnviar = findViewById(R.id.botonEnviar);
         botonCerrar = findViewById(R.id.botonCerrar);
@@ -136,6 +140,12 @@ public class ConversacionActivity extends AppCompatActivity {
     @Override
     protected void onResume() {
         super.onResume();
+        // Al volver de otra pantalla (ej. las notas internas) se actualiza lo que pudo haber cambiado.
+        // La primera vez no: ya se está cargando todo desde onCreate.
+        if (yaMostrada) {
+            refrescarEnSilencio();
+        }
+        yaMostrada = true;
         if (!soloLectura) {
             manejador.removeCallbacks(sondeo);
             manejador.postDelayed(sondeo, INTERVALO_SONDEO_MS);
@@ -194,6 +204,10 @@ public class ConversacionActivity extends AppCompatActivity {
             mostrarEtiquetas();
             return true;
         }
+        if (item.getItemId() == R.id.menu_notas) {
+            abrirNotas();
+            return true;
+        }
         if (item.getItemId() == R.id.menu_derivar) {
             mostrarEquipos();
             return true;
@@ -238,6 +252,24 @@ public class ConversacionActivity extends AppCompatActivity {
             textEtiquetas.setText(texto);
             textEtiquetas.setVisibility(texto.length() == 0 ? View.GONE : View.VISIBLE);
         });
+    }
+
+    /** Bloqueante: si la conversación tiene notas internas, muestra arriba cuántas son (GET .../notas-internas/). */
+    private void cargarCantidadDeNotas() throws Exception {
+        HttpCliente.Respuesta respuesta = HttpCliente.getAutenticado(this, urlConversacion() + "notas-internas/");
+        if (!respuesta.esExitosa()) {
+            return;
+        }
+        int cantidad = new JSONArray(respuesta.cuerpo).length();
+        runOnUiThread(() -> {
+            textNotas.setText(getResources().getQuantityString(R.plurals.notas_existen, cantidad, cantidad));
+            textNotas.setVisibility(cantidad == 0 ? View.GONE : View.VISIBLE);
+        });
+    }
+
+    /** En una conversación cerrada las notas se pueden leer pero no escribir. */
+    private void abrirNotas() {
+        NotasInternasActivity.abrir(this, conversacionId, getIntent().getStringExtra(EXTRA_TITULO), soloLectura);
     }
 
     /** Lista todas las etiquetas de la organización; las ya aplicadas llevan ✓. Tocar una la aplica o la quita. */
@@ -396,6 +428,7 @@ public class ConversacionActivity extends AppCompatActivity {
                 }
                 cargarMensajes();
                 cargarEtiquetasAplicadas();
+                cargarCantidadDeNotas();
             } catch (Exception e) {
                 Log.e(TAG, "Error tomando la conversación", e);
                 runOnUiThread(() -> {
@@ -468,6 +501,7 @@ public class ConversacionActivity extends AppCompatActivity {
             try {
                 cargarMensajes(false);
                 cargarEtiquetasAplicadas();
+                cargarCantidadDeNotas();
             } catch (Exception e) {
                 Log.e(TAG, "Error en el refresco automático", e);
             }

@@ -36,4 +36,12 @@
     <string name="conversacion_boton_cerrar">Cerrar conversación</string>
     <string name="menu_etiquetas">Etiquetas</string>
     <string name="menu_derivar">Derivar a otro equipo</string>
+    <string name="menu_notas">Notas internas</string>
+    <string name="notas_titulo">Notas internas</string>
+    <string name="notas_hint">Nota para tus compañeros</string>
+    <string name="notas_vacio">Todavía no hay notas internas.</string>
+    <plurals name="notas_existen">
+        <item quantity="one">Existe %d nota interna en esta conversación</item>
+        <item quantity="other">Existen %d notas internas en esta conversación</item>
+    </plurals>
 </resources>
