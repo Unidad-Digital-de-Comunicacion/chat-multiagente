@@ -84,7 +84,17 @@ async def _resolver_canal_real(client: httpx.AsyncClient, canal_url: CanalConfig
         return None
 
 
+# Se registran las dos formas (con y sin `/` final) a propósito: `channels.
+# CanalSerializer.get_webhook_url` arma la URL CON `/` final, y es la que
+# queda pegada en el dashboard de Meta. Sin este segundo registro, FastAPI
+# redirige esa forma a la de sin `/` con un 307 — un bug real en
+# producción confirmó que ese redirect le hace perder a Meta el header
+# `X-Hub-Signature-256` al reintentar, así que el POST reintentado
+# terminaba siempre en 403 "Firma inválida" y el mensaje nunca llegaba a
+# procesarse. Registrar ambas formas explícitas evita el redirect por
+# completo, no depende de qué variante haya quedado pegada en Meta.
 @router.get("/webhooks/{canal_tipo_url}/{canal_uuid}")
+@router.get("/webhooks/{canal_tipo_url}/{canal_uuid}/")
 async def verificar_suscripcion(
     canal_tipo_url: str, canal_uuid: str, request: Request,
     client: httpx.AsyncClient = Depends(get_http_client),
@@ -106,6 +116,7 @@ async def verificar_suscripcion(
 
 
 @router.post("/webhooks/{canal_tipo_url}/{canal_uuid}")
+@router.post("/webhooks/{canal_tipo_url}/{canal_uuid}/")
 async def recibir_evento(
     canal_tipo_url: str, canal_uuid: str, request: Request,
     x_hub_signature_256: str | None = Header(default=None),
@@ -120,7 +131,13 @@ async def recibir_evento(
     # parseado, sin la representación exacta de bytes que firmó Meta.
     raw_body = await request.body()  # noqa: ASF002
     settings = get_settings()
-    if not verificar_firma(raw_body, x_hub_signature_256, settings.meta_app_secret):
+    # El secreto se elige por la URL (`canal_tipo_url`), no por el `object`
+    # real del payload — a esta altura todavía no lo leímos, y de última es
+    # justamente por la URL que Meta distingue de qué app viene cada
+    # webhook cuando Instagram está dado de alta aparte (ver docstring de
+    # `meta_app_secret_instagram` en `config.py`).
+    app_secret = settings.meta_app_secret_instagram if canal_tipo_url == "instagram" else settings.meta_app_secret
+    if not verificar_firma(raw_body, x_hub_signature_256, app_secret):
         raise HTTPException(status_code=403, detail="Firma inválida.")
 
     canal_url = await _canal_o_404(client, canal_uuid)

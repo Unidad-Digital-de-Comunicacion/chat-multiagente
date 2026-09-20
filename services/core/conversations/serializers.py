@@ -72,15 +72,45 @@ class ConversacionSerializer(serializers.ModelSerializer):
     operador_email = serializers.CharField(source="operador.email", read_only=True, default=None)
     team_nombre = serializers.CharField(source="team.name", read_only=True, default=None)
     estado_operativo = serializers.SerializerMethodField()
+    etiquetas = serializers.SerializerMethodField()
+    ultima_observacion = serializers.SerializerMethodField()
 
     class Meta:
         model = Conversacion
         fields = [
             "id", "contact", "canal", "canal_display", "operador", "operador_email", "team",
             "team_nombre", "menu_finalizado", "bloqueada_hasta", "estado", "estado_operativo",
-            "iniciada_at", "cerrada_at", "updated_at",
+            "etiquetas", "ultima_observacion", "iniciada_at", "cerrada_at", "updated_at",
         ]
         read_only_fields = fields
+
+    def get_etiquetas(self, obj):
+        # Shape recortado a propósito (sin `aplicada_por`/`aplicada_at`) —
+        # esto es para pintar chips en un listado, no el detalle completo
+        # que ya da `GET .../etiquetas/` (`ConversacionEtiquetaSerializer`).
+        # `.all()` reusa el `Prefetch` de `ConversacionViewSet.get_queryset`
+        # (select_related con la etiqueta), no dispara una query nueva.
+        return [
+            {
+                "id": aplicada.etiqueta_id, "nombre": aplicada.etiqueta.nombre,
+                "color": aplicada.etiqueta.color, "color_texto": aplicada.etiqueta.color_texto,
+            }
+            for aplicada in obj.etiquetas_aplicadas.all()
+        ]
+
+    def get_ultima_observacion(self, obj):
+        # `.all()` reusa el `Prefetch` (ordenado `-creado_at`) de
+        # `ConversacionViewSet.get_queryset` — tomar la primera alcanza,
+        # sin pedir de nuevo a la base.
+        observaciones = obj.observaciones.all()
+        if not observaciones:
+            return None
+        ultima = observaciones[0]
+        return {
+            "texto": ultima.texto,
+            "operador_email": ultima.operador.email if ultima.operador_id else None,
+            "creado_at": ultima.creado_at,
+        }
 
     def get_estado_operativo(self, obj):
         """Vista rápida de "en qué punto del ciclo de vida está" que no

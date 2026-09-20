@@ -17,9 +17,15 @@ from rest_framework.test import APIClient
 from tags.defaults import asegurar_etiquetas_sistema
 from tags.models import Etiqueta
 
+from channels.models import Canal
+
 from .asignacion import asignar_round_robin
+from .channel_gateway_client import MENSAJE_NO_ENVIADO, enviar_con_reintentos
 from .conversation_engine_client import notificar_evento
-from .models import Contact, Conversacion, ConversacionEtiqueta, ConversacionLog, ConversacionNotaInterna, ConversacionObservacion
+from .models import (
+    Contact, Conversacion, ConversacionEtiqueta, ConversacionLog, ConversacionNotaInterna, ConversacionObservacion,
+    EnvioSaliente,
+)
 
 
 def _service_client(token):
@@ -192,14 +198,14 @@ class ConversacionViewSetTests(TestCase):
         self.assertEqual(response.data[0]["remitente"], "CONTACTO")
         self.assertEqual(response.data[1]["remitente"], "SISTEMA")
 
-    @patch("conversations.views.enviar_mensaje_saliente", return_value=True)
+    @patch("conversations.views.enviar_con_reintentos", return_value=True)
     def test_responder_requiere_haberla_tomado(self, mock_enviar):
         url = reverse("conversacion-responder", args=[self.conversacion.id])
         response = authenticated_client(self.operador).post(url, {"texto": "Hola, ¿en qué te ayudo?"})
         self.assertEqual(response.status_code, 403)
         mock_enviar.assert_not_called()
 
-    @patch("conversations.views.enviar_mensaje_saliente", return_value=True)
+    @patch("conversations.views.enviar_con_reintentos", return_value=True)
     def test_responder_manda_el_mensaje_y_lo_loguea(self, mock_enviar):
         self.conversacion.operador = self.operador
         self.conversacion.save(update_fields=["operador"])
@@ -210,7 +216,7 @@ class ConversacionViewSetTests(TestCase):
         mock_enviar.assert_called_once_with(self.conversacion, "Hola, ¿en qué te ayudo?")
         self.assertEqual(ConversacionLog.objects.filter(remitente="OPERADOR").count(), 1)
 
-    @patch("conversations.views.enviar_mensaje_saliente", return_value=True)
+    @patch("conversations.views.enviar_con_reintentos", return_value=True)
     def test_cerrar_manda_despedida_y_cambia_estado(self, mock_enviar):
         self.conversacion.operador = self.operador
         self.conversacion.save(update_fields=["operador"])
@@ -251,7 +257,7 @@ class ConversacionViewSetTests(TestCase):
         response = authenticated_client(self.operador).get(detail_url)
         self.assertEqual(response.data["estado_operativo"], "tomada")
 
-    @patch("conversations.views.enviar_mensaje_saliente", return_value=True)
+    @patch("conversations.views.enviar_con_reintentos", return_value=True)
     def test_estado_operativo_cerrada(self, mock_enviar):
         self.conversacion.operador = self.operador
         self.conversacion.save(update_fields=["operador"])
@@ -992,3 +998,61 @@ class ConversacionHistorialFiltrosTests(TestCase):
         response = authenticated_client(self.admin).get(self.url, {"canal": "WHATSAPP", "derivada": "true"})
         ids = {f["id"] for f in response.data["results"]}
         self.assertEqual(ids, {self.conv_whatsapp_derivada.id})
+
+
+class EnviarConReintentosTests(TestCase):
+    """`channel_gateway_client.enviar_con_reintentos` — cola de auditoría
+    (`EnvioSaliente`) + hasta 3 intentos con backoff corto. Bug real que
+    motivó esto (2026-09-18/19, ver conversación del proyecto): un bache
+    momentáneo de `CoreNoDisponible` del lado de Channel Gateway hacía que
+    un mensaje de operador quedara logueado en Core pero nunca le llegara
+    de verdad al contacto, sin ningún aviso — acá se verifica que 1-2
+    fallas puntuales se resuelven solas, y que 3 fallas seguidas sí le
+    avisan al operador en su propio hilo."""
+
+    def setUp(self):
+        self.org = make_organization()
+        self.canal = Canal.objects.create(organization=self.org, tipo=Canal.Tipo.WHATSAPP, activo=True, api_key="tok")
+        ServiceToken.objects.create(servicio=ServiceToken.Servicio.CHANNEL_GATEWAY, token="tok-gateway", activo=True)
+        contact = Contact.objects.create(organization=self.org, canal=Canal.Tipo.WHATSAPP, identificador_externo="5491111111111")
+        self.conversacion = Conversacion.objects.create(organization=self.org, contact=contact, canal=Canal.Tipo.WHATSAPP)
+
+    @patch("conversations.channel_gateway_client.time.sleep")
+    @patch("conversations.channel_gateway_client.enviar_mensaje_saliente")
+    def test_exito_al_primer_intento_no_espera_nada(self, mock_enviar, mock_sleep):
+        mock_enviar.return_value = True
+        resultado = enviar_con_reintentos(self.conversacion, "hola")
+        self.assertTrue(resultado)
+        mock_enviar.assert_called_once_with(self.conversacion, "hola")
+        mock_sleep.assert_not_called()
+        envio = EnvioSaliente.objects.get()
+        self.assertEqual(envio.estado, EnvioSaliente.Estado.ENVIADO)
+        self.assertEqual(envio.intentos, 1)
+        self.assertFalse(ConversacionLog.objects.filter(texto=MENSAJE_NO_ENVIADO).exists())
+
+    @patch("conversations.channel_gateway_client.time.sleep")
+    @patch("conversations.channel_gateway_client.enviar_mensaje_saliente")
+    def test_exito_al_segundo_intento_reintenta_una_vez(self, mock_enviar, mock_sleep):
+        mock_enviar.side_effect = [False, True]
+        resultado = enviar_con_reintentos(self.conversacion, "hola")
+        self.assertTrue(resultado)
+        self.assertEqual(mock_enviar.call_count, 2)
+        mock_sleep.assert_called_once_with(1)
+        envio = EnvioSaliente.objects.get()
+        self.assertEqual(envio.estado, EnvioSaliente.Estado.ENVIADO)
+        self.assertEqual(envio.intentos, 2)
+
+    @patch("conversations.channel_gateway_client.time.sleep")
+    @patch("conversations.channel_gateway_client.enviar_mensaje_saliente")
+    def test_tres_fallas_avisa_al_operador_y_marca_fallido(self, mock_enviar, mock_sleep):
+        mock_enviar.return_value = False
+        resultado = enviar_con_reintentos(self.conversacion, "hola")
+        self.assertFalse(resultado)
+        self.assertEqual(mock_enviar.call_count, 3)
+        self.assertEqual(mock_sleep.call_args_list, [((1,),), ((2,),)])
+        envio = EnvioSaliente.objects.get()
+        self.assertEqual(envio.estado, EnvioSaliente.Estado.FALLIDO)
+        self.assertEqual(envio.intentos, 3)
+        aviso = ConversacionLog.objects.get(texto=MENSAJE_NO_ENVIADO)
+        self.assertEqual(aviso.remitente, ConversacionLog.Remitente.SISTEMA)
+        self.assertEqual(aviso.conversacion, self.conversacion)

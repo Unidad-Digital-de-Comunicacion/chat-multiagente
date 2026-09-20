@@ -242,6 +242,15 @@ CONVERSATION_ENGINE_INTERNAL_URL = os.environ.get(
 META_APP_ID = os.environ.get("META_APP_ID", "")
 META_APP_SECRET = os.environ.get("META_APP_SECRET", "")
 
+# Excepción real confirmada en producción (2026-09-18, ver channels/
+# health.py): Instagram puede quedar dado de alta bajo una app de Meta
+# DISTINTA a la de arriba — ahí `/debug_token` (el chequeo de conexión) y la
+# verificación de firma de channel-gateway necesitan las credenciales de ESA
+# otra app, no las de WhatsApp/Messenger. Sin configurar, cae en las de
+# arriba (mismo comportamiento de antes, para el caso común de una sola app).
+META_APP_ID_INSTAGRAM = os.environ.get("META_APP_ID_INSTAGRAM", "") or META_APP_ID
+META_APP_SECRET_INSTAGRAM = os.environ.get("META_APP_SECRET_INSTAGRAM", "") or META_APP_SECRET
+
 # --------------------------------------------------------------------------- #
 # JWT (RS256): Core firma con la clave privada; todos los servicios (FastAPI
 # incluidos) validan con la pública, publicada en /api/auth/jwks/. Evita tener

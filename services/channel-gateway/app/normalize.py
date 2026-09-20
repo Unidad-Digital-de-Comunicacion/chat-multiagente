@@ -24,7 +24,11 @@ En ambos casos se ignora todo lo que no sea texto o una respuesta
 interactiva de un humano (recibos de entrega/lectura, eco de un mensaje
 propio, `status` de WhatsApp) — ampliar acá cuando haga falta soportar
 attachments/plantillas de verdad."""
+import logging
+
 from .schemas import MensajeEntrante
+
+logger = logging.getLogger("channel_gateway.normalize")
 
 
 def normalizar_mensajes(canal_tipo: str, payload: dict) -> list[MensajeEntrante]:
@@ -38,7 +42,15 @@ def _normalizar_messenger_instagram(canal_tipo: str, payload: dict) -> list[Mens
     for entry in payload.get("entry", []):
         for evento in entry.get("messaging", []):
             mensaje = evento.get("message")
-            if not mensaje or mensaje.get("is_echo"):
+            if not mensaje:
+                # Nunca el texto/contenido acá (privacidad) — sólo qué OTRA
+                # clave trajo el evento (`read`/`reaction`/`postback`/etc.),
+                # para poder distinguir "no era un mensaje de verdad" de un
+                # bug real sin loguear nada del contenido.
+                claves = [k for k in evento if k not in ("sender", "recipient", "timestamp")]
+                logger.info("evento de %s sin 'message' (claves=%s) — se ignora", canal_tipo, claves)
+                continue
+            if mensaje.get("is_echo"):
                 continue
             quick_reply = mensaje.get("quick_reply")
             if quick_reply and quick_reply.get("payload"):
@@ -46,6 +58,10 @@ def _normalizar_messenger_instagram(canal_tipo: str, payload: dict) -> list[Mens
             elif "text" in mensaje:
                 texto = mensaje["text"]
             else:
+                logger.info(
+                    "mensaje de %s sin texto/quick_reply (claves=%s) — se ignora",
+                    canal_tipo, [k for k in mensaje if k != "mid"],
+                )
                 continue
             remitente_id = (evento.get("sender") or {}).get("id")
             if not remitente_id:

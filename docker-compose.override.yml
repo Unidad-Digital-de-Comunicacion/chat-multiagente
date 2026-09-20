@@ -1,7 +1,7 @@
 # Overrides de desarrollo: se aplican automáticamente junto con docker-compose.yml
 # (docker compose up ya los mezcla). Montan el código fuente para hot-reload y
-# bajan gunicorn a 1 worker con --reload para no tener que reconstruir la imagen
-# en cada cambio.
+# corren gunicorn con --reload para no tener que reconstruir la imagen en cada
+# cambio.
 
 services:
   core:
@@ -10,7 +10,14 @@ services:
       - ./services/core:/app
     environment:
       - GUNICORN_RELOAD=true
-      - GUNICORN_WORKERS=1
+      # 1 solo worker bloqueaba TODOS los requests mientras uno estaba
+      # esperando el backoff de `conversations.channel_gateway_client.
+      # enviar_con_reintentos` (hasta ~3s por request fallido) — confirmado
+      # en producción 2026-09-19. Con 3, un request lento ya no le come el
+      # único worker disponible a los demás. ~115MB en uso hoy con 1
+      # worker / límite de 512MB del servicio (docker-compose.yml) — 3
+      # entra cómodo.
+      - GUNICORN_WORKERS=3
 
   channel-gateway:
     volumes:

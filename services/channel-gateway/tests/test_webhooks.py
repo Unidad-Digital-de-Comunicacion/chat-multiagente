@@ -271,6 +271,45 @@ def test_objeto_del_payload_manda_al_canal_hermano_de_la_misma_organizacion(clie
     assert llamada_core[3]["channel"] == "INSTAGRAM"  # el canal hermano, no el de la URL
 
 
+def test_handshake_con_barra_final_no_redirige(client, fake_http_client, canal_messenger):
+    # `channels.CanalSerializer.get_webhook_url` arma la URL con `/` final,
+    # y es la que queda pegada en el dashboard de Meta — un bug real en
+    # producción (Instagram) mostró que si esto redirige (307) en vez de
+    # matchear directo, el reintento de Meta pierde `X-Hub-Signature-256`
+    # y el webhook nunca se procesa (ver comentario en `webhooks.py`).
+    fake_http_client.core_get_response = FakeResponse(200, canal_a_json(canal_messenger))
+
+    response = client.get(
+        "/webhooks/messenger/11111111-1111-1111-1111-111111111111/",
+        params={"hub.mode": "subscribe", "hub.verify_token": "el-verify-token-del-canal", "hub.challenge": "1234"},
+        follow_redirects=False,
+    )
+    assert response.status_code == 200
+    assert response.text == "1234"
+
+
+def test_evento_con_barra_final_se_procesa_sin_redirect(client, fake_http_client, canal_messenger):
+    from app.config import get_settings
+    get_settings().meta_app_secret = "app-secret"
+
+    fake_http_client.core_get_response = FakeResponse(200, canal_a_json(canal_messenger))
+    fake_http_client.core_post_response = FakeResponse(200, {"acciones": []})
+
+    body = {"object": "page", "entry": [{"messaging": [{"sender": {"id": "PSID"}, "message": {"text": "hola"}}]}]}
+    raw = json.dumps(body).encode()
+    firma = _firmar(raw, "app-secret")
+
+    response = client.post(
+        "/webhooks/messenger/11111111-1111-1111-1111-111111111111/",
+        content=raw,
+        headers={"X-Hub-Signature-256": firma, "Content-Type": "application/json"},
+        follow_redirects=False,
+    )
+    assert response.status_code == 200, response.text
+    llamada_core = next(c for c in fake_http_client.calls if c[0] == "POST" and "mensaje-entrante" in c[1])
+    assert llamada_core[3]["contact_externo_id"] == "PSID"
+
+
 def test_sin_canal_hermano_configurado_no_rompe(client, fake_http_client, canal_messenger):
     from app.config import get_settings
     get_settings().meta_app_secret = "app-secret"

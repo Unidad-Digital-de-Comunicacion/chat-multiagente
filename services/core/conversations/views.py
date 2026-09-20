@@ -15,7 +15,7 @@ polling. Ver el docstring de `models.py` para qué le falta todavía a esto
 (selección nativa por canal)."""
 from datetime import timedelta
 
-from django.db.models import Q
+from django.db.models import Prefetch, Q
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 
@@ -32,7 +32,7 @@ from rest_framework.views import APIView
 from tags.models import Etiqueta
 from teams.models import Team
 
-from .channel_gateway_client import enviar_mensaje_saliente
+from .channel_gateway_client import enviar_con_reintentos
 from .conversation_engine_client import notificar_evento
 from .menu_engine import accion_menu, procesar_seleccion, render_menu
 from .models import (
@@ -186,7 +186,19 @@ class ConversacionViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, view
 
     def get_queryset(self):
         organization_id = require_organization(self.request)
-        qs = Conversacion.objects.filter(organization_id=organization_id).select_related("contact", "operador", "team")
+        qs = Conversacion.objects.filter(organization_id=organization_id).select_related(
+            "contact", "operador", "team",
+        ).prefetch_related(
+            Prefetch("etiquetas_aplicadas", queryset=ConversacionEtiqueta.objects.select_related("etiqueta")),
+            # Orden propio (más nueva primero), distinto del `ordering` del
+            # modelo (cronológico) — sólo para `ConversacionSerializer.
+            # get_ultima_observacion`, que necesita la última. Un `.filter()`/
+            # `.select_related()`/`.order_by()` posterior sobre este related
+            # manager (como el que ya hace la action `observaciones`) ignora
+            # este prefetch y dispara su propia query, así que esto no
+            # cambia el orden cronológico que ya devuelve esa action.
+            Prefetch("observaciones", queryset=ConversacionObservacion.objects.order_by("-creado_at")),
+        )
         bandeja = self.request.query_params.get("bandeja")
         if bandeja == "sin_asignar":
             # "Sin asignar" de verdad, MÁS lo que quedó asignado (por
@@ -198,7 +210,9 @@ class ConversacionViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, view
                 Q(operador__isnull=True) | Q(bloqueada_hasta__lt=ahora),
             )
         elif bandeja == "mias":
-            qs = qs.filter(operador=self.request.user)
+            qs = qs.filter(operador=self.request.user, estado=Conversacion.Estado.ABIERTA)
+        elif bandeja == "cerradas":
+            qs = qs.filter(operador=self.request.user, estado=Conversacion.Estado.CERRADA)
         return qs
 
     def get_permissions(self):
@@ -289,8 +303,14 @@ class ConversacionViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, view
         if not texto:
             raise ValidationError("Falta el texto.")
 
-        entregado = enviar_mensaje_saliente(conversacion, texto)
+        # Se loguea ANTES de intentar el envío (no después): con reintentos
+        # de por medio (`enviar_con_reintentos` puede tardar unos segundos
+        # si el primer intento falla) el operador tiene que ver su propio
+        # mensaje en el hilo al toque, no recién cuando termina de
+        # reintentar — si los 3 intentos fallan, el aviso "No se pudo
+        # enviar este mensaje." queda logueado aparte, a continuación.
         ConversacionLog.objects.create(conversacion=conversacion, remitente=ConversacionLog.Remitente.OPERADOR, texto=texto)
+        entregado = enviar_con_reintentos(conversacion, texto)
         # Renueva el lock — una conversación activamente atendida no
         # debería quedar disponible para que otro operador la reclame a
         # mitad de camino sólo porque pasaron 2 minutos desde que se tomó.
@@ -313,7 +333,7 @@ class ConversacionViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, view
 
         despedida = BotMessages.para_organizacion(conversacion.contact.organization).valor_o_default("mensaje_despedida")
         if despedida:
-            enviar_mensaje_saliente(conversacion, despedida)
+            enviar_con_reintentos(conversacion, despedida)
             ConversacionLog.objects.create(conversacion=conversacion, remitente=ConversacionLog.Remitente.SISTEMA, texto=despedida)
 
         notificar_evento(

@@ -78,14 +78,22 @@ def _verificar_whatsapp(canal: Canal) -> Canal:
 
 
 def _verificar_messenger_o_instagram(canal: Canal) -> Canal:
-    if not settings.META_APP_ID or not settings.META_APP_SECRET:
+    # Instagram puede vivir bajo una app de Meta distinta a la de Messenger/
+    # WhatsApp (`config.settings.META_APP_ID_INSTAGRAM`, ver su comentario) —
+    # `/debug_token` tiene que autenticarse con las credenciales de la app
+    # que realmente emitió/gestiona ese token, no con las de la otra.
+    if canal.tipo == Canal.Tipo.INSTAGRAM:
+        app_id, app_secret = settings.META_APP_ID_INSTAGRAM, settings.META_APP_SECRET_INSTAGRAM
+    else:
+        app_id, app_secret = settings.META_APP_ID, settings.META_APP_SECRET
+    if not app_id or not app_secret:
         return _guardar(canal, ok=False, detalle="Falta configurar META_APP_ID/META_APP_SECRET en el servidor.")
 
     url = f"{GRAPH_API_BASE}/debug_token"
     try:
         response = requests.get(
             url,
-            params={"input_token": canal.api_key, "access_token": f"{settings.META_APP_ID}|{settings.META_APP_SECRET}"},
+            params={"input_token": canal.api_key, "access_token": f"{app_id}|{app_secret}"},
             timeout=TIMEOUT_SEGUNDOS,
         )
     except requests.RequestException as exc:

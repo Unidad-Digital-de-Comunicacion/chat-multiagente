@@ -198,6 +198,41 @@ class ConversacionObservacion(models.Model):
         return f"{self.conversacion_id}: {self.texto[:40]}"
 
 
+class EnvioSaliente(models.Model):
+    """Auditoría + cola de reintento para un mensaje saliente puntual hacia
+    el contacto (`channel_gateway_client.enviar_con_reintentos`) — Core NO
+    tiene un broker de colas de verdad (Kafka/RabbitMQ/Redis quedan afuera
+    por la sección 1 de docs/CONTEXTO_PROYECTO.md, "stack cerrado"), así
+    que esto es sólo una tabla de Postgres: registra cada intento real de
+    entrega. Los reintentos (hasta 3, con backoff corto) pasan sincrónicos
+    dentro del mismo request de `responder`/`cerrar` — no hay ningún
+    worker en segundo plano que vuelva a levantar un `PENDIENTE` más
+    tarde, así que un `PENDIENTE` que quedó así porque el proceso se cayó
+    a mitad de los reintentos (caso raro) se queda así; no se reprocesa
+    solo."""
+
+    class Estado(models.TextChoices):
+        PENDIENTE = "PENDIENTE", "Pendiente"
+        ENVIADO = "ENVIADO", "Enviado"
+        FALLIDO = "FALLIDO", "Fallido"
+
+    conversacion = models.ForeignKey(Conversacion, on_delete=models.CASCADE, related_name="envios_salientes")
+    texto = models.TextField()
+    estado = models.CharField(max_length=10, choices=Estado.choices, default=Estado.PENDIENTE)
+    intentos = models.PositiveSmallIntegerField(default=0)
+    ultimo_error = models.CharField(max_length=255, blank=True)
+    creado_at = models.DateTimeField(auto_now_add=True)
+    actualizado_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Envío saliente"
+        verbose_name_plural = "Envíos salientes"
+        ordering = ["-creado_at"]
+
+    def __str__(self):
+        return f"Conversación #{self.conversacion_id} — {self.estado} ({self.intentos} intentos)"
+
+
 class ConversacionNotaInterna(models.Model):
     """Hilo de mensajería ENTRE OPERADORES sobre una conversación puntual —
     nunca sale hacia Channel Gateway ni el contacto la ve, a diferencia de
