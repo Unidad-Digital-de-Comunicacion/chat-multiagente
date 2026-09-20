@@ -1,0 +1,21 @@
+{
+  "scheme": "semver2",
+  "base_version": "0.1.0",
+  "branches": {
+    "develop": {
+      "channel": "prerelease",
+      "prerelease_id": "dev",
+      "version_format": "{base_version}-{prerelease_id}.{build}",
+      "build_source": "commits_since_last_tag",
+      "tag_format": "v{version}",
+      "publish": false
+    },
+    "default": {
+      "channel": "stable",
+      "version_format": "{base_version}",
+      "build_source": null,
+      "tag_format": "v{version}",
+      "publish": true
+    }
+  }
+}
