@@ -20,6 +20,13 @@ x-fastapi-common: &fastapi-common
 services:
   db:
     image: postgres:16
+    # `timestamptz` se sigue guardando internamente en UTC siempre (esto no
+    # cambia eso) — sólo cambia con qué huso se MUESTRA en una sesión
+    # (`now()`, `\d` en psql, etc.), que por default de la imagen es UTC.
+    # Django ya convierte a `TIME_ZONE` (`America/Argentina/Buenos_Aires`,
+    # ver settings.py) para lo que sirve a los usuarios — esto es para que
+    # una consulta manual por psql también se lea en hora de Argentina.
+    command: ["postgres", "-c", "timezone=America/Argentina/Buenos_Aires"]
     environment:
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}

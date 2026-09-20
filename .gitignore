@@ -244,3 +244,8 @@ mobile/*/local.properties
 
 # Docker volumes mounted locally (if any)
 services/db/data/
+
+# Dumps de la base — pueden tener datos reales de producción (conversaciones,
+# credenciales cifradas). Nunca al repo: ver incidente 2026-09-20 donde un
+# dump quedó commiteado (purgado del historial con git-filter-repo).
+backups/
