@@ -14,7 +14,7 @@ from channels.models import Canal
 from common.permissions import IsPlatformSuperuser
 from conversations.models import Conversacion
 from conversations.serializers import ConversacionHistorialSerializer
-from conversations.views import PREFETCH_HISTORIAL, aplicar_filtros_historial
+from conversations.views import PREFETCH_HISTORIAL, anotar_ultima_actividad, aplicar_filtros_historial
 from organizations.models import Organization
 from teams.models import Team
 from users.models import User
@@ -171,8 +171,10 @@ class HistorialConversacionesPlatformView(generics.ListAPIView):
     (a diferencia de `ExternalApiHealthView` de acá arriba, que sí
     devuelve todo sin paginar — ahí el total está acotado a 4 canales por
     organización, acá el volumen de conversaciones no tiene techo).
-    Ordenado por organización para que el Admin Panel lo agrupe
-    visualmente sin pedidos aparte por cada una."""
+    Ordenado por organización (para que el Admin Panel lo agrupe
+    visualmente sin pedidos aparte por cada una) y, dentro de cada una, por
+    `ultima_actividad` descendente — ver `conversations.views.
+    anotar_ultima_actividad`."""
 
     serializer_class = ConversacionHistorialSerializer
     permission_classes = [IsPlatformSuperuser]
@@ -180,8 +182,10 @@ class HistorialConversacionesPlatformView(generics.ListAPIView):
     def get_queryset(self):
         queryset = Conversacion.objects.select_related(
             "contact", "operador", "team", "organization",
-        ).prefetch_related(*PREFETCH_HISTORIAL).order_by("organization__name", "-iniciada_at")
-        return aplicar_filtros_historial(queryset, self.request)
+        ).prefetch_related(*PREFETCH_HISTORIAL)
+        queryset = anotar_ultima_actividad(queryset)
+        queryset = aplicar_filtros_historial(queryset, self.request)
+        return queryset.order_by("organization__name", "-ultima_actividad")
 
 
 class ManualDownloadView(APIView):
