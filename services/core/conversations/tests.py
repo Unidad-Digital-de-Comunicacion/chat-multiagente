@@ -863,6 +863,8 @@ class ConversacionHistorialTests(TestCase):
         self.assertIn("derivada_at", fila)
         self.assertIn("etiquetas", fila)
         self.assertIn("observaciones", fila)
+        self.assertIn("ultima_actividad", fila)
+        self.assertIn("vencida_por_inactividad", fila)
         self.assertNotIn("mensajes", fila)
         self.assertNotIn("notas_internas", fila)
 
@@ -927,6 +929,113 @@ class ConversacionHistorialTests(TestCase):
         )
         nueva = Conversacion.objects.get(contact__identificador_externo="222")
         self.assertIsNotNone(nueva.derivada_at)
+
+
+class ConversacionHistorialUltimaActividadTests(TestCase):
+    """`ultima_actividad`/`vencida_por_inactividad` del historial — ver
+    `conversations.views.anotar_ultima_actividad`."""
+
+    def setUp(self):
+        self.org = make_organization()
+        self.admin = make_user(self.org, groups=["administradores"])
+        make_service_token(ServiceToken.Servicio.CHANNEL_GATEWAY, "tok", activo=True)
+        _service_client("tok").post(
+            reverse("bot-mensaje-entrante"),
+            {"organization_id": self.org.id, "channel": "WHATSAPP", "contact_externo_id": "111", "texto": "hola"},
+            format="json",
+        )
+        self.conversacion = Conversacion.objects.get()
+        self.url = reverse("conversacion-historial")
+
+    def _marcar_ultimo_mensaje_hace(self, conversacion, minutos):
+        ConversacionLog.objects.filter(conversacion=conversacion).update(
+            creado_at=timezone.now() - timedelta(minutes=minutos),
+        )
+
+    def test_ultima_actividad_es_el_ultimo_mensaje_no_iniciada_at(self):
+        self._marcar_ultimo_mensaje_hace(self.conversacion, 45)
+        ConversacionLog.objects.create(
+            conversacion=self.conversacion, remitente=ConversacionLog.Remitente.OPERADOR, texto="respuesta",
+        )
+        response = authenticated_client(self.admin).get(self.url)
+        fila = response.data["results"][0]
+        ultima_actividad = parse_datetime(fila["ultima_actividad"])
+        # El mensaje nuevo (recién creado) es el que cuenta, no el de hace 45 min.
+        self.assertGreater(ultima_actividad, timezone.now() - timedelta(minutes=1))
+
+    def test_orden_por_ultima_actividad_mas_reciente_primero(self):
+        contact_2 = Contact.objects.create(organization=self.org, canal="WHATSAPP", identificador_externo="222")
+        conversacion_2 = Conversacion.objects.create(organization=self.org, contact=contact_2, canal="WHATSAPP")
+        ConversacionLog.objects.create(conversacion=conversacion_2, remitente=ConversacionLog.Remitente.CONTACTO, texto="hola")
+        # La del setUp queda "más vieja" que esta segunda.
+        self._marcar_ultimo_mensaje_hace(self.conversacion, 60)
+
+        response = authenticated_client(self.admin).get(self.url)
+        ids = [fila["id"] for fila in response.data["results"]]
+        self.assertEqual(ids, [conversacion_2.id, self.conversacion.id])
+
+    def test_vencida_por_inactividad_false_sin_umbral_configurado(self):
+        # minutos_inactividad_cierre=0 (default) — nunca vencida.
+        self._marcar_ultimo_mensaje_hace(self.conversacion, 999)
+        response = authenticated_client(self.admin).get(self.url)
+        self.assertFalse(response.data["results"][0]["vencida_por_inactividad"])
+
+    def test_vencida_por_inactividad_true_al_superar_el_umbral(self):
+        bot_messages = BotMessages.para_organizacion(self.org)
+        bot_messages.minutos_inactividad_cierre = 30
+        bot_messages.save(update_fields=["minutos_inactividad_cierre"])
+        self._marcar_ultimo_mensaje_hace(self.conversacion, 60)
+
+        response = authenticated_client(self.admin).get(self.url)
+        self.assertTrue(response.data["results"][0]["vencida_por_inactividad"])
+
+    def test_vencida_por_inactividad_false_dentro_del_umbral(self):
+        bot_messages = BotMessages.para_organizacion(self.org)
+        bot_messages.minutos_inactividad_cierre = 30
+        bot_messages.save(update_fields=["minutos_inactividad_cierre"])
+        self._marcar_ultimo_mensaje_hace(self.conversacion, 5)
+
+        response = authenticated_client(self.admin).get(self.url)
+        self.assertFalse(response.data["results"][0]["vencida_por_inactividad"])
+
+    def test_vencida_por_inactividad_false_si_ya_esta_cerrada(self):
+        bot_messages = BotMessages.para_organizacion(self.org)
+        bot_messages.minutos_inactividad_cierre = 30
+        bot_messages.save(update_fields=["minutos_inactividad_cierre"])
+        self._marcar_ultimo_mensaje_hace(self.conversacion, 60)
+        self.conversacion.estado = Conversacion.Estado.CERRADA
+        self.conversacion.cerrada_at = timezone.now()
+        self.conversacion.save(update_fields=["estado", "cerrada_at"])
+
+        response = authenticated_client(self.admin).get(self.url)
+        self.assertFalse(response.data["results"][0]["vencida_por_inactividad"])
+
+    def test_vencida_por_inactividad_false_si_ya_tiene_equipo(self):
+        # Mismo criterio que cerrar_conversaciones_inactivas: derivada a un
+        # equipo (aunque nadie la haya tomado todavía) ya no cuenta como
+        # vencida — nadie la va a cerrar sola en la próxima pasada.
+        team = Team.objects.create(organization=self.org, name="Ventas")
+        self.conversacion.team = team
+        self.conversacion.save(update_fields=["team"])
+        bot_messages = BotMessages.para_organizacion(self.org)
+        bot_messages.minutos_inactividad_cierre = 30
+        bot_messages.save(update_fields=["minutos_inactividad_cierre"])
+        self._marcar_ultimo_mensaje_hace(self.conversacion, 60)
+
+        response = authenticated_client(self.admin).get(self.url)
+        self.assertFalse(response.data["results"][0]["vencida_por_inactividad"])
+
+    def test_vencida_por_inactividad_false_si_ya_tiene_operador(self):
+        operador = make_user(self.org, groups=["operadores"])
+        self.conversacion.operador = operador
+        self.conversacion.save(update_fields=["operador"])
+        bot_messages = BotMessages.para_organizacion(self.org)
+        bot_messages.minutos_inactividad_cierre = 30
+        bot_messages.save(update_fields=["minutos_inactividad_cierre"])
+        self._marcar_ultimo_mensaje_hace(self.conversacion, 60)
+
+        response = authenticated_client(self.admin).get(self.url)
+        self.assertFalse(response.data["results"][0]["vencida_por_inactividad"])
 
 
 class ConversacionHistorialFiltrosTests(TestCase):

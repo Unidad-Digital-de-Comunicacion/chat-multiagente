@@ -1,4 +1,7 @@
+from datetime import timedelta
+
 from channels.models import Canal
+from django.utils import timezone
 from rest_framework import serializers
 from tags.serializers import EtiquetaSerializer
 
@@ -76,7 +79,12 @@ class ConversacionHistorialSerializer(serializers.ModelSerializer):
     `observaciones` sí se incluyen (pedido explícito — auditar quién
     derivó/tomó/etiquetó/dejó una observación es justamente el propósito de
     esta pantalla) reusando los mismos serializers que ya expone `GET
-    .../etiquetas/`/`GET .../observaciones/`, sin recortar nada."""
+    .../etiquetas/`/`GET .../observaciones/`, sin recortar nada.
+
+    `ultima_actividad`/`vencida_por_inactividad` leen las anotaciones que
+    agrega `conversations.views.anotar_ultima_actividad` — este serializer
+    asume que el queryset ya pasó por ahí (las dos vistas que lo usan lo
+    hacen), no las calcula de cero."""
 
     contact = ContactSerializer(read_only=True)
     canal_display = serializers.CharField(source="get_canal_display", read_only=True)
@@ -85,15 +93,32 @@ class ConversacionHistorialSerializer(serializers.ModelSerializer):
     team_nombre = serializers.CharField(source="team.name", read_only=True, default=None)
     etiquetas = ConversacionEtiquetaSerializer(source="etiquetas_aplicadas", many=True, read_only=True)
     observaciones = ConversacionObservacionSerializer(many=True, read_only=True)
+    ultima_actividad = serializers.DateTimeField(read_only=True)
+    vencida_por_inactividad = serializers.SerializerMethodField()
 
     class Meta:
         model = Conversacion
         fields = [
             "id", "organization_id", "organization_nombre", "contact", "canal", "canal_display",
             "team_nombre", "derivada_at", "operador_email", "estado", "iniciada_at", "cerrada_at",
-            "etiquetas", "observaciones",
+            "etiquetas", "observaciones", "ultima_actividad", "vencida_por_inactividad",
         ]
         read_only_fields = fields
+
+    def get_vencida_por_inactividad(self, obj):
+        # Mismo criterio que `cerrar_conversaciones_inactivas` (el que de
+        # verdad la cerraría en la próxima pasada), para que esto nunca
+        # marque "Vencida" algo que en los hechos no se va a cerrar solo:
+        # ABIERTA, con un umbral real configurado (0/NULL = desactivado) Y
+        # sin equipo ni operador — una vez derivada o tomada, se asume que
+        # alguien es responsable y ya no cuenta como vencida.
+        minutos = getattr(obj, "minutos_inactividad_cierre", None)
+        if not minutos or obj.estado != Conversacion.Estado.ABIERTA:
+            return False
+        if obj.team_id or obj.operador_id:
+            return False
+        limite = timezone.now() - timedelta(minutes=minutos)
+        return obj.ultima_actividad < limite
 
 
 class ConversacionSerializer(serializers.ModelSerializer):
