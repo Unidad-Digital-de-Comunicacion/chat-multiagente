@@ -106,14 +106,16 @@ class ConversacionHistorialSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
     def get_vencida_por_inactividad(self, obj):
-        # Sólo tiene sentido para conversaciones todavía ABIERTA (una
-        # CERRADA ya pasó por esto, marcarla de nuevo no aporta nada) y
-        # sólo si la organización configuró un umbral real (0/NULL =
-        # desactivado, mismo criterio que `cerrar_conversaciones_
-        # inactivas`, que es el que de verdad la cerraría en la próxima
-        # pasada).
+        # Mismo criterio que `cerrar_conversaciones_inactivas` (el que de
+        # verdad la cerraría en la próxima pasada), para que esto nunca
+        # marque "Vencida" algo que en los hechos no se va a cerrar solo:
+        # ABIERTA, con un umbral real configurado (0/NULL = desactivado) Y
+        # sin equipo ni operador — una vez derivada o tomada, se asume que
+        # alguien es responsable y ya no cuenta como vencida.
         minutos = getattr(obj, "minutos_inactividad_cierre", None)
         if not minutos or obj.estado != Conversacion.Estado.ABIERTA:
+            return False
+        if obj.team_id or obj.operador_id:
             return False
         limite = timezone.now() - timedelta(minutes=minutos)
         return obj.ultima_actividad < limite

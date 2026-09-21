@@ -1010,6 +1010,33 @@ class ConversacionHistorialUltimaActividadTests(TestCase):
         response = authenticated_client(self.admin).get(self.url)
         self.assertFalse(response.data["results"][0]["vencida_por_inactividad"])
 
+    def test_vencida_por_inactividad_false_si_ya_tiene_equipo(self):
+        # Mismo criterio que cerrar_conversaciones_inactivas: derivada a un
+        # equipo (aunque nadie la haya tomado todavía) ya no cuenta como
+        # vencida — nadie la va a cerrar sola en la próxima pasada.
+        team = Team.objects.create(organization=self.org, name="Ventas")
+        self.conversacion.team = team
+        self.conversacion.save(update_fields=["team"])
+        bot_messages = BotMessages.para_organizacion(self.org)
+        bot_messages.minutos_inactividad_cierre = 30
+        bot_messages.save(update_fields=["minutos_inactividad_cierre"])
+        self._marcar_ultimo_mensaje_hace(self.conversacion, 60)
+
+        response = authenticated_client(self.admin).get(self.url)
+        self.assertFalse(response.data["results"][0]["vencida_por_inactividad"])
+
+    def test_vencida_por_inactividad_false_si_ya_tiene_operador(self):
+        operador = make_user(self.org, groups=["operadores"])
+        self.conversacion.operador = operador
+        self.conversacion.save(update_fields=["operador"])
+        bot_messages = BotMessages.para_organizacion(self.org)
+        bot_messages.minutos_inactividad_cierre = 30
+        bot_messages.save(update_fields=["minutos_inactividad_cierre"])
+        self._marcar_ultimo_mensaje_hace(self.conversacion, 60)
+
+        response = authenticated_client(self.admin).get(self.url)
+        self.assertFalse(response.data["results"][0]["vencida_por_inactividad"])
+
 
 class ConversacionHistorialFiltrosTests(TestCase):
     """Filtros de `GET /conversaciones/historial/` — mismo
