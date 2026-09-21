@@ -54,6 +54,19 @@ function EstadoBadge({ fila }: { fila: ConversacionHistorialRow }) {
   return <span className="badge badge-warning">Pendiente</span>;
 }
 
+function VencidaBadge({ fila }: { fila: ConversacionHistorialRow }) {
+  // Sólo informativo: el cierre real (con su mensaje) lo hace solo, cada
+  // pocos minutos, el comando `cerrar_conversaciones_inactivas` — esto
+  // nada más avisa que va a pasar en la próxima pasada.
+  if (!fila.vencida_por_inactividad) return null;
+
+  return (
+    <span className="badge badge-danger" title="Sin actividad más allá del límite configurado — se va a cerrar sola">
+      Vencida
+    </span>
+  );
+}
+
 function ConversacionRow({ fila }: { fila: ConversacionHistorialRow }) {
   const [abierta, setAbierta] = useState(false);
 
@@ -65,7 +78,8 @@ function ConversacionRow({ fila }: { fila: ConversacionHistorialRow }) {
         </span>
         <span className="historial-row-contacto">{fila.contact.nombre || fila.contact.identificador_externo}</span>
         <span className="text-muted small">{CANAL_TIPO_LABELS[fila.canal]}</span>
-        <span className="text-muted small">{formatearFecha(fila.iniciada_at)}</span>
+        <span className="text-muted small">Última actividad: {formatearFecha(fila.ultima_actividad)}</span>
+        <VencidaBadge fila={fila} />
         <EstadoBadge fila={fila} />
       </button>
 
@@ -132,6 +146,15 @@ function ConversacionRow({ fila }: { fila: ConversacionHistorialRow }) {
             <span className="field-label-sm">Fin</span>
             <div>{fila.estado === "CERRADA" ? formatearFecha(fila.cerrada_at) : "En curso"}</div>
           </div>
+          {fila.estado === "ABIERTA" && (
+            <div>
+              <span className="field-label-sm">Última actividad</span>
+              <div>
+                {formatearFecha(fila.ultima_actividad)}
+                {fila.vencida_por_inactividad && " — ya superó el límite de inactividad, se va a cerrar sola"}
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>
