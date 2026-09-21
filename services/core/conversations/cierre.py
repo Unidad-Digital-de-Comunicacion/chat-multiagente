@@ -11,13 +11,17 @@ from .models import Conversacion, ConversacionLog
 
 
 def cerrar_conversacion(conversacion: Conversacion, *, mensaje: str) -> None:
-    conversacion.estado = Conversacion.Estado.CERRADA
-    conversacion.cerrada_at = timezone.now()
-    conversacion.save(update_fields=["estado", "cerrada_at", "updated_at"])
-
+    # El mensaje de cierre se manda ANTES de marcarla CERRADA (no después):
+    # así, si alguien consulta el estado de la conversación justo en el
+    # medio, nunca la ve ya cerrada sin que el mensaje de cierre haya
+    # salido todavía.
     if mensaje:
         enviar_con_reintentos(conversacion, mensaje)
         ConversacionLog.objects.create(conversacion=conversacion, remitente=ConversacionLog.Remitente.SISTEMA, texto=mensaje)
+
+    conversacion.estado = Conversacion.Estado.CERRADA
+    conversacion.cerrada_at = timezone.now()
+    conversacion.save(update_fields=["estado", "cerrada_at", "updated_at"])
 
     notificar_evento(
         tipo="conversacion_actualizada", organization_id=conversacion.organization_id,

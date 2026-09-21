@@ -1119,6 +1119,25 @@ class CerrarConversacionesInactivasTests(TestCase):
             ConversacionLog.objects.filter(conversacion=self.conversacion, texto="Cerramos por inactividad.").exists(),
         )
 
+    def test_manda_el_mensaje_antes_de_marcarla_cerrada(self, mock_enviar, mock_notificar):
+        bot_messages = BotMessages.para_organizacion(self.org)
+        bot_messages.minutos_inactividad_cierre = 30
+        bot_messages.mensaje_cierre_inactividad = "Cerramos por inactividad."
+        bot_messages.save(update_fields=["minutos_inactividad_cierre", "mensaje_cierre_inactividad"])
+        self._marcar_ultimo_mensaje_hace(60)
+
+        estados_al_mandar = []
+
+        def _capturar_estado(conversacion, texto):
+            estados_al_mandar.append(Conversacion.objects.get(pk=conversacion.pk).estado)
+            return True
+
+        mock_enviar.side_effect = _capturar_estado
+
+        call_command("cerrar_conversaciones_inactivas")
+
+        self.assertEqual(estados_al_mandar, [Conversacion.Estado.ABIERTA])
+
     def test_no_toca_la_que_todavia_esta_dentro_del_umbral(self, mock_enviar, mock_notificar):
         bot_messages = BotMessages.para_organizacion(self.org)
         bot_messages.minutos_inactividad_cierre = 30
@@ -1142,6 +1161,36 @@ class CerrarConversacionesInactivasTests(TestCase):
 
         call_command("cerrar_conversaciones_inactivas")
 
+        mock_enviar.assert_not_called()
+
+    def test_no_toca_una_conversacion_ya_derivada_a_un_equipo(self, mock_enviar, mock_notificar):
+        team = Team.objects.create(organization=self.org, name="Ventas")
+        self.conversacion.team = team
+        self.conversacion.save(update_fields=["team"])
+        bot_messages = BotMessages.para_organizacion(self.org)
+        bot_messages.minutos_inactividad_cierre = 30
+        bot_messages.save(update_fields=["minutos_inactividad_cierre"])
+        self._marcar_ultimo_mensaje_hace(60)
+
+        call_command("cerrar_conversaciones_inactivas")
+
+        self.conversacion.refresh_from_db()
+        self.assertEqual(self.conversacion.estado, Conversacion.Estado.ABIERTA)
+        mock_enviar.assert_not_called()
+
+    def test_no_toca_una_conversacion_ya_tomada_por_un_operador(self, mock_enviar, mock_notificar):
+        operador = make_user(self.org, groups=["operadores"])
+        self.conversacion.operador = operador
+        self.conversacion.save(update_fields=["operador"])
+        bot_messages = BotMessages.para_organizacion(self.org)
+        bot_messages.minutos_inactividad_cierre = 30
+        bot_messages.save(update_fields=["minutos_inactividad_cierre"])
+        self._marcar_ultimo_mensaje_hace(60)
+
+        call_command("cerrar_conversaciones_inactivas")
+
+        self.conversacion.refresh_from_db()
+        self.assertEqual(self.conversacion.estado, Conversacion.Estado.ABIERTA)
         mock_enviar.assert_not_called()
 
     def test_sin_mensajes_usa_iniciada_at_como_referencia(self, mock_enviar, mock_notificar):
