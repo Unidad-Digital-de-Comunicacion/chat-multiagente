@@ -1,6 +1,6 @@
 {
   "scheme": "semver2",
-  "base_version": "0.1.0",
+  "base_version": "0.1.1",
   "branches": {
     "develop": {
       "channel": "prerelease",

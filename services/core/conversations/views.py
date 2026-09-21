@@ -33,6 +33,7 @@ from tags.models import Etiqueta
 from teams.models import Team
 
 from .channel_gateway_client import enviar_con_reintentos
+from .cierre import cerrar_conversacion
 from .conversation_engine_client import notificar_evento
 from .menu_engine import accion_menu, procesar_seleccion, render_menu
 from .models import (
@@ -50,6 +51,17 @@ from .serializers import (
 # que poder explicar POR QUÉ se resolvió positiva/negativamente o se
 # pausó, para que otro operador que retome la conversación tenga contexto.
 CODIGOS_QUE_EXIGEN_OBSERVACION = {"resuelto", "rechazado", "en_pausa"}
+
+
+# `prefetch_related` compartido por `ConversacionViewSet.historial` y
+# `platform_admin.views.HistorialConversacionesPlatformView` — las dos
+# devuelven `ConversacionHistorialSerializer`, que ahora incluye etiquetas/
+# observaciones (ver su docstring); sin esto cada fila dispararía 2 queries
+# extra (N+1) por conversación listada.
+PREFETCH_HISTORIAL = (
+    Prefetch("etiquetas_aplicadas", queryset=ConversacionEtiqueta.objects.select_related("etiqueta", "aplicada_por")),
+    Prefetch("observaciones", queryset=ConversacionObservacion.objects.select_related("operador")),
+)
 
 
 def aplicar_filtros_historial(queryset, request):
@@ -233,15 +245,17 @@ class ConversacionViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, view
 
     @action(detail=False, methods=["get"])
     def historial(self, request):
-        """Historial resumido (inicio/derivación/fin, `Conversacion
-        HistorialSerializer`) de TODAS las conversaciones de la
-        organización — abiertas y cerradas, a diferencia de `bandeja`.
-        Gate propio (`ver_historial_conversacion`, ver `Conversacion.Meta.
-        permissions`) en vez de `view_conversacion` — ese sigue siendo
-        sólo de operadores, y desbloquea `mensajes`/`etiquetas`/
-        `observaciones`/`notas_internas`, que acá justamente NO
-        corresponde exponer (pensado para `administradores`, que audita
-        el flujo, no lee el contenido real). El superusuario de
+        """Historial resumido (inicio/derivación/fin/etiquetas/
+        observaciones, `ConversacionHistorialSerializer`) de TODAS las
+        conversaciones de la organización — abiertas y cerradas, a
+        diferencia de `bandeja`. Gate propio (`ver_historial_conversacion`,
+        ver `Conversacion.Meta.permissions`) en vez de `view_conversacion`
+        — ese sigue siendo sólo de operadores, y desbloquea `mensajes`/
+        `notas_internas`, que acá justamente NO corresponde exponer
+        (pensado para `administradores`, que audita el flujo — quién
+        derivó, quién tomó, qué etiquetas/observaciones dejó — sin leer el
+        contenido real de los mensajes ni las notas operador-a-operador).
+        El superusuario de
         plataforma ve todas las organizaciones a la vez por
         `platform_admin.views.HistorialConversacionesPlatformView`, no
         por acá — esto sigue scopeado a una sola organización. Filtros
@@ -252,7 +266,7 @@ class ConversacionViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, view
         organization_id = require_organization(request)
         queryset = Conversacion.objects.filter(organization_id=organization_id).select_related(
             "contact", "operador", "team",
-        )
+        ).prefetch_related(*PREFETCH_HISTORIAL)
         queryset = aplicar_filtros_historial(queryset, request)
         page = self.paginate_queryset(queryset)
         serializer = ConversacionHistorialSerializer(page, many=True)
@@ -327,19 +341,8 @@ class ConversacionViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, view
         if conversacion.estado != Conversacion.Estado.ABIERTA:
             raise ValidationError("Esta conversación ya está cerrada.")
 
-        conversacion.estado = Conversacion.Estado.CERRADA
-        conversacion.cerrada_at = timezone.now()
-        conversacion.save(update_fields=["estado", "cerrada_at", "updated_at"])
-
         despedida = BotMessages.para_organizacion(conversacion.contact.organization).valor_o_default("mensaje_despedida")
-        if despedida:
-            enviar_con_reintentos(conversacion, despedida)
-            ConversacionLog.objects.create(conversacion=conversacion, remitente=ConversacionLog.Remitente.SISTEMA, texto=despedida)
-
-        notificar_evento(
-            tipo="conversacion_actualizada", organization_id=conversacion.organization_id,
-            conversacion_id=conversacion.id, team_id=conversacion.team_id, operador_id=conversacion.operador_id,
-        )
+        cerrar_conversacion(conversacion, mensaje=despedida)
         return Response(self.get_serializer(conversacion).data)
 
     @action(detail=True, methods=["post"])

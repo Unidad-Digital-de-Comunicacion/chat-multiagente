@@ -1463,6 +1463,20 @@ input, select, textarea {
   min-width: 200px;
 }
 
+.historial-etiquetas {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.historial-observaciones {
+  margin: 0;
+  padding-left: 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
 .historial-filtros-fila {
   display: flex;
   flex-wrap: wrap;
