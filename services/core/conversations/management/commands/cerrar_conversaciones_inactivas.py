@@ -5,6 +5,12 @@ configuración por organización sin ningún consumidor; este comando es ese
 consumidor. `minutos_inactividad_cierre=0` (default) = desactivado, esa
 organización no se toca.
 
+Sólo conversaciones "pendiente" de verdad — sin `team` (todavía no se
+derivó) Y sin `operador` (nadie la tomó) — pedido explícito: una vez que
+se derivó a un equipo o un operador la tomó, se asume que alguien es
+responsable de ella y ya no se cierra sola por inactividad, por más
+tiempo que pase.
+
 "Actividad" es el último `ConversacionLog` (cualquier remitente — contacto,
 operador o sistema), no `Conversacion.updated_at`: ese campo NO se
 actualiza en cada mensaje entrante del contacto una vez que el menú ya
@@ -45,6 +51,7 @@ class Command(BaseCommand):
             # `iniciada_at` en vez de quedar afuera del filtro para siempre.
             candidatas = Conversacion.objects.filter(
                 organization=bot_messages.organization, estado=Conversacion.Estado.ABIERTA,
+                team__isnull=True, operador__isnull=True,
             ).annotate(ultimo_mensaje_at=Max("mensajes__creado_at")).filter(
                 Q(ultimo_mensaje_at__lt=limite) | Q(ultimo_mensaje_at__isnull=True, iniciada_at__lt=limite),
             )
