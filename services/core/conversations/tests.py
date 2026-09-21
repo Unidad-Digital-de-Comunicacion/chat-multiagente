@@ -2,6 +2,7 @@ from datetime import datetime, timedelta
 from unittest.mock import patch
 
 from bot_settings.models import BotMessages
+from django.core.management import call_command
 from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
@@ -214,7 +215,7 @@ class ConversacionViewSetTests(TestCase):
         mock_enviar.assert_called_once_with(self.conversacion, "Hola, ¿en qué te ayudo?")
         self.assertEqual(ConversacionLog.objects.filter(remitente="OPERADOR").count(), 1)
 
-    @patch("conversations.views.enviar_con_reintentos", return_value=True)
+    @patch("conversations.cierre.enviar_con_reintentos", return_value=True)
     def test_cerrar_manda_despedida_y_cambia_estado(self, mock_enviar):
         self.conversacion.operador = self.operador
         self.conversacion.save(update_fields=["operador"])
@@ -833,8 +834,8 @@ class NotificarEventoEnLasActionsTests(TestCase):
 class ConversacionHistorialTests(TestCase):
     """`GET /conversaciones/historial/` — vista resumida para
     `administradores` (permiso propio, `ver_historial_conversacion`,
-    NO el `view_conversacion` de los operadores): sólo inicio/derivación/
-    fin, nunca mensajes/etiquetas/notas."""
+    NO el `view_conversacion` de los operadores): inicio/derivación/fin/
+    etiquetas/observaciones, nunca mensajes ni notas internas."""
 
     def setUp(self):
         self.org = make_organization()
@@ -860,7 +861,24 @@ class ConversacionHistorialTests(TestCase):
         self.assertIn("iniciada_at", fila)
         self.assertIn("cerrada_at", fila)
         self.assertIn("derivada_at", fila)
+        self.assertIn("etiquetas", fila)
+        self.assertIn("observaciones", fila)
         self.assertNotIn("mensajes", fila)
+        self.assertNotIn("notas_internas", fila)
+
+    def test_incluye_etiquetas_y_observaciones_de_la_conversacion(self):
+        etiqueta = Etiqueta.objects.create(organization=self.org, nombre="VIP", color="#ffffff", color_texto="#000000")
+        ConversacionEtiqueta.objects.create(
+            conversacion=self.conversacion, etiqueta=etiqueta, aplicada_por=self.admin,
+        )
+        ConversacionObservacion.objects.create(
+            conversacion=self.conversacion, operador=self.operador, texto="Cliente pidió que lo llamen.",
+        )
+        response = authenticated_client(self.admin).get(self.url)
+        fila = response.data["results"][0]
+        self.assertEqual(fila["etiquetas"][0]["etiqueta"]["nombre"], "VIP")
+        self.assertEqual(fila["observaciones"][0]["texto"], "Cliente pidió que lo llamen.")
+        self.assertEqual(fila["observaciones"][0]["operador_email"], self.operador.email)
 
     def test_incluye_conversaciones_cerradas_a_diferencia_de_bandeja(self):
         self.conversacion.estado = Conversacion.Estado.CERRADA
@@ -1054,3 +1072,105 @@ class EnviarConReintentosTests(TestCase):
         aviso = ConversacionLog.objects.get(texto=MENSAJE_NO_ENVIADO)
         self.assertEqual(aviso.remitente, ConversacionLog.Remitente.SISTEMA)
         self.assertEqual(aviso.conversacion, self.conversacion)
+
+
+@patch("conversations.cierre.notificar_evento")
+@patch("conversations.cierre.enviar_con_reintentos", return_value=True)
+class CerrarConversacionesInactivasTests(TestCase):
+    """`manage.py cerrar_conversaciones_inactivas` — comando pensado para
+    correr periódico desde supervisord (ver services/core/docker/
+    supervisord.conf), no hay endpoint HTTP para esto."""
+
+    def setUp(self):
+        self.org = make_organization()
+        self.contact = Contact.objects.create(organization=self.org, canal="WHATSAPP", identificador_externo="111")
+        self.conversacion = Conversacion.objects.create(organization=self.org, contact=self.contact, canal="WHATSAPP")
+        ConversacionLog.objects.create(conversacion=self.conversacion, remitente=ConversacionLog.Remitente.CONTACTO, texto="hola")
+
+    def _marcar_ultimo_mensaje_hace(self, minutos):
+        ConversacionLog.objects.filter(conversacion=self.conversacion).update(
+            creado_at=timezone.now() - timedelta(minutes=minutos),
+        )
+
+    def test_desactivado_por_default_no_hace_nada(self, mock_enviar, mock_notificar):
+        # minutos_inactividad_cierre=0 (default) — ni siquiera entra al loop.
+        self._marcar_ultimo_mensaje_hace(60)
+        call_command("cerrar_conversaciones_inactivas")
+        self.conversacion.refresh_from_db()
+        self.assertEqual(self.conversacion.estado, Conversacion.Estado.ABIERTA)
+        mock_enviar.assert_not_called()
+
+    def test_cierra_la_que_supero_el_umbral(self, mock_enviar, mock_notificar):
+        bot_messages = BotMessages.para_organizacion(self.org)
+        bot_messages.minutos_inactividad_cierre = 30
+        bot_messages.mensaje_cierre_inactividad = "Cerramos por inactividad."
+        bot_messages.save(update_fields=["minutos_inactividad_cierre", "mensaje_cierre_inactividad"])
+        self._marcar_ultimo_mensaje_hace(60)
+
+        call_command("cerrar_conversaciones_inactivas")
+
+        self.conversacion.refresh_from_db()
+        self.assertEqual(self.conversacion.estado, Conversacion.Estado.CERRADA)
+        self.assertIsNotNone(self.conversacion.cerrada_at)
+        mock_enviar.assert_called_once_with(self.conversacion, "Cerramos por inactividad.")
+        mock_notificar.assert_called_once()
+        self.assertEqual(mock_notificar.call_args.kwargs["tipo"], "conversacion_actualizada")
+        self.assertTrue(
+            ConversacionLog.objects.filter(conversacion=self.conversacion, texto="Cerramos por inactividad.").exists(),
+        )
+
+    def test_no_toca_la_que_todavia_esta_dentro_del_umbral(self, mock_enviar, mock_notificar):
+        bot_messages = BotMessages.para_organizacion(self.org)
+        bot_messages.minutos_inactividad_cierre = 30
+        bot_messages.save(update_fields=["minutos_inactividad_cierre"])
+        self._marcar_ultimo_mensaje_hace(5)
+
+        call_command("cerrar_conversaciones_inactivas")
+
+        self.conversacion.refresh_from_db()
+        self.assertEqual(self.conversacion.estado, Conversacion.Estado.ABIERTA)
+        mock_enviar.assert_not_called()
+
+    def test_no_toca_una_conversacion_ya_cerrada(self, mock_enviar, mock_notificar):
+        bot_messages = BotMessages.para_organizacion(self.org)
+        bot_messages.minutos_inactividad_cierre = 30
+        bot_messages.save(update_fields=["minutos_inactividad_cierre"])
+        self.conversacion.estado = Conversacion.Estado.CERRADA
+        self.conversacion.cerrada_at = timezone.now()
+        self.conversacion.save(update_fields=["estado", "cerrada_at"])
+        self._marcar_ultimo_mensaje_hace(60)
+
+        call_command("cerrar_conversaciones_inactivas")
+
+        mock_enviar.assert_not_called()
+
+    def test_sin_mensajes_usa_iniciada_at_como_referencia(self, mock_enviar, mock_notificar):
+        # Caso raro (una conversación siempre nace con al menos un mensaje,
+        # ver MensajeEntranteView) pero cubierto igual — no debería quedar
+        # afuera del filtro para siempre por no tener ningún ConversacionLog.
+        ConversacionLog.objects.filter(conversacion=self.conversacion).delete()
+        Conversacion.objects.filter(pk=self.conversacion.pk).update(iniciada_at=timezone.now() - timedelta(minutes=60))
+        bot_messages = BotMessages.para_organizacion(self.org)
+        bot_messages.minutos_inactividad_cierre = 30
+        bot_messages.save(update_fields=["minutos_inactividad_cierre"])
+
+        call_command("cerrar_conversaciones_inactivas")
+
+        self.conversacion.refresh_from_db()
+        self.assertEqual(self.conversacion.estado, Conversacion.Estado.CERRADA)
+
+    def test_no_afecta_otra_organizacion_sin_el_umbral_configurado(self, mock_enviar, mock_notificar):
+        otra_org = make_organization(name="Otra", slug="otra")
+        otro_contact = Contact.objects.create(organization=otra_org, canal="WHATSAPP", identificador_externo="222")
+        otra_conversacion = Conversacion.objects.create(organization=otra_org, contact=otro_contact, canal="WHATSAPP")
+        ConversacionLog.objects.create(conversacion=otra_conversacion, remitente=ConversacionLog.Remitente.CONTACTO, texto="hola")
+        ConversacionLog.objects.filter(conversacion=otra_conversacion).update(creado_at=timezone.now() - timedelta(minutes=60))
+        bot_messages = BotMessages.para_organizacion(self.org)
+        bot_messages.minutos_inactividad_cierre = 30
+        bot_messages.save(update_fields=["minutos_inactividad_cierre"])
+        self._marcar_ultimo_mensaje_hace(60)
+
+        call_command("cerrar_conversaciones_inactivas")
+
+        otra_conversacion.refresh_from_db()
+        self.assertEqual(otra_conversacion.estado, Conversacion.Estado.ABIERTA)

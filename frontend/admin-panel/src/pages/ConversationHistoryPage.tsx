@@ -8,11 +8,11 @@ import { formatearFecha } from "../utils/fecha";
 
 // Vista de sólo lectura para `administradores` (una organización,
 // `conversations.ver_historial_conversacion`) y para el superusuario de
-// plataforma (todas, agrupadas por organización) — nunca mensajes,
-// etiquetas ni notas internas, sólo inicio/derivación/fin (ver el
-// docstring de `ConversacionHistorialSerializer` en Core). Filtros y
-// paginación reflejan exactamente `aplicar_filtros_historial` del backend
-// — no hay ningún filtro que se resuelva sólo del lado del cliente.
+// plataforma (todas, agrupadas por organización) — nunca mensajes ni
+// notas internas, sí inicio/derivación/agente/etiquetas/observaciones/fin
+// (ver el docstring de `ConversacionHistorialSerializer` en Core). Filtros
+// y paginación reflejan exactamente `aplicar_filtros_historial` del
+// backend — no hay ningún filtro que se resuelva sólo del lado del cliente.
 
 interface Filtros {
   canal: CanalTipo | "";
@@ -86,14 +86,51 @@ function ConversacionRow({ fila }: { fila: ConversacionHistorialRow }) {
             </div>
           </div>
           <div>
-            <span className="field-label-sm">Fin</span>
+            <span className="field-label-sm">Agente</span>
+            <div>{fila.operador_email ?? "Sin tomar todavía"}</div>
+          </div>
+          <div>
+            <span className="field-label-sm">Etiquetas</span>
             <div>
-              {fila.estado === "CERRADA"
-                ? formatearFecha(fila.cerrada_at)
-                : fila.operador_email
-                  ? `En curso — tomada por ${fila.operador_email}`
-                  : "En curso, sin tomar"}
+              {fila.etiquetas.length === 0 ? (
+                "Sin etiquetas"
+              ) : (
+                <div className="historial-etiquetas">
+                  {fila.etiquetas.map((aplicada) => (
+                    <span
+                      key={aplicada.id}
+                      className="badge"
+                      style={{ backgroundColor: aplicada.etiqueta.color, color: aplicada.etiqueta.color_texto }}
+                      title={aplicada.aplicada_por_email ? `Aplicada por ${aplicada.aplicada_por_email}` : undefined}
+                    >
+                      {aplicada.etiqueta.nombre}
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
+          </div>
+          <div>
+            <span className="field-label-sm">Observaciones</span>
+            {fila.observaciones.length === 0 ? (
+              <div>Sin observaciones</div>
+            ) : (
+              <ul className="historial-observaciones">
+                {fila.observaciones.map((observacion) => (
+                  <li key={observacion.id}>
+                    <span className="text-muted small">
+                      {formatearFecha(observacion.creado_at)}
+                      {observacion.operador_email ? ` — ${observacion.operador_email}` : ""}:
+                    </span>{" "}
+                    {observacion.texto}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+          <div>
+            <span className="field-label-sm">Fin</span>
+            <div>{fila.estado === "CERRADA" ? formatearFecha(fila.cerrada_at) : "En curso"}</div>
           </div>
         </div>
       )}
@@ -294,8 +331,9 @@ export default function ConversationHistoryPage() {
         <h2>Historial de conversaciones</h2>
       </div>
       <p className="text-muted">
-        Inicio, derivación y cierre de cada conversación{superuser ? ", de todas las organizaciones" : " de tu organización"} —
-        no incluye el contenido de los mensajes ni las notas internas de los operadores.
+        Inicio, derivación, agente, etiquetas, observaciones y cierre de cada conversación
+        {superuser ? ", de todas las organizaciones" : " de tu organización"} — no incluye el contenido de los
+        mensajes ni las notas internas de los operadores.
       </p>
 
       <FiltrosBar filtrosInput={filtrosInput} setFiltrosInput={setFiltrosInput} />

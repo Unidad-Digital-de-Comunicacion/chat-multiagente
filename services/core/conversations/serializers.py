@@ -42,26 +42,56 @@ class HistorialFiltrosSerializer(serializers.Serializer):
     q = serializers.CharField(required=False, allow_blank=True, trim_whitespace=True)
 
 
+class ConversacionEtiquetaSerializer(serializers.ModelSerializer):
+    etiqueta = EtiquetaSerializer(read_only=True)
+    aplicada_por_email = serializers.CharField(source="aplicada_por.email", read_only=True, default=None)
+
+    class Meta:
+        model = ConversacionEtiqueta
+        fields = ["id", "etiqueta", "aplicada_por_email", "aplicada_at"]
+        read_only_fields = fields
+
+
+class ConversacionObservacionSerializer(serializers.ModelSerializer):
+    operador_email = serializers.CharField(source="operador.email", read_only=True, default=None)
+
+    class Meta:
+        model = ConversacionObservacion
+        fields = ["id", "operador_email", "texto", "creado_at"]
+        read_only_fields = fields
+
+
+# `ConversacionHistorialSerializer` reusa las dos clases de arriba — tienen
+# que estar definidas antes acá (un atributo de clase se evalúa al definir
+# la clase, no perezoso), por eso quedaron fuera del orden alfabético que
+# tenían el resto de los serializers de acá abajo.
 class ConversacionHistorialSerializer(serializers.ModelSerializer):
     """Vista resumida para "Historial de conversaciones" (Admin Panel) — a
-    propósito NO incluye nada de `mensajes`/`etiquetas`/`observaciones`/
-    `notas_internas`: el permiso que la habilita (`ver_historial_
-    conversacion`) es distinto de `view_conversacion` justamente para que
-    un Admin de organización pueda auditar inicio/derivación/fin sin que
-    eso le desbloquee leer el contenido real de las conversaciones (ver
-    `Conversacion.Meta.permissions`)."""
+    propósito sigue sin incluir `mensajes`/`notas_internas`: el permiso que
+    la habilita (`ver_historial_conversacion`) es distinto de
+    `view_conversacion` justamente para que un Admin de organización pueda
+    auditar inicio/derivación/fin/etiquetas/observaciones sin que eso le
+    desbloquee leer el contenido real de los mensajes ni las notas
+    operador-a-operador (ver `Conversacion.Meta.permissions`). `etiquetas`/
+    `observaciones` sí se incluyen (pedido explícito — auditar quién
+    derivó/tomó/etiquetó/dejó una observación es justamente el propósito de
+    esta pantalla) reusando los mismos serializers que ya expone `GET
+    .../etiquetas/`/`GET .../observaciones/`, sin recortar nada."""
 
     contact = ContactSerializer(read_only=True)
     canal_display = serializers.CharField(source="get_canal_display", read_only=True)
     organization_nombre = serializers.CharField(source="organization.name", read_only=True)
     operador_email = serializers.CharField(source="operador.email", read_only=True, default=None)
     team_nombre = serializers.CharField(source="team.name", read_only=True, default=None)
+    etiquetas = ConversacionEtiquetaSerializer(source="etiquetas_aplicadas", many=True, read_only=True)
+    observaciones = ConversacionObservacionSerializer(many=True, read_only=True)
 
     class Meta:
         model = Conversacion
         fields = [
             "id", "organization_id", "organization_nombre", "contact", "canal", "canal_display",
             "team_nombre", "derivada_at", "operador_email", "estado", "iniciada_at", "cerrada_at",
+            "etiquetas", "observaciones",
         ]
         read_only_fields = fields
 
@@ -130,28 +160,9 @@ class ConversacionSerializer(serializers.ModelSerializer):
         return "pendiente"
 
 
-class ConversacionEtiquetaSerializer(serializers.ModelSerializer):
-    etiqueta = EtiquetaSerializer(read_only=True)
-    aplicada_por_email = serializers.CharField(source="aplicada_por.email", read_only=True, default=None)
-
-    class Meta:
-        model = ConversacionEtiqueta
-        fields = ["id", "etiqueta", "aplicada_por_email", "aplicada_at"]
-        read_only_fields = fields
-
-
 class AplicarEtiquetaInputSerializer(serializers.Serializer):
     etiqueta = serializers.IntegerField()
     observacion = serializers.CharField(required=False, allow_blank=True, default="")
-
-
-class ConversacionObservacionSerializer(serializers.ModelSerializer):
-    operador_email = serializers.CharField(source="operador.email", read_only=True, default=None)
-
-    class Meta:
-        model = ConversacionObservacion
-        fields = ["id", "operador_email", "texto", "creado_at"]
-        read_only_fields = fields
 
 
 class ObservacionInputSerializer(serializers.Serializer):

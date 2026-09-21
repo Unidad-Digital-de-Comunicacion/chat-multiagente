@@ -14,7 +14,7 @@ from channels.models import Canal
 from common.permissions import IsPlatformSuperuser
 from conversations.models import Conversacion
 from conversations.serializers import ConversacionHistorialSerializer
-from conversations.views import aplicar_filtros_historial
+from conversations.views import PREFETCH_HISTORIAL, aplicar_filtros_historial
 from organizations.models import Organization
 from teams.models import Team
 from users.models import User
@@ -178,9 +178,9 @@ class HistorialConversacionesPlatformView(generics.ListAPIView):
     permission_classes = [IsPlatformSuperuser]
 
     def get_queryset(self):
-        queryset = Conversacion.objects.select_related("contact", "operador", "team", "organization").order_by(
-            "organization__name", "-iniciada_at",
-        )
+        queryset = Conversacion.objects.select_related(
+            "contact", "operador", "team", "organization",
+        ).prefetch_related(*PREFETCH_HISTORIAL).order_by("organization__name", "-iniciada_at")
         return aplicar_filtros_historial(queryset, self.request)
 
 

@@ -9,6 +9,14 @@ else
     export GUNICORN_EXTRA_ARGS=""
 fi
 
+# Cada cuánto corre `cerrar_conversaciones_inactivas` (programa
+# `cierre_inactividad` de supervisord) — 300s = 5 minutos por default,
+# suficiente margen para que el umbral configurable por organización
+# (`BotMessages.minutos_inactividad_cierre`, mínimo práctico de varios
+# minutos) no dependa de una resolución más fina que esto.
+: "${CIERRE_INACTIVIDAD_INTERVALO_SEGUNDOS:=300}"
+export CIERRE_INACTIVIDAD_INTERVALO_SEGUNDOS
+
 echo "entrypoint: esperando a que Postgres acepte conexiones..."
 python - <<'PYEOF'
 import os

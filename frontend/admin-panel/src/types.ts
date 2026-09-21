@@ -340,7 +340,8 @@ export interface ExternalHealthRow {
 // organización) y `GET /api/core/plataforma/historial-conversaciones/`
 // (superusuario real, todas las organizaciones — mismo shape de fila,
 // `organization_nombre` es el que se usa para agrupar visualmente).
-// A propósito NO trae mensajes/etiquetas/notas — sólo inicio/derivación/fin.
+// A propósito NO trae mensajes ni notas internas — sí inicio/derivación/
+// fin/etiquetas/observaciones.
 
 export interface ContactoConversacion {
   id: number;
@@ -350,6 +351,20 @@ export interface ContactoConversacion {
 }
 
 export type ConversacionEstado = "ABIERTA" | "CERRADA";
+
+export interface EtiquetaAplicadaHistorial {
+  id: number;
+  etiqueta: Etiqueta;
+  aplicada_por_email: string | null;
+  aplicada_at: string;
+}
+
+export interface ObservacionHistorial {
+  id: number;
+  operador_email: string | null;
+  texto: string;
+  creado_at: string;
+}
 
 export interface ConversacionHistorialRow {
   id: number;
@@ -364,4 +379,6 @@ export interface ConversacionHistorialRow {
   estado: ConversacionEstado;
   iniciada_at: string;
   cerrada_at: string | null;
+  etiquetas: EtiquetaAplicadaHistorial[];
+  observaciones: ObservacionHistorial[];
 }
