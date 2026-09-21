@@ -313,11 +313,6 @@ input, select, textarea {
   color: var(--warning);
 }
 
-.badge-danger {
-  background: #fbe4e1;
-  color: var(--danger);
-}
-
 /* ---- Modal ---- */
 .modal-backdrop {
   position: fixed;

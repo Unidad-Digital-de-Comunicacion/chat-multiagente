@@ -15,8 +15,7 @@ polling. Ver el docstring de `models.py` para qué le falta todavía a esto
 (selección nativa por canal)."""
 from datetime import timedelta
 
-from django.db.models import Max, OuterRef, Prefetch, Q, Subquery
-from django.db.models.functions import Coalesce
+from django.db.models import Prefetch, Q
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 
@@ -63,26 +62,6 @@ PREFETCH_HISTORIAL = (
     Prefetch("etiquetas_aplicadas", queryset=ConversacionEtiqueta.objects.select_related("etiqueta", "aplicada_por")),
     Prefetch("observaciones", queryset=ConversacionObservacion.objects.select_related("operador")),
 )
-
-
-def anotar_ultima_actividad(queryset):
-    """`ultima_actividad`: último `ConversacionLog` (de cualquier
-    remitente) de la conversación, o `iniciada_at` si todavía no tiene
-    ninguno — mismo criterio y mismo fallback que usa `management.
-    commands.cerrar_conversaciones_inactivas` para decidir qué está
-    inactiva, así las dos coinciden en qué cuenta como "sin actividad".
-    También anota `minutos_inactividad_cierre` (subquery a `BotMessages`
-    de la organización de cada fila, NULL si esa organización todavía no
-    tiene una — `get_or_create` en un listado sería un efecto secundario
-    no deseado) — entre las dos alcanza para que el serializer calcule
-    `vencida_por_inactividad` sin queries extra por fila."""
-    minutos_subquery = BotMessages.objects.filter(organization_id=OuterRef("organization_id")).values(
-        "minutos_inactividad_cierre",
-    )[:1]
-    return queryset.annotate(
-        ultima_actividad=Coalesce(Max("mensajes__creado_at"), "iniciada_at"),
-        minutos_inactividad_cierre=Subquery(minutos_subquery),
-    )
 
 
 def aplicar_filtros_historial(queryset, request):
@@ -282,16 +261,13 @@ class ConversacionViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, view
         por acá — esto sigue scopeado a una sola organización. Filtros
         (opcionales, ver `HistorialFiltrosSerializer`): `?canal=`, `?team=`,
         `?derivada=true|false`, `?desde=`/`?hasta=` (YYYY-MM-DD, sobre
-        `iniciada_at`), `?q=` (busca en teléfono/usuario del contacto).
-        Ordenado por `ultima_actividad` descendente (la más reciente
-        primero) — ver `anotar_ultima_actividad`."""
+        `iniciada_at`), `?q=` (busca en teléfono/usuario del contacto)."""
         require_perm(request, "conversations.ver_historial_conversacion")
         organization_id = require_organization(request)
         queryset = Conversacion.objects.filter(organization_id=organization_id).select_related(
             "contact", "operador", "team",
         ).prefetch_related(*PREFETCH_HISTORIAL)
-        queryset = anotar_ultima_actividad(queryset)
-        queryset = aplicar_filtros_historial(queryset, request).order_by("-ultima_actividad")
+        queryset = aplicar_filtros_historial(queryset, request)
         page = self.paginate_queryset(queryset)
         serializer = ConversacionHistorialSerializer(page, many=True)
         return self.get_paginated_response(serializer.data)

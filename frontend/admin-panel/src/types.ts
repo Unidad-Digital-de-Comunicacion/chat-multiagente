@@ -381,6 +381,4 @@ export interface ConversacionHistorialRow {
   cerrada_at: string | null;
   etiquetas: EtiquetaAplicadaHistorial[];
   observaciones: ObservacionHistorial[];
-  ultima_actividad: string;
-  vencida_por_inactividad: boolean;
 }
