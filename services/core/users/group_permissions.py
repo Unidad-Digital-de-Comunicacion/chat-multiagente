@@ -32,7 +32,15 @@ todos sus grupos (`user.has_perm(...)` ya lo resuelve así).
   resumida (inicio/derivación/fin, sin mensajes/notas) de "Historial de
   conversaciones" del Admin Panel; el superusuario de plataforma ve lo
   mismo de TODAS las organizaciones vía `platform_admin.views.
-  HistorialConversacionesPlatformView`.
+  HistorialConversacionesPlatformView`. `conversations.tomar_sin_derivar`
+  (otro permiso aparte) deja tomar una conversación todavía "pendiente"
+  (sin `team`) salteando la derivación — `operadores` no lo tiene por
+  default (pedido explícito: sólo se pueden tomar conversaciones ya
+  derivadas a un equipo). Es un permiso Django común (`user.
+  user_permissions`), así que técnicamente se le podría dar a un usuario
+  puntual sin pasar por el grupo — pero eso sólo se gestiona hoy desde
+  `/admin/` (Django admin, sólo staff), el "Usuarios" del Admin Panel
+  (React) sólo asigna grupos, no permisos individuales.
 - encargados_difusion / analistas_datos: NINGÚN permiso sobre Core — para
   estos dos grupos, Core es sólo la API de autenticación (login, recuperar
   usuario/contraseña por DNI, "mi perfil") que van a usar sus propios
@@ -105,6 +113,7 @@ GROUP_PERMISSIONS: Final[dict[str, list[str]]] = {
         "conversations.view_conversacion",
         "conversations.change_conversacion",
         "conversations.ver_historial_conversacion",
+        "conversations.tomar_sin_derivar",
     ],
     "encargados_difusion": [],
     "analistas_datos": [],

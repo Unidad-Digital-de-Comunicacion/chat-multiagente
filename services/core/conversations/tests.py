@@ -134,6 +134,15 @@ class ConversacionViewSetTests(TestCase):
         self.conversacion = Conversacion.objects.get()
 
         self.list_url = reverse("conversacion-list")
+        # Varios tests de acá abajo necesitan una conversación YA derivada
+        # (team cargado) para poder `tomar` sin que lo bloquee
+        # `conversations.tomar_sin_derivar` — se asigna sólo en los que lo
+        # piden, los que prueban el estado "pendiente" siguen sin team.
+        self.team = Team.objects.create(organization=self.org, name="Ventas")
+
+    def _derivar(self):
+        self.conversacion.team = self.team
+        self.conversacion.save(update_fields=["team"])
 
     def test_operador_ve_la_bandeja_sin_asignar(self):
         response = authenticated_client(self.operador).get(self.list_url, {"bandeja": "sin_asignar"})
@@ -147,13 +156,32 @@ class ConversacionViewSetTests(TestCase):
         self.assertEqual(response.data["count"], 0)
 
     def test_tomar_asigna_al_operador(self):
+        self._derivar()
         url = reverse("conversacion-tomar", args=[self.conversacion.id])
         response = authenticated_client(self.operador).post(url)
         self.assertEqual(response.status_code, 200, response.data)
         self.conversacion.refresh_from_db()
         self.assertEqual(self.conversacion.operador, self.operador)
+        aplicada = self.conversacion.etiquetas_aplicadas.get(etiqueta__es_sistema=True)
+        self.assertEqual(aplicada.etiqueta.codigo, "tomada")
+        self.assertEqual(aplicada.aplicada_por, self.operador)
+
+    def test_no_se_puede_tomar_sin_derivar(self):
+        url = reverse("conversacion-tomar", args=[self.conversacion.id])
+        response = authenticated_client(self.operador).post(url)
+        self.assertEqual(response.status_code, 403, response.data)
+        self.conversacion.refresh_from_db()
+        self.assertIsNone(self.conversacion.operador)
+
+    def test_admin_si_puede_tomar_sin_derivar(self):
+        # `administradores` tiene `tomar_sin_derivar` por default — ver
+        # `users.group_permissions`.
+        url = reverse("conversacion-tomar", args=[self.conversacion.id])
+        response = authenticated_client(self.admin).post(url)
+        self.assertEqual(response.status_code, 200, response.data)
 
     def test_no_se_puede_tomar_mientras_el_lock_de_otro_siga_vigente(self):
+        self._derivar()
         self.conversacion.operador = self.operador
         self.conversacion.bloqueada_hasta = timezone.now() + timedelta(minutes=2)
         self.conversacion.save(update_fields=["operador", "bloqueada_hasta"])
@@ -162,6 +190,7 @@ class ConversacionViewSetTests(TestCase):
         self.assertEqual(response.status_code, 400)
 
     def test_se_puede_reclamar_una_vez_que_el_lock_vencio(self):
+        self._derivar()
         self.conversacion.operador = self.operador
         self.conversacion.bloqueada_hasta = timezone.now() - timedelta(minutes=1)  # ya venció
         self.conversacion.save(update_fields=["operador", "bloqueada_hasta"])
@@ -172,6 +201,7 @@ class ConversacionViewSetTests(TestCase):
         self.assertEqual(self.conversacion.operador, self.otro_operador)
 
     def test_tomar_pone_un_lock_de_2_minutos(self):
+        self._derivar()
         url = reverse("conversacion-tomar", args=[self.conversacion.id])
         antes = timezone.now()
         authenticated_client(self.operador).post(url)
@@ -219,6 +249,7 @@ class ConversacionViewSetTests(TestCase):
     def test_cerrar_manda_despedida_y_cambia_estado(self, mock_enviar):
         self.conversacion.operador = self.operador
         self.conversacion.save(update_fields=["operador"])
+        ConversacionObservacion.objects.create(conversacion=self.conversacion, operador=self.operador, texto="Resuelto.")
         url = reverse("conversacion-cerrar", args=[self.conversacion.id])
         response = authenticated_client(self.operador).post(url)
         self.assertEqual(response.status_code, 200, response.data)
@@ -227,6 +258,16 @@ class ConversacionViewSetTests(TestCase):
         self.assertIsNotNone(self.conversacion.cerrada_at)
         mock_enviar.assert_called_once()
         self.assertTrue(ConversacionLog.objects.filter(remitente="SISTEMA").exists())
+
+    def test_no_se_puede_cerrar_sin_ninguna_observacion(self):
+        self.conversacion.operador = self.operador
+        self.conversacion.save(update_fields=["operador"])
+        url = reverse("conversacion-cerrar", args=[self.conversacion.id])
+        response = authenticated_client(self.operador).post(url)
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("observacion", response.data["error"]["detail"])
+        self.conversacion.refresh_from_db()
+        self.assertEqual(self.conversacion.estado, Conversacion.Estado.ABIERTA)
 
     def test_admin_no_puede_gestionar_sin_organization_es_bloqueado_igual_que_siempre(self):
         superusuario = make_user(
@@ -242,16 +283,16 @@ class ConversacionViewSetTests(TestCase):
         self.assertEqual(response.data["estado_operativo"], "pendiente")
 
     def test_estado_operativo_asignada_con_equipo_sin_operador(self):
-        team = Team.objects.create(organization=self.org, name="Ventas")
-        self.conversacion.team = team
-        self.conversacion.save(update_fields=["team"])
+        self._derivar()
         detail_url = reverse("conversacion-detail", args=[self.conversacion.id])
         response = authenticated_client(self.operador).get(detail_url)
         self.assertEqual(response.data["estado_operativo"], "asignada")
 
     def test_estado_operativo_tomada_con_operador(self):
+        self._derivar()
         reverse_tomar = reverse("conversacion-tomar", args=[self.conversacion.id])
-        authenticated_client(self.operador).post(reverse_tomar)
+        response_tomar = authenticated_client(self.operador).post(reverse_tomar)
+        self.assertEqual(response_tomar.status_code, 200, response_tomar.data)
         detail_url = reverse("conversacion-detail", args=[self.conversacion.id])
         response = authenticated_client(self.operador).get(detail_url)
         self.assertEqual(response.data["estado_operativo"], "tomada")
@@ -260,7 +301,9 @@ class ConversacionViewSetTests(TestCase):
     def test_estado_operativo_cerrada(self, mock_enviar):
         self.conversacion.operador = self.operador
         self.conversacion.save(update_fields=["operador"])
-        authenticated_client(self.operador).post(reverse("conversacion-cerrar", args=[self.conversacion.id]))
+        ConversacionObservacion.objects.create(conversacion=self.conversacion, operador=self.operador, texto="Resuelto.")
+        response_cerrar = authenticated_client(self.operador).post(reverse("conversacion-cerrar", args=[self.conversacion.id]))
+        self.assertEqual(response_cerrar.status_code, 200, response_cerrar.data)
         detail_url = reverse("conversacion-detail", args=[self.conversacion.id])
         response = authenticated_client(self.operador).get(detail_url)
         self.assertEqual(response.data["estado_operativo"], "cerrada")
@@ -297,6 +340,9 @@ class ConversacionDerivarTests(TestCase):
         self.assertEqual(
             ConversacionObservacion.objects.get().texto, "No es mi área, pasa a Soporte.",
         )
+        aplicada = self.conversacion.etiquetas_aplicadas.get(etiqueta__es_sistema=True)
+        self.assertEqual(aplicada.etiqueta.codigo, "asignada")
+        self.assertEqual(aplicada.aplicada_por, self.operador)
 
     def test_requiere_observacion(self):
         response = authenticated_client(self.operador).post(self.url, {"team": self.team_destino.id, "observacion": ""})
@@ -341,9 +387,11 @@ class ConversacionEtiquetasTests(TestCase):
         self.general = Etiqueta.objects.create(organization=self.org, nombre="VIP", color="#000000")
 
     def test_aplica_una_etiqueta_general(self):
+        # "general" no es de sistema, así que no reemplaza la "pendiente"
+        # que ya se aplicó sola al crearse la conversación — quedan las dos.
         response = authenticated_client(self.operador).post(self.url, {"etiqueta": self.general.id})
         self.assertEqual(response.status_code, 201, response.data)
-        self.assertEqual(ConversacionEtiqueta.objects.get().etiqueta, self.general)
+        self.assertEqual(ConversacionEtiqueta.objects.get(etiqueta=self.general).etiqueta, self.general)
 
     def test_aplicar_etiqueta_de_sistema_saca_la_etiqueta_de_sistema_anterior(self):
         authenticated_client(self.operador).post(self.url, {"etiqueta": self.en_proceso.id})
@@ -361,7 +409,8 @@ class ConversacionEtiquetasTests(TestCase):
         response = authenticated_client(self.operador).post(self.url, {"etiqueta": self.resuelto.id})
         self.assertEqual(response.status_code, 400)
         self.assertIn("observacion", response.data["error"]["detail"])
-        self.assertEqual(ConversacionEtiqueta.objects.count(), 0)
+        # "resuelto" no llegó a aplicarse — sólo queda la "pendiente" automática.
+        self.assertEqual(ConversacionEtiqueta.objects.get().etiqueta.codigo, "pendiente")
 
     def test_resolver_con_observacion_la_crea_tambien(self):
         authenticated_client(self.operador).post(
@@ -384,11 +433,12 @@ class ConversacionEtiquetasTests(TestCase):
 
     def test_quita_una_etiqueta_aplicada(self):
         authenticated_client(self.operador).post(self.url, {"etiqueta": self.general.id})
-        aplicada = ConversacionEtiqueta.objects.get()
+        aplicada = ConversacionEtiqueta.objects.get(etiqueta=self.general)
         quitar_url = reverse("conversacion-quitar-etiqueta", args=[self.conversacion.id, aplicada.etiqueta_id])
         response = authenticated_client(self.operador).delete(quitar_url)
         self.assertEqual(response.status_code, 204)
-        self.assertEqual(ConversacionEtiqueta.objects.count(), 0)
+        # Queda sólo la "pendiente" automática, nunca se quitó.
+        self.assertEqual(ConversacionEtiqueta.objects.get().etiqueta.codigo, "pendiente")
 
     def test_quitar_una_etiqueta_no_aplicada_da_404(self):
         quitar_url = reverse("conversacion-quitar-etiqueta", args=[self.conversacion.id, self.general.id])
@@ -399,8 +449,10 @@ class ConversacionEtiquetasTests(TestCase):
         authenticated_client(self.operador).post(self.url, {"etiqueta": self.general.id})
         response = authenticated_client(self.operador).get(self.url)
         self.assertEqual(response.status_code, 200, response.data)
-        self.assertEqual(len(response.data), 1)
-        self.assertEqual(response.data[0]["etiqueta"]["color"], "#000000")
+        # "pendiente" (automática) + "general" recién aplicada.
+        self.assertEqual(len(response.data), 2)
+        colores = {fila["etiqueta"]["color"] for fila in response.data}
+        self.assertIn("#000000", colores)
 
 
 class ConversacionObservacionesTests(TestCase):
@@ -587,6 +639,11 @@ class MenuEngineTests(TestCase):
         self.assertEqual(conversacion.estado, Conversacion.Estado.ABIERTA)  # sigue abierta, en la bandeja
         self.assertIsNone(conversacion.operador)
         self.assertIsNone(conversacion.bloqueada_hasta)
+        # La derivación automática aplica la etiqueta de sistema "asignada"
+        # de verdad (antes era sólo un dato calculado) — pedido explícito.
+        self.assertEqual(
+            conversacion.etiquetas_aplicadas.get(etiqueta__es_sistema=True).etiqueta.codigo, "asignada",
+        )
 
     def test_derivacion_con_equipo_con_miembro_asigna_por_round_robin(self):
         operador = make_user(self.org, groups=["operadores"])
@@ -598,6 +655,12 @@ class MenuEngineTests(TestCase):
         self.assertEqual(conversacion.operador, operador)
         self.assertIsNotNone(conversacion.bloqueada_hasta)
         self.assertGreater(conversacion.bloqueada_hasta, timezone.now())
+        # El round-robin dejó team Y operador en el mismo paso — la
+        # etiqueta de sistema real tiene que ser "tomada", no "asignada"
+        # (el estado real es ese, no un paso intermedio).
+        self.assertEqual(
+            conversacion.etiquetas_aplicadas.get(etiqueta__es_sistema=True).etiqueta.codigo, "tomada",
+        )
 
     def test_despues_de_la_derivacion_los_mensajes_no_se_interpretan_como_menu(self):
         self._mandar("hola")
@@ -818,8 +881,13 @@ class NotificarEventoEnLasActionsTests(TestCase):
 
     @patch("conversations.views.notificar_evento")
     def test_tomar_avisa(self, mock_notificar):
+        team = Team.objects.create(organization=self.org, name="Ventas")
+        self.conversacion.team = team
+        self.conversacion.save(update_fields=["team"])
+        mock_notificar.reset_mock()
         url = reverse("conversacion-tomar", args=[self.conversacion.id])
-        authenticated_client(self.operador).post(url)
+        response = authenticated_client(self.operador).post(url)
+        self.assertEqual(response.status_code, 200, response.data)
         mock_notificar.assert_called_once()
         self.assertEqual(mock_notificar.call_args.kwargs["tipo"], "conversacion_actualizada")
 
@@ -878,7 +946,9 @@ class ConversacionHistorialTests(TestCase):
         )
         response = authenticated_client(self.admin).get(self.url)
         fila = response.data["results"][0]
-        self.assertEqual(fila["etiquetas"][0]["etiqueta"]["nombre"], "VIP")
+        # "pendiente" (automática al crearse) + "VIP" — no asumir orden.
+        nombres = {e["etiqueta"]["nombre"] for e in fila["etiquetas"]}
+        self.assertIn("VIP", nombres)
         self.assertEqual(fila["observaciones"][0]["texto"], "Cliente pidió que lo llamen.")
         self.assertEqual(fila["observaciones"][0]["operador_email"], self.operador.email)
 

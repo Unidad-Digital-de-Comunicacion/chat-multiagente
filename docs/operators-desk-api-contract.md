@@ -182,11 +182,17 @@ arme un Admin a mano. Es de acá de donde sale el `id` que se manda en
 }
 ```
 
-Las 3 primeras filas de cada conversación (pendiente/asignada/tomada) casi
-nunca hace falta aplicarlas a mano: ver `estado_operativo` en §4.1, que ya
-te da ese mismo dato calculado sin que vos tengas que mantenerlo
-sincronizado. El resto del catálogo (en_proceso/en_pausa/rechazado/
-resuelto/de equipo/generales) sí son decisión del operador — ver §4.6.
+Las 3 primeras filas (pendiente/asignada/tomada) **nunca las aplicás a
+mano** — Core las aplica solo (actualización 2026-10: antes `estado_
+operativo` en §4.1 era sólo un dato calculado, ahora además queda una fila
+real de `ConversacionEtiqueta` por cada paso, con quién/cuándo) en estos 3
+momentos: al crearse la conversación (pendiente), al derivarse a un
+equipo — por el árbol de menú o a mano, §4.7 — (asignada), y al tomarla,
+§4.3 (tomada). Si ves una de estas 3 en `GET .../etiquetas/`, es
+informativo (para el historial/auditoría), no algo que tu UI tenga que
+aplicar o esperar aplicar por su cuenta. El resto del catálogo
+(en_proceso/en_pausa/rechazado/resuelto/de equipo/generales) sí son
+decisión del operador — ver §4.8 más abajo.
 
 Un operador no puede crear/editar/borrar etiquetas (eso es sólo de
 `administradores`, desde el Admin Panel — 403 si se intenta).
@@ -257,6 +263,13 @@ Reclama la conversación para el operador logueado (funciona tanto para
 tomar una sin asignar como para reclamar una cuyo lock de 2 minutos ya
 venció). Devuelve la conversación actualizada (mismo shape que §4.1/4.2).
 
+- **403 si la conversación todavía está "pendiente" (sin `team`, no
+  derivada a ningún equipo)** y el usuario no tiene el permiso
+  `conversations.tomar_sin_derivar` (pedido explícito 2026-10 — un
+  operador común sólo puede tomar conversaciones ya derivadas; esperá a
+  que el árbol de menú la derive sola, o pedile a un Admin que la derive
+  a mano primero, §4.7). `administradores` tiene este permiso por
+  default, un operador común no.
 - 400 si otro operador la tiene tomada con el lock todavía vigente
   (`{"detail": ["Esta conversación está tomada por otro operador."]}`).
 - El lock se renueva a 2 minutos en cada `tomar`/`responder` — si el
@@ -317,6 +330,14 @@ detalle, ver §0).
 ```
 
 - 403 si no está tomada por vos, 400 si ya estaba cerrada.
+- **400 si la conversación no tiene ninguna `observacion` cargada todavía**
+  (`{"error": {"code": "validation_error", "detail": {"observacion": ["Hace
+  falta cargar al menos una observación antes de cerrar la conversación."]}}}`,
+  pedido explícito 2026-10) — contá cualquiera de las dos vías válidas: una
+  observación suelta (§4.9) o la que ya se crea sola al aplicar una
+  etiqueta `resuelto`/`rechazado`/`en_pausa` (§4.8). Mostrale al operador
+  el flujo "cargá una observación antes de poder cerrar" en vez de dejar
+  que descubra el 400 recién al tocar "Cerrar".
 - Dispara el mensaje de despedida configurado por el Admin, si hay uno.
 - **No aplica sola ninguna etiqueta de resolución** — si el flujo de tu UI
   quiere que "resolver" también cierre la conversación, hacé las dos

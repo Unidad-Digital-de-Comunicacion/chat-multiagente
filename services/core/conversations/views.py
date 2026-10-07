@@ -36,6 +36,7 @@ from teams.models import Team
 from .channel_gateway_client import enviar_con_reintentos
 from .cierre import cerrar_conversacion
 from .conversation_engine_client import notificar_evento
+from .etiqueta_sistema import sincronizar_etiqueta_estado
 from .menu_engine import accion_menu, procesar_seleccion, render_menu
 from .models import (
     Contact, Conversacion, ConversacionEtiqueta, ConversacionLog, ConversacionNotaInterna, ConversacionObservacion,
@@ -177,6 +178,7 @@ class MensajeEntranteView(APIView):
         acciones = []
         if conversacion is None:
             conversacion = Conversacion.objects.create(organization=organization, contact=contact, canal=canal)
+            sincronizar_etiqueta_estado(conversacion)
             bot_messages = BotMessages.para_organizacion(organization)
             bienvenida = bot_messages.valor_o_default("mensaje_bienvenida")
             if bienvenida:
@@ -301,9 +303,14 @@ class ConversacionViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, view
         """Reclama la conversación — sirve tanto para tomar una sin asignar
         como para reclamar una cuyo lock de `LOCK_MINUTOS` ya venció (ver
         `get_queryset`). Mientras el lock de OTRO operador siga vigente, no
-        se puede tomar, aunque técnicamente ya no esté "sin asignar"."""
+        se puede tomar, aunque técnicamente ya no esté "sin asignar".
+        Sin `tomar_sin_derivar`, no se puede tomar una que todavía esté
+        "pendiente" (sin `team`) — hay que esperar a que el árbol de menú
+        la derive sola, o derivarla a mano primero (pedido explícito)."""
         require_perm(request, "conversations.change_conversacion")
         conversacion = self.get_object()
+        if conversacion.team_id is None and not request.user.has_perm("conversations.tomar_sin_derivar"):
+            raise PermissionDenied("Esta conversación todavía no fue derivada a un equipo.")
         ahora = timezone.now()
         tomada_por_otro_vigente = (
             conversacion.operador_id is not None
@@ -316,6 +323,7 @@ class ConversacionViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, view
         conversacion.operador = request.user
         conversacion.bloqueada_hasta = ahora + timedelta(minutes=self.LOCK_MINUTOS)
         conversacion.save(update_fields=["operador", "bloqueada_hasta", "updated_at"])
+        sincronizar_etiqueta_estado(conversacion, aplicada_por=request.user)
         notificar_evento(
             tipo="conversacion_actualizada", organization_id=conversacion.organization_id,
             conversacion_id=conversacion.id, team_id=conversacion.team_id, operador_id=conversacion.operador_id,
@@ -358,12 +366,22 @@ class ConversacionViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, view
 
     @action(detail=True, methods=["post"])
     def cerrar(self, request, pk=None):
+        """Pedido explícito: no se puede cerrar sin haber dejado constancia
+        de por qué/cómo terminó (`observaciones`, §4.9 del contrato de
+        API) — no confundir con la `observacion` puntual que ya exige
+        aplicar una etiqueta de sistema tipo `resuelto`/`rechazado`/
+        `en_pausa` (§4.8): esa es una de las formas válidas de cumplir
+        esto, no hace falta cargar una segunda observación aparte."""
         require_perm(request, "conversations.change_conversacion")
         conversacion = self.get_object()
         if conversacion.operador_id != request.user.id:
             raise PermissionDenied("Esta conversación no está tomada por vos.")
         if conversacion.estado != Conversacion.Estado.ABIERTA:
             raise ValidationError("Esta conversación ya está cerrada.")
+        if not conversacion.observaciones.exists():
+            raise ValidationError({
+                "observacion": ["Hace falta cargar al menos una observación antes de cerrar la conversación."],
+            })
 
         despedida = BotMessages.para_organizacion(conversacion.contact.organization).valor_o_default("mensaje_despedida")
         cerrar_conversacion(conversacion, mensaje=despedida)
@@ -396,6 +414,7 @@ class ConversacionViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, view
         ConversacionObservacion.objects.create(
             conversacion=conversacion, operador=request.user, texto=entrada.validated_data["observacion"].strip(),
         )
+        sincronizar_etiqueta_estado(conversacion, aplicada_por=request.user)
         notificar_evento(
             tipo="conversacion_actualizada", organization_id=conversacion.organization_id,
             conversacion_id=conversacion.id, team_id=conversacion.team_id, operador_id=conversacion.operador_id,
