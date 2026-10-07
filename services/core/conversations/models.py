@@ -120,6 +120,11 @@ class Conversacion(models.Model):
                 "Puede ver el historial resumido de conversaciones (inicio/derivación/fin, "
                 "sin mensajes/etiquetas/notas)",
             ),
+            (
+                "tomar_sin_derivar",
+                "Puede tomar una conversación todavía sin derivar a un equipo (sin este permiso, "
+                "sólo se pueden tomar las ya derivadas)",
+            ),
         ]
 
     def __str__(self):

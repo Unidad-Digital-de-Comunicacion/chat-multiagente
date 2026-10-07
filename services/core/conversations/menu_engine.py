@@ -23,6 +23,7 @@ from django.utils import timezone
 from menu.models import MenuOpcion
 
 from .asignacion import asignar_round_robin
+from .etiqueta_sistema import sincronizar_etiqueta_estado
 from .models import Conversacion
 
 
@@ -147,6 +148,7 @@ def procesar_seleccion(conversacion: Conversacion, texto: str) -> list[dict]:
             conversacion.bloqueada_hasta = timezone.now() + timedelta(minutes=2)
             campos += ["operador", "bloqueada_hasta"]
         conversacion.save(update_fields=campos)
+        sincronizar_etiqueta_estado(conversacion)
         mensaje = _reemplazar_variables(
             bot_messages.valor_o_default("derivacion_mensaje"), nombre=nombre, area=elegido.texto,
         )
