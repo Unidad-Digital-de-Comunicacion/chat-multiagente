@@ -36,7 +36,7 @@ from teams.models import Team
 from .channel_gateway_client import enviar_con_reintentos
 from .cierre import cerrar_conversacion
 from .conversation_engine_client import notificar_evento
-from .etiqueta_sistema import sincronizar_etiqueta_estado
+from .etiqueta_sistema import sincronizar_etiqueta_equipo, sincronizar_etiqueta_estado
 from .menu_engine import accion_menu, procesar_seleccion, render_menu
 from .models import (
     Contact, Conversacion, ConversacionEtiqueta, ConversacionLog, ConversacionNotaInterna, ConversacionObservacion,
@@ -415,6 +415,7 @@ class ConversacionViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, view
             conversacion=conversacion, operador=request.user, texto=entrada.validated_data["observacion"].strip(),
         )
         sincronizar_etiqueta_estado(conversacion, aplicada_por=request.user)
+        sincronizar_etiqueta_equipo(conversacion, team.id, aplicada_por=request.user)
         notificar_evento(
             tipo="conversacion_actualizada", organization_id=conversacion.organization_id,
             conversacion_id=conversacion.id, team_id=conversacion.team_id, operador_id=conversacion.operador_id,

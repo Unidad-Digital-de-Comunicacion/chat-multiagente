@@ -487,7 +487,12 @@ function MenuOpcionFormModal({
 
       if (tipo === "RESPUESTA") body.respuesta_texto = respuestaTexto;
 
-      if (tipo === "DERIVACION") body.team = teamId || null;
+      // No sólo Derivación: un SUBMENU también puede tener equipo cargado,
+      // para marcar "esto es el área de Soporte" desde que se entra (la
+      // etiqueta de equipo se sincroniza sola al elegir la opción, no hace
+      // falta llegar a una Derivación de verdad — ver `conversations.
+      // etiqueta_sistema.sincronizar_etiqueta_equipo`).
+      if (tipo === "DERIVACION" || tipo === "SUBMENU") body.team = teamId || null;
 
       if (!node) body.parent = parentId;
 
@@ -534,17 +539,27 @@ function MenuOpcionFormModal({
               <MessageEditor rows={4} value={respuestaTexto} onChange={setRespuestaTexto} />
             </label>
           )}
-          {tipo === "DERIVACION" && (
+          {(tipo === "DERIVACION" || tipo === "SUBMENU") && (
             <label>
-              Equipo
-              <select required value={teamId} onChange={(e) => setTeamId(Number(e.target.value))}>
-                <option value="">— elegir —</option>
+              Equipo{tipo === "SUBMENU" && " (opcional)"}
+              <select
+                required={tipo === "DERIVACION"}
+                value={teamId}
+                onChange={(e) => setTeamId(e.target.value ? Number(e.target.value) : "")}
+              >
+                <option value="">{tipo === "SUBMENU" ? "— sin área —" : "— elegir —"}</option>
                 {teams.map((t) => (
                   <option key={t.id} value={t.id}>
                     {t.name}
                   </option>
                 ))}
               </select>
+              {tipo === "SUBMENU" && (
+                <span className="text-muted field-help">
+                  Marca este submenú como el área de ese equipo — se le aplica su etiqueta al
+                  contacto desde que entra, aunque todavía no haya un paso de Derivación.
+                </span>
+              )}
             </label>
           )}
           <label className="checkbox-label">

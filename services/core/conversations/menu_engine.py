@@ -16,14 +16,12 @@ Un mensaje entrante se interpreta como "elegí la opción N" sólo mientras
 es quien decide cuándo llamar a `procesar_seleccion` en vez de simplemente
 loguear el mensaje para un operador humano."""
 from dataclasses import dataclass
-from datetime import timedelta
 
 from django.utils import timezone
 
 from menu.models import MenuOpcion
 
-from .asignacion import asignar_round_robin
-from .etiqueta_sistema import sincronizar_etiqueta_estado
+from .etiqueta_sistema import sincronizar_etiqueta_equipo, sincronizar_etiqueta_estado
 from .models import Conversacion
 
 
@@ -119,6 +117,18 @@ def procesar_seleccion(conversacion: Conversacion, texto: str) -> list[dict]:
     elegido = hijos[seleccion - 1]
     bot_messages = BotMessages.para_organizacion(conversacion.contact.organization)
 
+    # La etiqueta de equipo marca el ÁREA por la que el contacto está
+    # navegando, no si ya llegó a un operador — por eso se sincroniza acá,
+    # para CUALQUIER opción que tenga un equipo cargado (`team` es un campo
+    # libre en todo tipo de `MenuOpcion`, no sólo Derivación: un Admin puede
+    # cargarlo en un SUBMENU para marcar "esto es el área de Soporte" desde
+    # que se entra, aunque todavía falten pasos para derivar). Si la opción
+    # elegida no tiene equipo (Volver/Inicio/Terminar, o un submenú/
+    # respuesta sin área asociada), no se toca la etiqueta de equipo que ya
+    # hubiera — sólo cambia cuando hay un equipo nuevo al que cambiar.
+    if elegido.team_id:
+        sincronizar_etiqueta_equipo(conversacion, elegido.team_id)
+
     if elegido.tipo == MenuOpcion.Tipo.SUBMENU:
         siguiente = render_menu(organization_id, elegido)
         conversacion.nodo_menu_actual = elegido
@@ -138,16 +148,19 @@ def procesar_seleccion(conversacion: Conversacion, texto: str) -> list[dict]:
         return [a for a in acciones if a]
 
     if elegido.tipo == MenuOpcion.Tipo.DERIVACION:
+        # Queda en la bandeja general del equipo, no asignada a un
+        # operador puntual — la asignación es al EQUIPO hasta que alguien
+        # la toma de verdad (`ConversacionViewSet.tomar`), pedido
+        # explícito (antes el round-robin de `asignacion.
+        # asignar_round_robin` elegía un operador acá mismo, lo que podía
+        # recaer en cualquier miembro del equipo, incluido un admin
+        # agregado por error, y la saltaba directo a "tomada" sin que
+        # nadie la haya tomado en los hechos). La etiqueta de equipo ya
+        # quedó sincronizada arriba (toda Derivación tiene `team` cargado).
         conversacion.team = elegido.team
         conversacion.menu_finalizado = True
         conversacion.derivada_at = timezone.now()
-        campos = ["team", "menu_finalizado", "derivada_at", "updated_at"]
-        operador = asignar_round_robin(elegido.team)
-        if operador:
-            conversacion.operador = operador
-            conversacion.bloqueada_hasta = timezone.now() + timedelta(minutes=2)
-            campos += ["operador", "bloqueada_hasta"]
-        conversacion.save(update_fields=campos)
+        conversacion.save(update_fields=["team", "menu_finalizado", "derivada_at", "updated_at"])
         sincronizar_etiqueta_estado(conversacion)
         mensaje = _reemplazar_variables(
             bot_messages.valor_o_default("derivacion_mensaje"), nombre=nombre, area=elegido.texto,

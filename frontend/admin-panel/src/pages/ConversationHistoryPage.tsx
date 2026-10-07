@@ -24,6 +24,14 @@ interface Filtros {
 
 const FILTROS_VACIOS: Filtros = { canal: "", derivada: "", desde: "", hasta: "", q: "" };
 
+// El Admin Panel sólo habla REST con Core (nunca WebSocket — eso es sólo
+// Operators Desk Web/Conversation Engine, ver CLAUDE.md), así que "tiempo
+// real" acá es polling corto, no push — mismo patrón que ya usa
+// `AuthContext` (`setInterval` + limpieza en el cleanup del efecto), con
+// un intervalo bastante más corto porque esta pantalla sí se queda abierta
+// mirándose activamente.
+const INTERVALO_HISTORIAL_MS = 10 * 1000;
+
 function construirQuery(filtros: Filtros, page: number): string {
   const params = new URLSearchParams();
 
@@ -328,22 +336,42 @@ export default function ConversationHistoryPage() {
     const base = superuser
       ? "/api/core/plataforma/historial-conversaciones/"
       : "/api/core/conversaciones/historial/";
+    let cancelado = false;
 
-    api
-      .get<Paginated<ConversacionHistorialRow>>(base + construirQuery(filtrosAplicados, page))
-      .then((data) => {
-        setFilas(data.results);
-        setCount(data.count);
-      })
-      .catch((err) => {
-        setError(
-          err instanceof ApiError && err.status === 403
-            ? "No tenés permiso para ver el historial de conversaciones."
-            : err instanceof ApiError && err.status === 400
-              ? "Alguno de los filtros no es válido."
-              : "No se pudo cargar el historial.",
-        );
-      });
+    // `esPrimeraCarga` distingue la carga inicial (si falla, hay que
+    // avisar — la pantalla no tiene nada más que mostrar) de los
+    // refrescos en segundo plano del polling (si uno falla por un hipo de
+    // red transitorio, no tiene sentido tirar abajo toda la pantalla y
+    // perder lo que el admin ya estaba mirando — se reintenta solo en el
+    // próximo tick).
+    function cargar(esPrimeraCarga: boolean) {
+      api
+        .get<Paginated<ConversacionHistorialRow>>(base + construirQuery(filtrosAplicados, page))
+        .then((data) => {
+          if (cancelado) return;
+          setFilas(data.results);
+          setCount(data.count);
+          if (esPrimeraCarga) setError(null);
+        })
+        .catch((err) => {
+          if (cancelado || !esPrimeraCarga) return;
+          setError(
+            err instanceof ApiError && err.status === 403
+              ? "No tenés permiso para ver el historial de conversaciones."
+              : err instanceof ApiError && err.status === 400
+                ? "Alguno de los filtros no es válido."
+                : "No se pudo cargar el historial.",
+          );
+        });
+    }
+
+    cargar(true);
+    const id = setInterval(() => cargar(false), INTERVALO_HISTORIAL_MS);
+
+    return () => {
+      cancelado = true;
+      clearInterval(id);
+    };
   }, [superuser, filtrosAplicados, page]);
 
   if (error) return <div className="empty-state">{error}</div>;
@@ -356,7 +384,7 @@ export default function ConversationHistoryPage() {
       <p className="text-muted">
         Inicio, derivación, agente, etiquetas, observaciones y cierre de cada conversación
         {superuser ? ", de todas las organizaciones" : " de tu organización"} — no incluye el contenido de los
-        mensajes ni las notas internas de los operadores.
+        mensajes ni las notas internas de los operadores. Se actualiza sola cada 10 segundos.
       </p>
 
       <FiltrosBar filtrosInput={filtrosInput} setFiltrosInput={setFiltrosInput} />

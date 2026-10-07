@@ -343,6 +343,11 @@ class ConversacionDerivarTests(TestCase):
         aplicada = self.conversacion.etiquetas_aplicadas.get(etiqueta__es_sistema=True)
         self.assertEqual(aplicada.etiqueta.codigo, "asignada")
         self.assertEqual(aplicada.aplicada_por, self.operador)
+        # También sincroniza la etiqueta de equipo ("cada equipo es una
+        # etiqueta") al derivar a mano, no sólo en la derivación por menú.
+        equipo_aplicada = self.conversacion.etiquetas_aplicadas.get(etiqueta__team__isnull=False)
+        self.assertEqual(equipo_aplicada.etiqueta.team_id, self.team_destino.id)
+        self.assertEqual(equipo_aplicada.aplicada_por, self.operador)
 
     def test_requiere_observacion(self):
         response = authenticated_client(self.operador).post(self.url, {"team": self.team_destino.id, "observacion": ""})
@@ -363,6 +368,30 @@ class ConversacionDerivarTests(TestCase):
             self.url, {"team": self.team_destino.id, "observacion": "motivo"},
         )
         self.assertEqual(response.status_code, 400)
+
+    def test_redirigir_a_otro_equipo_reemplaza_la_etiqueta_de_equipo_anterior(self):
+        otro_team = Team.objects.create(organization=self.org, name="Facturación")
+        authenticated_client(self.operador).post(
+            self.url, {"team": self.team_destino.id, "observacion": "pasa a Soporte"},
+        )
+        url_segunda_derivacion = reverse("conversacion-derivar", args=[self.conversacion.id])
+        response = authenticated_client(self.operador).post(
+            url_segunda_derivacion, {"team": otro_team.id, "observacion": "en realidad es de Facturación"},
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        self.conversacion.refresh_from_db()
+        equipo_aplicada = self.conversacion.etiquetas_aplicadas.get(etiqueta__team__isnull=False)
+        self.assertEqual(equipo_aplicada.etiqueta.team_id, otro_team.id)
+
+    def test_derivar_no_toca_una_etiqueta_personalizada_ya_aplicada(self):
+        # Las etiquetas generales/personalizadas son acumulativas — sólo
+        # las de estado y las de equipo se reemplazan entre sí mismas.
+        vip = Etiqueta.objects.create(organization=self.org, nombre="VIP", color="#000000")
+        ConversacionEtiqueta.objects.create(conversacion=self.conversacion, etiqueta=vip)
+        authenticated_client(self.operador).post(
+            self.url, {"team": self.team_destino.id, "observacion": "pasa a Soporte"},
+        )
+        self.assertTrue(self.conversacion.etiquetas_aplicadas.filter(etiqueta=vip).exists())
 
 
 class ConversacionEtiquetasTests(TestCase):
@@ -603,6 +632,24 @@ class MenuEngineTests(TestCase):
         self.assertEqual(conversacion.nodo_menu_actual, self.ventas)
         self.assertFalse(conversacion.menu_finalizado)
 
+    def test_entrar_a_un_submenu_con_equipo_aplica_su_etiqueta_sin_derivar(self):
+        # Pedido explícito: un Admin puede cargar `team` en un SUBMENU (no
+        # sólo en una Derivación) para marcar "esto es el área de Ventas"
+        # desde que el contacto entra, sin esperar a que el árbol llegue a
+        # derivar — la conversación NO queda asignada a ese equipo
+        # (`conversacion.team` sigue vacío, no llega a un operador), sólo
+        # se le pone la etiqueta de esa área.
+        self.ventas.team = self.team_ventas
+        self.ventas.save(update_fields=["team"])
+        self._mandar("hola")
+        response = self._mandar("1")  # entra a Ventas
+        self.assertEqual(response.status_code, 200, response.data)
+        conversacion = Conversacion.objects.get()
+        self.assertIsNone(conversacion.team)
+        self.assertIsNone(conversacion.operador)
+        equipo_aplicada = conversacion.etiquetas_aplicadas.get(etiqueta__team__isnull=False)
+        self.assertEqual(equipo_aplicada.etiqueta.team_id, self.team_ventas.id)
+
     def test_elegir_respuesta_manda_el_texto_y_vuelve_a_mostrar_el_menu(self):
         self._mandar("hola")
         self._mandar("1")  # entra a Ventas
@@ -626,10 +673,6 @@ class MenuEngineTests(TestCase):
         self.assertIsNone(conversacion.nodo_menu_actual)
 
     def test_derivacion_asigna_equipo_y_termina_el_menu(self):
-        # `team_ventas` no tiene miembros activos en este setUp -> nadie a
-        # quien asignar por round-robin, la conversación queda en la
-        # bandeja general del equipo (ver test de abajo para el caso con
-        # miembros).
         self._mandar("hola")
         response = self._mandar("2")  # Hablar con un operador
         self.assertEqual(response.status_code, 200, response.data)
@@ -644,22 +687,30 @@ class MenuEngineTests(TestCase):
         self.assertEqual(
             conversacion.etiquetas_aplicadas.get(etiqueta__es_sistema=True).etiqueta.codigo, "asignada",
         )
+        # Y la de equipo ("cada equipo es una etiqueta") al mismo tiempo —
+        # se agrega al elegir la opción de menú, no recién al tomarla.
+        self.assertEqual(
+            conversacion.etiquetas_aplicadas.get(etiqueta__team__isnull=False).etiqueta.team_id, self.team_ventas.id,
+        )
 
-    def test_derivacion_con_equipo_con_miembro_asigna_por_round_robin(self):
+    def test_derivacion_no_asigna_operador_aunque_el_equipo_tenga_miembros(self):
+        # Pedido explícito: la asignación de una derivación por menú es AL
+        # EQUIPO, nunca a un operador puntual — eso es lo que decide quién
+        # la toma (`ConversacionViewSet.tomar`), no el motor de menú. Antes
+        # un round-robin corría acá mismo y podía recaer en cualquier
+        # miembro del equipo (incluido un admin agregado por error), y
+        # saltaba derecho a "tomada" sin que nadie la haya tomado en los
+        # hechos.
         operador = make_user(self.org, groups=["operadores"])
         self.team_ventas.members.add(operador)
         self._mandar("hola")
         response = self._mandar("2")  # Hablar con un operador
         self.assertEqual(response.status_code, 200, response.data)
         conversacion = Conversacion.objects.get()
-        self.assertEqual(conversacion.operador, operador)
-        self.assertIsNotNone(conversacion.bloqueada_hasta)
-        self.assertGreater(conversacion.bloqueada_hasta, timezone.now())
-        # El round-robin dejó team Y operador en el mismo paso — la
-        # etiqueta de sistema real tiene que ser "tomada", no "asignada"
-        # (el estado real es ese, no un paso intermedio).
+        self.assertIsNone(conversacion.operador)
+        self.assertIsNone(conversacion.bloqueada_hasta)
         self.assertEqual(
-            conversacion.etiquetas_aplicadas.get(etiqueta__es_sistema=True).etiqueta.codigo, "tomada",
+            conversacion.etiquetas_aplicadas.get(etiqueta__es_sistema=True).etiqueta.codigo, "asignada",
         )
 
     def test_despues_de_la_derivacion_los_mensajes_no_se_interpretan_como_menu(self):
@@ -951,6 +1002,45 @@ class ConversacionHistorialTests(TestCase):
         self.assertIn("VIP", nombres)
         self.assertEqual(fila["observaciones"][0]["texto"], "Cliente pidió que lo llamen.")
         self.assertEqual(fila["observaciones"][0]["operador_email"], self.operador.email)
+
+    def test_incluye_la_etiqueta_de_equipo_junto_con_la_de_estado(self):
+        # Reproduce el camino real: entra a un submenú con equipo cargado
+        # (etiqueta de área) y después deriva (etiqueta de estado) — las
+        # dos tienen que aparecer juntas en el historial, no sólo la
+        # última que se haya sincronizado.
+        soporte = MenuOpcion.objects.create(
+            organization=self.org, texto="Soporte", orden=1, tipo=MenuOpcion.Tipo.SUBMENU, team=self.team,
+        )
+        MenuOpcion.objects.create(
+            organization=self.org, parent=soporte, texto="Hablar con un operador", orden=1,
+            tipo=MenuOpcion.Tipo.DERIVACION, team=self.team,
+        )
+        # Contacto nuevo (no el de `setUp`, que ya quedó con el menú
+        # terminado al no haber ninguna `MenuOpcion` configurada en ese
+        # momento) — "hola" crea la conversación y manda el menú principal.
+        gateway_client = _service_client("tok")
+        gateway_client.post(
+            reverse("bot-mensaje-entrante"),
+            {"organization_id": self.org.id, "channel": "WHATSAPP", "contact_externo_id": "222", "texto": "hola"},
+            format="json",
+        )
+        gateway_client.post(
+            reverse("bot-mensaje-entrante"),
+            {"organization_id": self.org.id, "channel": "WHATSAPP", "contact_externo_id": "222", "texto": "1"},  # entra a Soporte
+            format="json",
+        )
+        gateway_client.post(
+            reverse("bot-mensaje-entrante"),
+            {"organization_id": self.org.id, "channel": "WHATSAPP", "contact_externo_id": "222", "texto": "1"},  # deriva
+            format="json",
+        )
+        conversacion_nueva = Conversacion.objects.get(contact__identificador_externo="222")
+        response = authenticated_client(self.admin).get(self.url)
+        fila = next(f for f in response.data["results"] if f["id"] == conversacion_nueva.id)
+        nombres = {e["etiqueta"]["nombre"] for e in fila["etiquetas"]}
+        # La etiqueta de equipo se llama como el equipo (`self.team`, "Ventas"),
+        # no como el texto del nodo de menú ("Soporte") que la disparó.
+        self.assertEqual(nombres, {self.team.name, "Asignada"})
 
     def test_incluye_conversaciones_cerradas_a_diferencia_de_bandeja(self):
         self.conversacion.estado = Conversacion.Estado.CERRADA

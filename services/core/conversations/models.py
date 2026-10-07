@@ -76,14 +76,18 @@ class Conversacion(models.Model):
         null=True, blank=True,
         help_text="Mientras esté en el futuro, sólo `operador` puede seguir operando esta "
                    "conversación (tomarla de nuevo, responder) — otro operador no puede "
-                   "reclamarla hasta que venza. Se pone en +2 minutos al asignarla (por round-robin "
-                   "o a mano) y se renueva en cada `tomar`/`responder`; una vez vencida, cualquier "
-                   "operador la puede reclamar (ver `ConversacionViewSet.tomar`).",
+                   "reclamarla hasta que venza. Se pone en +2 minutos al tomarla "
+                   "(`ConversacionViewSet.tomar`) y se renueva en cada `responder`; una vez "
+                   "vencida, cualquier operador la puede reclamar.",
     )
     team = models.ForeignKey(
         "teams.Team", on_delete=models.SET_NULL, null=True, blank=True, related_name="conversaciones",
-        help_text="Se completa al elegir una opción de menú tipo Derivación — dispara la asignación "
-                   "round-robin dentro del equipo (`conversations.asignacion.asignar_round_robin`).",
+        help_text="Se completa al elegir una opción de menú tipo Derivación o al derivar a mano "
+                   "— queda en la bandeja general de ese equipo (sin `operador`) hasta que "
+                   "alguien la toma; no dispara una asignación automática a un operador puntual "
+                   "(`conversations.asignacion.asignar_round_robin` existe como utilidad "
+                   "independiente, pero ningún call site la usa todavía — roadmap, ver docs/"
+                   "CONTEXTO_PROYECTO.md).",
     )
     derivada_at = models.DateTimeField(
         null=True, blank=True,
@@ -157,7 +161,10 @@ class ConversacionEtiqueta(models.Model):
     la aplicó y cuándo. Las de sistema son mutuamente excluyentes entre sí
     (sólo puede haber una activa a la vez — pendiente/asignada/tomada/
     en_proceso/en_pausa/rechazado/resuelto, ver `views.py::
-    ConversacionViewSet.etiquetas`); las generales y las de equipo son
+    ConversacionViewSet.etiquetas`); las de equipo también son mutuamente
+    excluyentes entre sí, en un eje independiente (sólo puede haber una a
+    la vez, sincronizada sola — ver `etiqueta_sistema.
+    sincronizar_etiqueta_equipo`); sólo las generales/personalizadas son
     libremente acumulables."""
 
     conversacion = models.ForeignKey(Conversacion, on_delete=models.CASCADE, related_name="etiquetas_aplicadas")
