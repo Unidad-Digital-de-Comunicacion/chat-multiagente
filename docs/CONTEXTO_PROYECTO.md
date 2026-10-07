@@ -983,7 +983,17 @@ son templates Django con SSO, esa idea se descartó a favor de una sola UI en el
   - **Etiquetas sobre una conversación**: `conversations.ConversacionEtiqueta` (conversación ×
     `tags.Etiqueta`, quién la aplicó y cuándo) — `GET/POST/DELETE .../conversaciones/{id}/etiquetas/`.
     Las de sistema (pendiente/asignada/tomada/en_proceso/en_pausa/rechazado/resuelto) son
-    mutuamente excluyentes entre sí; las generales y de equipo son libremente acumulables.
+    mutuamente excluyentes entre sí (un solo estado activo a la vez); las de equipo también son
+    mutuamente excluyentes entre sí (una sola a la vez), pero en un eje independiente del de
+    estado y DESACOPLADO del `team` real de la conversación: Core la sincroniza sola
+    (`conversations.etiqueta_sistema.sincronizar_etiqueta_equipo`) para cualquier opción de menú
+    elegida que tenga un equipo cargado — `MenuOpcion.team` es un campo libre en todo tipo de
+    nodo, no sólo Derivación, así que un Admin puede cargarlo en un SUBMENU para marcar "esto es
+    el área de Soporte" desde que el contacto entra, sin esperar a que el árbol llegue a derivar
+    de verdad — y al derivar a mano; nunca al tomar/cerrar. Sólo las generales/personalizadas son
+    libremente acumulables (corregido 2026-10 — antes esta sección decía que las de equipo
+    también eran libres, nunca llegó a implementarse así; y la primera corrección sincronizaba
+    sólo en la Derivación real, perdiendo el caso "entré al área pero todavía no derivó").
   - **Observaciones**: `conversations.ConversacionObservacion`, opcionales en cualquier momento
     (`GET/POST .../observaciones/`) pero **obligatorias** (texto no vacío) al aplicar la etiqueta de
     sistema resuelto/rechazado/en_pausa — el back rechaza esa transición sin observación.
@@ -993,10 +1003,14 @@ son templates Django con SSO, esa idea se descartó a favor de una sola UI en el
     arbitrario entre operadores que se pensó para Conversation Engine (ver esa fase, sigue sin
     implementar).
   - Lo que sigue faltando de verdad: reconexión automática del WebSocket de Conversation Engine
-    (hoy es 100% responsabilidad del cliente, ver §7.1 del contrato), asignación round-robin
-    explícita vía API (hoy sólo la dispara una derivación de menú), y notificaciones push a la app
-    Android (**no implementado, no construir sin pedido explícito** — sección 11 — pero ver la
-    sección "Notificaciones push (roadmap)" del contrato de API para el enfoque que se evaluó).
+    (hoy es 100% responsabilidad del cliente, ver §7.1 del contrato), asignación round-robin a un
+    operador puntual (corregido 2026-10: la derivación — por menú o a mano — ya NO la dispara sola;
+    queda asignada al equipo nomás hasta que alguien la toma con `tomar`, pedido explícito de
+    negocio. `conversations.asignacion.asignar_round_robin` sigue existiendo, probada en
+    aislamiento, pero ningún call site la usa hoy — asignación explícita vía API queda pendiente si
+    hace falta más adelante), y notificaciones push a la app Android (**no implementado, no
+    construir sin pedido explícito** — sección 11 — pero ver la sección "Notificaciones push
+    (roadmap)" del contrato de API para el enfoque que se evaluó).
 
 ### Fase 6 — App móvil Android
 - Mismo contrato de API que Operators Desk Service (sección 3.2): login, bandeja, hilo, acciones.

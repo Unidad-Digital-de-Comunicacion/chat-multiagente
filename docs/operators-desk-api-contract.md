@@ -188,11 +188,30 @@ operativo` en §4.1 era sólo un dato calculado, ahora además queda una fila
 real de `ConversacionEtiqueta` por cada paso, con quién/cuándo) en estos 3
 momentos: al crearse la conversación (pendiente), al derivarse a un
 equipo — por el árbol de menú o a mano, §4.7 — (asignada), y al tomarla,
-§4.3 (tomada). Si ves una de estas 3 en `GET .../etiquetas/`, es
-informativo (para el historial/auditoría), no algo que tu UI tenga que
-aplicar o esperar aplicar por su cuenta. El resto del catálogo
-(en_proceso/en_pausa/rechazado/resuelto/de equipo/generales) sí son
-decisión del operador — ver §4.8 más abajo.
+§4.3 (tomada). **Importante (corregido 2026-10):** derivar YA NO asigna un
+operador puntual por round-robin — la conversación queda asignada AL
+EQUIPO nomás, sin `operador`, hasta que alguien la toma de verdad con
+§4.3. Si ves "tomada" en `GET .../etiquetas/` es porque un operador la
+tomó, nunca como efecto secundario de la derivación.
+
+La etiqueta de equipo ("cada equipo es una etiqueta", la fila con `team`
+cargado) **tampoco la aplicás a mano** — Core también la sincroniza sola,
+pero marca el ÁREA por la que viene navegando el contacto, no si ya
+llegó a un operador: se sincroniza para **cualquier** opción de menú
+elegida que tenga un equipo cargado (`MenuOpcion.team` es un campo libre
+en todo tipo de nodo, no sólo Derivación — un Admin puede cargarlo en un
+SUBMENU para marcar "esto es el área de Soporte" desde que el contacto
+entra, aunque falten pasos para derivar de verdad), y al derivar a mano
+(§4.7). Por eso puede cambiar ANTES de que `estado_operativo` llegue a
+"asignada" — son dos cosas desacopladas, no esperes que coincidan
+siempre. Nunca se sincroniza al tomar/cerrar (no cambian de área).
+Reemplaza cualquier etiqueta de equipo anterior (una sola a la vez), sin
+tocar las demás. Si ves una de estas 4 filas (pendiente/asignada/tomada/
+de equipo) en `GET .../etiquetas/`, es informativo (para el historial/
+auditoría), no algo que tu UI tenga que aplicar o esperar aplicar por su
+cuenta. El resto del catálogo (en_proceso/en_pausa/rechazado/resuelto/
+generales) sí son decisión del operador, y son acumulativas entre sí —
+ver §4.8 más abajo.
 
 Un operador no puede crear/editar/borrar etiquetas (eso es sólo de
 `administradores`, desde el Admin Panel — 403 si se intenta).
@@ -362,6 +381,8 @@ asignado**, libre para que cualquiera del equipo destino la tome.
   §4.9). 400 si viene vacía.
 - 404 si `team` no existe o es de otra organización.
 - 400 si la conversación ya está cerrada.
+- Sincroniza también la etiqueta de ese equipo (reemplaza la del equipo
+  anterior si tenía una) — ver la nota de §4.1 en la sección de etiquetas.
 
 ### 4.8 Etiquetas de una conversación puntual
 
@@ -618,8 +639,15 @@ depende de mantener un socket abierto en segundo plano en el celular:
   minutos venciendo, o por `derivar`).
 - Respuestas predefinidas / templates de mensajes para el operador
   (mencionado en la sección 9 de `CONTEXTO_PROYECTO.md`, no implementado).
-- Asignación round-robin manual vía API (hoy sólo la dispara una
-  derivación del árbol de menú, `conversations.asignacion.asignar_round_robin`).
+- Asignación round-robin a un operador puntual (ni manual vía API ni
+  automática en la derivación — corregido 2026-10, era un bug: antes
+  `menu_engine.procesar_seleccion` la disparaba sola al derivar, lo que
+  podía recaer en cualquier miembro del equipo, administrador incluido si
+  estaba cargado como `member` por error, y saltaba la conversación
+  derecho a "tomada" sin que nadie la haya tomado en los hechos. Hoy la
+  derivación sólo asigna al equipo; `conversations.asignacion.
+  asignar_round_robin` sigue existiendo como utilidad probada en
+  aislamiento, pero ningún call site la usa).
 
 Si alguno de estos hace falta para lo que estás construyendo, es señal
 para pedirlo explícitamente y extender Core — no para improvisar un
