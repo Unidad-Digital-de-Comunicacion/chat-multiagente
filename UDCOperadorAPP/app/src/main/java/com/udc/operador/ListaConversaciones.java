@@ -25,6 +25,8 @@ import java.util.List;
  */
 public class ListaConversaciones {
 
+    private static final String PERMISO_TOMAR_SIN_DERIVAR = "conversations.tomar_sin_derivar";
+
     private final ActividadBase actividad;
     private final ListView lista;
     private final View progreso;
@@ -55,8 +57,16 @@ public class ListaConversaciones {
         // Un solo adaptador que se actualiza en el lugar: así el refresco automático no manda la lista al principio.
         adaptador = new ConversacionesAdapter(actividad, conversaciones);
         lista.setAdapter(adaptador);
-        lista.setOnItemClickListener((padre, vista, posicion, id) ->
-                ConversacionActivity.abrir(actividad, conversaciones.get(posicion), soloLectura));
+        lista.setOnItemClickListener((padre, vista, posicion, id) -> {
+            JSONObject conversacion = conversaciones.get(posicion);
+            // Abrir una conversación la toma; Core no deja tomar una todavía no derivada sin este permiso.
+            boolean sinDerivar = "pendiente".equals(conversacion.optString("estado_operativo"));
+            if (!soloLectura && sinDerivar && !Sesion.tienePermiso(actividad, PERMISO_TOMAR_SIN_DERIVAR)) {
+                actividad.avisar("Esta conversación todavía no fue derivada a un equipo");
+                return;
+            }
+            ConversacionActivity.abrir(actividad, conversacion, soloLectura);
+        });
 
         pie = LayoutInflater.from(actividad).inflate(R.layout.pie_ver_mas, lista, false);
         botonVerMas = pie.findViewById(R.id.botonVerMas);

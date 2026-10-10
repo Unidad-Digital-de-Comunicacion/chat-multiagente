@@ -57,6 +57,18 @@
                     android:textSize="20sp"
                     android:textStyle="bold" />
 
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/perfil_equipos" />
+
+                <TextView
+                    android:id="@+id/textEquipos"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="24dp"
+                    android:textSize="16sp" />
+
                 <EditText
                     android:id="@+id/editNombre"
                     android:layout_width="match_parent"

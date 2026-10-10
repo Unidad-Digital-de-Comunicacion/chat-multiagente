@@ -59,6 +59,15 @@ public class ConversacionesAdapter extends ArrayAdapter<JSONObject> {
         return vista;
     }
 
+    /**
+     * Pendiente/asignada/tomada son el estado de la conversación, no algo que el operador decida:
+     * Core las aplica solo al tomar/derivar, así que no se ofrecen en el catálogo para aplicar a mano.
+     */
+    public static boolean esEtiquetaDeEstado(JSONObject etiqueta) {
+        String codigo = etiqueta.optString("codigo");
+        return codigo.equals("pendiente") || codigo.equals("asignada") || codigo.equals("tomada");
+    }
+
     /** Una etiqueta = su nombre con el color de fondo y de letra que manda Core (`color`, `color_texto`). */
     public static SpannableStringBuilder textoDeEtiquetas(JSONArray etiquetas) {
         SpannableStringBuilder texto = new SpannableStringBuilder();

@@ -5,15 +5,23 @@ import static com.udc.operador.HttpCliente.ejecutar;
 import static com.udc.operador.HttpCliente.json;
 
 import android.content.Intent;
+import android.text.TextUtils;
 import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.TextView;
 
+import org.json.JSONArray;
 import org.json.JSONObject;
 
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+
 /**
- * La sección "Perfil" de la pantalla principal: el email del usuario, editar
+ * La sección "Perfil" de la pantalla principal: el email del usuario, los
+ * equipos a los que pertenece (GET /api/core/teams/, contrato §2), editar
  * nombre/apellido/DNI (PATCH /api/core/users/me/) y los botones de cambiar
  * contraseña y cerrar sesión (contrato §1).
  */
@@ -22,6 +30,7 @@ public class PerfilSeccion {
     private final ActividadBase actividad;
     private final Runnable alCerrarSesion;
     private final TextView textEmail;
+    private final TextView textEquipos;
     private final EditText editNombre;
     private final EditText editApellido;
     private final EditText editDni;
@@ -32,6 +41,7 @@ public class PerfilSeccion {
         this.actividad = actividad;
         this.alCerrarSesion = alCerrarSesion;
         textEmail = raiz.findViewById(R.id.textEmail);
+        textEquipos = raiz.findViewById(R.id.textEquipos);
         editNombre = raiz.findViewById(R.id.editNombre);
         editApellido = raiz.findViewById(R.id.editApellido);
         editDni = raiz.findViewById(R.id.editDni);
@@ -56,8 +66,53 @@ public class PerfilSeccion {
                 return;
             }
             JSONObject perfil = new JSONObject(respuesta.cuerpo);
+            guardarPermisos(perfil.optJSONArray("permissions"));
             actividad.runOnUiThread(() -> mostrar(perfil));
+            cargarEquipos(perfil.getInt("id"));
         });
+    }
+
+    /** Se guardan para que las listas sepan, sin otro pedido, si el operador puede tomar sin derivar. */
+    private void guardarPermisos(JSONArray permisos) {
+        if (permisos == null) {
+            return;
+        }
+        Set<String> guardados = new HashSet<>();
+        for (int i = 0; i < permisos.length(); i++) {
+            guardados.add(permisos.optString(i));
+        }
+        Sesion.guardarPermisos(actividad, guardados);
+    }
+
+    /**
+     * Core no manda los equipos en el perfil: se piden los de la organización (GET /teams/) y se
+     * dejan los activos en cuyos `members` está este usuario.
+     */
+    private void cargarEquipos(int usuarioId) throws Exception {
+        HttpCliente.Respuesta respuesta = ejecutar(api().equipos());
+        if (!respuesta.esExitosa()) {
+            // El perfil ya se muestra; sólo se deja sin equipos y se avisa.
+            actividad.avisar("No se pudieron cargar tus equipos");
+            return;
+        }
+        JSONArray equipos = new JSONObject(respuesta.cuerpo).getJSONArray("results");
+        List<String> nombres = new ArrayList<>();
+        for (int i = 0; i < equipos.length(); i++) {
+            JSONObject equipo = equipos.getJSONObject(i);
+            if (!equipo.getBoolean("is_active")) {
+                continue;
+            }
+            JSONArray miembros = equipo.getJSONArray("members");
+            for (int j = 0; j < miembros.length(); j++) {
+                if (miembros.getInt(j) == usuarioId) {
+                    nombres.add(equipo.getString("name"));
+                    break;
+                }
+            }
+        }
+        actividad.runOnUiThread(() -> textEquipos.setText(nombres.isEmpty()
+                ? actividad.getString(R.string.perfil_sin_equipos)
+                : TextUtils.join("\n", nombres)));
     }
 
     private void mostrar(JSONObject perfil) {

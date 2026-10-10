@@ -3,6 +3,8 @@ package com.udc.operador;
 import android.content.Context;
 import android.content.SharedPreferences;
 
+import java.util.Set;
+
 /**
  * Guarda los tokens del login (contrato §1) en SharedPreferences, así la
  * sesión sobrevive a cerrar la app: `access` (vence a los 30 minutos, se
@@ -14,6 +16,7 @@ public class Sesion {
     private static final String PREFS_NOMBRE = "sesion";
     private static final String CLAVE_ACCESS = "access_token";
     private static final String CLAVE_REFRESH = "refresh_token";
+    private static final String CLAVE_PERMISOS = "permisos";
 
     public static void guardarTokens(Context context, String access, String refresh) {
         prefs(context).edit()
@@ -33,6 +36,20 @@ public class Sesion {
 
     public static String obtenerRefresh(Context context) {
         return prefs(context).getString(CLAVE_REFRESH, null);
+    }
+
+    /** Guarda los `permissions` de GET /users/me/ para decidir qué mostrar sin volver a pedir el perfil. */
+    public static void guardarPermisos(Context context, Set<String> permisos) {
+        prefs(context).edit().putStringSet(CLAVE_PERMISOS, permisos).apply();
+    }
+
+    /**
+     * Si el usuario tiene el permiso. Mientras el perfil no se haya cargado se asume que sí:
+     * Core es quien decide de verdad, y contesta con un mensaje claro si no corresponde.
+     */
+    public static boolean tienePermiso(Context context, String permiso) {
+        Set<String> permisos = prefs(context).getStringSet(CLAVE_PERMISOS, null);
+        return permisos == null || permisos.contains(permiso);
     }
 
     /** Borra los tokens guardados (logout). */

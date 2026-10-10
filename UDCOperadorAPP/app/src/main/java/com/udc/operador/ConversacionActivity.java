@@ -65,6 +65,8 @@ public class ConversacionActivity extends ActividadBase {
     private int conversacionId;
     private boolean soloLectura;
     private boolean yaMostrada;
+    // -1 hasta que se cargan las observaciones: mientras no se sabe, se deja que Core decida al cerrar.
+    private volatile int cantidadObservaciones = -1;
     private AccionesConversacion acciones;
 
     private final List<MensajesAdapter.Linea> lineasMostradas = new ArrayList<>();
@@ -86,7 +88,11 @@ public class ConversacionActivity extends ActividadBase {
 
         conversacionId = getIntent().getIntExtra(EXTRA_ID, -1);
         soloLectura = getIntent().getBooleanExtra(EXTRA_SOLO_LECTURA, false);
-        acciones = new AccionesConversacion(this, conversacionId, this::cargarEtiquetasAplicadas, this::finish);
+        // Aplicar una etiqueta de cierre también crea una observación: se recarga el hilo además de las etiquetas.
+        acciones = new AccionesConversacion(this, conversacionId, () -> {
+            cargarEtiquetasAplicadas();
+            cargarMensajes(false);
+        }, this::finish);
 
         // Arriba: con quién se está hablando (y si la conversación está cerrada).
         setTitle(getIntent().getStringExtra(EXTRA_TITULO));
@@ -184,7 +190,7 @@ public class ConversacionActivity extends ActividadBase {
             if (!soloLectura) {
                 HttpCliente.Respuesta respuesta = ejecutar(api().tomar(conversacionId));
                 if (!respuesta.esExitosa()) {
-                    avisar("No se pudo tomar la conversación (¿la tiene otro operador?)");
+                    avisar(HttpCliente.mensajeDeError(respuesta.cuerpo, "No se pudo tomar la conversación"));
                     runOnUiThread(this::finish);
                     return;
                 }
@@ -253,6 +259,7 @@ public class ConversacionActivity extends ActividadBase {
         HttpCliente.Respuesta observaciones = ejecutar(api().observaciones(conversacionId));
         if (observaciones.esExitosa()) {
             JSONArray filas = new JSONArray(observaciones.cuerpo);
+            cantidadObservaciones = filas.length();
             for (int i = 0; i < filas.length(); i++) {
                 JSONObject fila = filas.getJSONObject(i);
                 lineas.add(new MensajesAdapter.Linea(MensajesAdapter.Tipo.OBSERVACION,
@@ -328,6 +335,17 @@ public class ConversacionActivity extends ActividadBase {
     }
 
     private void confirmarCierre() {
+        // Core exige al menos una observación para cerrar (contrato §4.6). Se carga una sola al aplicar
+        // Resuelto / Rechazado / En pausa, así que alcanza con pedir esa etiqueta desde el menú.
+        if (cantidadObservaciones == 0) {
+            new AlertDialog.Builder(this)
+                    .setTitle("Falta una observación")
+                    .setMessage("Para cerrar hace falta dejar constancia de qué pasó: aplicá la etiqueta Resuelto, Rechazado o En pausa desde el menú Etiquetas e indicá el motivo.")
+                    .setPositiveButton("Ir a etiquetas", (dialogo, boton) -> acciones.mostrarEtiquetas())
+                    .setNegativeButton("Cancelar", null)
+                    .show();
+            return;
+        }
         new AlertDialog.Builder(this)
                 .setTitle("Cerrar conversación")
                 .setMessage("La conversación se marca como cerrada y, si hay un mensaje de despedida configurado, se le envía al contacto. Ya no vas a poder responderla.")

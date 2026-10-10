@@ -66,6 +66,10 @@ public class AccionesConversacion {
             List<String> opciones = new ArrayList<>();
             for (int i = 0; i < etiquetas.length(); i++) {
                 JSONObject etiqueta = etiquetas.getJSONObject(i);
+                // El estado lo maneja Core (tomar/derivar): aplicarlas a mano lo dejaría inconsistente.
+                if (ConversacionesAdapter.esEtiquetaDeEstado(etiqueta)) {
+                    continue;
+                }
                 boolean aplicada = idsAplicadas.contains(etiqueta.getInt("id"));
                 ids.add(etiqueta.getInt("id"));
                 codigos.add(etiqueta.getString("codigo"));

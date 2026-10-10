@@ -18,6 +18,8 @@
     <string name="ver_mas_cargando">Cargando...</string>
     <string name="cerradas_titulo">Conversaciones cerradas</string>
     <string name="cerradas_vacio">No tenés conversaciones cerradas.</string>    <string name="perfil_conectado_como">Conectado como</string>
+    <string name="perfil_equipos">Equipos</string>
+    <string name="perfil_sin_equipos">Todavía no pertenecés a ningún equipo</string>
     <string name="perfil_hint_nombre">Nombre</string>
     <string name="perfil_hint_apellido">Apellido</string>
     <string name="perfil_hint_dni">DNI</string>

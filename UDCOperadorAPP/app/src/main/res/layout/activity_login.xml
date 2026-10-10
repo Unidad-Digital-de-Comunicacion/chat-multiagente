@@ -20,6 +20,14 @@
         android:textStyle="bold"
         android:layout_marginBottom="32dp" />
 
+    <!-- Sólo para pruebas: rellena usuario y contraseña con los usuarios del seed (quitar antes de publicar una release) -->
+    <Spinner
+        android:id="@+id/spinnerUsuariosDemo"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="16dp"
+        android:visibility="gone" />
+
     <!-- Campo de usuario (email) -->
     <EditText
         android:id="@+id/editUsuario"
