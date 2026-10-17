@@ -114,6 +114,21 @@ class MensajeEntranteViewTests(TestCase):
         )
         self.assertEqual(response.status_code, 404)
 
+    def test_un_token_de_webchat_tambien_puede_entrar(self):
+        # A diferencia de los endpoints internos de credenciales de Meta
+        # (gateados sólo a Channel Gateway), acá entra cualquier servicio
+        # que entregue mensajes normalizados — Webchat también.
+        make_service_token(ServiceToken.Servicio.WEBCHAT, "token-de-webchat", activo=True)
+        response = _service_client("token-de-webchat").post(
+            self.url, self._body(channel="WEBCHAT", contact_externo_id="visitante-1"), format="json",
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+
+    def test_un_token_de_otro_servicio_no_puede_entrar(self):
+        make_service_token(ServiceToken.Servicio.CONVERSATION_ENGINE, "token-de-otro-servicio", activo=True)
+        response = _service_client("token-de-otro-servicio").post(self.url, self._body(), format="json")
+        self.assertEqual(response.status_code, 403)
+
 
 class ConversacionViewSetTests(TestCase):
     def setUp(self):
@@ -1341,6 +1356,21 @@ class EnviarConReintentosTests(TestCase):
         aviso = ConversacionLog.objects.get(texto=MENSAJE_NO_ENVIADO)
         self.assertEqual(aviso.remitente, ConversacionLog.Remitente.SISTEMA)
         self.assertEqual(aviso.conversacion, self.conversacion)
+
+    @patch("conversations.webchat_client.enviar_mensaje_saliente")
+    @patch("conversations.channel_gateway_client.enviar_mensaje_saliente")
+    def test_una_conversacion_de_webchat_se_despacha_al_cliente_de_webchat(self, mock_gateway, mock_webchat):
+        # No a Channel Gateway — Webchat no pasa por Meta, necesita su
+        # propio cliente (`conversations.webchat_client`).
+        contact = Contact.objects.create(organization=self.org, canal=Canal.Tipo.WEBCHAT, identificador_externo="visitante-1")
+        conversacion_webchat = Conversacion.objects.create(organization=self.org, contact=contact, canal=Canal.Tipo.WEBCHAT)
+        mock_webchat.return_value = True
+
+        resultado = enviar_con_reintentos(conversacion_webchat, "hola")
+
+        self.assertTrue(resultado)
+        mock_webchat.assert_called_once_with(conversacion_webchat, "hola")
+        mock_gateway.assert_not_called()
 
 
 @patch("conversations.cierre.notificar_evento")

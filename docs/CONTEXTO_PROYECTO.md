@@ -77,7 +77,7 @@
 | 3 | **Conversation Engine** | `services/conversation-engine` | FastAPI + WebSockets + PostgreSQL | 8003 | Post-derivación: asigna operador (round-robin) dentro del equipo indicado por Core, entrega mensajes en tiempo real vía WebSocket, controla el límite de conexiones simultáneas (`OperatorSession`). |
 | 4 | **Operators Desk Service** | `services/operators-desk` | FastAPI + WebSockets + PostgreSQL | 8004 | Backend a medida (BFF) para el **Operators Desk Web** (React): bandeja de chats asignados, hilo de conversación, acciones rápidas (responder/derivar/etiquetar/cerrar). Es la contraparte web de lo que la app Android resuelve en mobile — reutiliza Core (historial/datos) y Conversation Engine (tiempo real/asignación) en vez de duplicar su lógica. |
 | 5 | **Analytics Service** | `services/analytics` | FastAPI + PostgreSQL (solo lectura) | 8005 | Agregaciones y reportes para el rol Data Manager: volumen de conversaciones por canal/equipo/operador, tiempos de respuesta, uso del menú (abandono por nodo). Se conecta a los esquemas de Core/Conversation Engine con un usuario de base de datos **read-only**; no escribe nunca. |
-| 6 | **Webchat Service** *(opcional / fast-follow)* | `services/webchat` | FastAPI + WebSockets + PostgreSQL | 8006 | Backend del widget de chat embebible en un sitio web propio del cliente, como canal adicional a WhatsApp/Messenger/Instagram. Sigue el mismo contrato de mensaje normalizado que Channel Gateway. **No construir hasta que se pida explícitamente** — dejar la carpeta con un stub (`/health`) y el compose con `profiles: ["webchat"]`. |
+| 6 | **Webchat Service** *(opcional)* | `services/webchat` | FastAPI + WebSockets | 8006 | Backend del widget de chat embebible en un sitio web propio del cliente, como canal adicional a WhatsApp/Messenger/Instagram. Primera versión construida: handshake de sesión (`POST /sessions/`), mensaje entrante del visitante (`POST /mensajes/` → Core vía el mismo contrato normalizado que Channel Gateway, `channel="WEBCHAT"`), mensaje saliente de un operador (`POST /messages/send`, gateado con `ServiceToken`) empujado por WebSocket (`WS /ws/visitante/{visitor_id}`) al visitante conectado, y `widget.js` (Vanilla JS, Shadow DOM, sin dependencias) para incrustar en el sitio del cliente. Sin PostgreSQL propio todavía (todo en memoria del proceso — `ConnectionManager`, igual que Conversation Engine — y sin historial propio, ver más abajo). Sigue sin arrancar por defecto (`profiles: ["webchat"]`, `docker compose --profile webchat up`). |
 
 ### 3.2 Frontends y app móvil (no son "microservicios" pero forman parte del repo)
 
@@ -750,8 +750,8 @@ son templates Django con SSO, esa idea se descartó a favor de una sola UI en el
 
     Ninguno de los dos valida permisos de envío más allá de lo mínimo que ya exige el nodo/
     mecanismo consultado — el envío/recepción real de mensajes (Messenger/Instagram) es Channel
-    Gateway (sección 4.2), no esto. Webchat no tiene un servidor de terceros que consultar (sería
-    el propio Webchat Service, Fase 9, sin construir) — el chequeo ahí devuelve
+    Gateway (sección 4.2), no esto. Webchat no tiene un servidor de terceros que consultar (no pasa
+    por Meta/Graph API, el propio Webchat Service es el único extremo) — el chequeo ahí devuelve
     `ultimo_chequeo_ok=None` ("No aplica") en vez de intentar una conexión que no existe. Esta
     action tiene su propio `get_permissions()` (sólo pide `IsAuthenticated` + `require_perm`
     manual a `channels.change_canal`) porque `StrictDjangoModelPermissions` mapea POST →
@@ -1027,14 +1027,13 @@ son templates Django con SSO, esa idea se descartó a favor de una sola UI en el
 - Revisión de que ningún servicio quedó con lógica de negocio que debería estar en Core.
 
 ### Fase 9 (fast-follow, no iniciar sin pedido explícito)
-- Webchat Service completo (hoy es un stub).
 - Push notifications en background (FCM) para la app Android.
 - Editor de menú con capturas de datos / autorespuesta por palabra clave libre.
 
 ## 11. Explícitamente fuera de alcance ahora
 
 No implementar salvo pedido explícito: WhatsApp en Channel Gateway (Messenger/Instagram ya están,
-ver sección 9/Fase 3), Webchat Service (más allá del stub),
+ver sección 9/Fase 3),
 bus de eventos (Kafka/RabbitMQ), cache distribuida (Redis), búsqueda con Elasticsearch,
 almacenamiento tipo S3, notificaciones push en background, editor de menú con nodos de captura de
 datos o autorespuesta libre, versionado histórico de menús, panel de auditoría dedicado (más allá

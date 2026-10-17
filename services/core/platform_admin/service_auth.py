@@ -53,8 +53,10 @@ class ServiceTokenAuthentication(BaseAuthentication):
 
 class IsChannelGatewayService(BasePermission):
     """Gate de los endpoints internos que sólo Channel Gateway puede llamar
-    (ej. `channels.views.InternalCanalConfigView`) — nunca un usuario, ni
-    siquiera el superusuario de plataforma vía JWT."""
+    (ej. `channels.views.InternalCanalConfigView`, credenciales de Meta) —
+    nunca un usuario, ni siquiera el superusuario de plataforma vía JWT, y
+    tampoco otro microservicio: estos endpoints son específicos de Meta
+    (WhatsApp/Messenger/Instagram), Webchat no tiene nada que hacer acá."""
 
     def has_permission(self, request, view):
         auth = request.auth
@@ -64,6 +66,23 @@ class IsChannelGatewayService(BasePermission):
         # isinstance es el chequeo real de permiso, no hay un "borde" más
         # atrás donde parsearlo.
         return bool(isinstance(auth, ServiceToken) and auth.servicio == ServiceToken.Servicio.CHANNEL_GATEWAY)  # noqa: ASP002
+
+
+class IsInboundChannelService(BasePermission):
+    """Gate de `conversations.views.MensajeEntranteView` — a diferencia de
+    `IsChannelGatewayService`, acá entra cualquier servicio que entregue
+    mensajes normalizados de un contacto (mismo contrato en los dos,
+    `{organization_id, channel, contact_externo_id, texto}`): hoy Channel
+    Gateway (WhatsApp/Messenger/Instagram) y Webchat (docs/CONTEXTO_
+    PROYECTO.md §3 — "sigue el mismo contrato de mensaje normalizado que
+    Channel Gateway"). Los demás endpoints internos (credenciales de Meta)
+    siguen gateados sólo a Channel Gateway."""
+
+    SERVICIOS_PERMITIDOS = {ServiceToken.Servicio.CHANNEL_GATEWAY, ServiceToken.Servicio.WEBCHAT}
+
+    def has_permission(self, request, view):
+        auth = request.auth
+        return bool(isinstance(auth, ServiceToken) and auth.servicio in self.SERVICIOS_PERMITIDOS)  # noqa: ASP002
 
 
 try:

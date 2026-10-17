@@ -257,6 +257,13 @@ CONVERSATION_ENGINE_INTERNAL_URL = os.environ.get(
     "CONVERSATION_ENGINE_INTERNAL_URL", "http://conversation-engine:8000",
 ).rstrip("/")
 
+# URL INTERNA de Webchat — mismo patrón que CHANNEL_GATEWAY_INTERNAL_URL de
+# arriba, pero para que Core le pida a Webchat que entregue un mensaje
+# saliente a un visitante (`conversations.webchat_client.
+# enviar_mensaje_saliente`, `POST /messages/send`) cuando la conversación es
+# de canal WEBCHAT en vez de WHATSAPP/MESSENGER/INSTAGRAM.
+WEBCHAT_INTERNAL_URL = os.environ.get("WEBCHAT_INTERNAL_URL", "http://webchat:8000").rstrip("/")
+
 # App de Meta (misma app/credenciales que ya usa channel-gateway para
 # verificar firmas de webhook, `META_APP_SECRET`) — acá hace falta además
 # para `channels.embedded_signup`: el intercambio de `code` por

@@ -211,8 +211,18 @@ services:
       - DB_SCHEMA=webchat
       - DB_USER=${POSTGRES_USER}
       - DB_PASSWORD=${POSTGRES_PASSWORD}
+      # Mismo patrón que CONVERSATION_ENGINE_SERVICE_TOKEN en .env.example
+      # — "el secreto que comparto con Core" del lado de Webchat. Sin esto,
+      # Core le devuelve 401 a cualquier mensaje entrante real.
+      - CORE_SERVICE_TOKEN=${WEBCHAT_SERVICE_TOKEN}
     ports:
       - "8006:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
     profiles: ["webchat"] # no arranca por defecto: docker compose --profile webchat up
 
   admin-panel:

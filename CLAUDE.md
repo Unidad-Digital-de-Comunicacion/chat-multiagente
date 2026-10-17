@@ -37,7 +37,7 @@ source of truth of their own.
 | Conversation Engine | `services/conversation-engine` | FastAPI + WS | 8003 | Phase 0 stub |
 | Operators Desk | `services/operators-desk` | FastAPI + WS | 8004 | Phase 0 stub |
 | Analytics | `services/analytics` | FastAPI, read-only | 8005 | Phase 0 stub |
-| Webchat | `services/webchat` | FastAPI + WS | 8006 | Stub, opt-in via `--profile webchat`; do not build out further without an explicit ask |
+| Webchat | `services/webchat` | FastAPI + WS | 8006 | First version built (session handshake, inbound/outbound messages, visitor WebSocket, embeddable `widget.js`), reviewed and wired into Core (`IsInboundChannelService`, `conversations.webchat_client`); opt-in via `--profile webchat` |
 | Admin Panel | `frontend/admin-panel` | React + TS | 3000 | Active |
 | Operators Desk Web | `frontend/operators-desk-web` | React + TS | 3001 | Not yet created |
 | Android operator app | `UDCOperadorAPP` | Java, Gradle | — | Skeleton only |

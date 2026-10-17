@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Demostración - Sitio del Cliente con Webchat Embebido</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            margin: 0;
+            padding: 0;
+            background: #f8fafc;
+            color: #334155;
+        }
+
+        header {
+            background: #ffffff;
+            border-bottom: 1px solid #e2e8f0;
+            padding: 20px 40px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .logo {
+            font-size: 20px;
+            font-weight: 700;
+            color: #0f172a;
+        }
+
+        main {
+            max-width: 900px;
+            margin: 60px auto;
+            padding: 0 20px;
+        }
+
+        .hero {
+            background: #ffffff;
+            border-radius: 12px;
+            padding: 40px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+            border: 1px solid #e2e8f0;
+        }
+
+        h1 {
+            color: #0f172a;
+            font-size: 28px;
+            margin-top: 0;
+        }
+
+        p {
+            line-height: 1.6;
+            font-size: 16px;
+        }
+
+        .snippet-box {
+            background: #0f172a;
+            color: #f8fafc;
+            padding: 20px;
+            border-radius: 8px;
+            font-family: monospace;
+            font-size: 14px;
+            overflow-x: auto;
+            margin-top: 20px;
+        }
+
+        .badge {
+            display: inline-block;
+            background: #dbeafe;
+            color: #1e40af;
+            font-size: 12px;
+            font-weight: 600;
+            padding: 4px 10px;
+            border-radius: 20px;
+            margin-bottom: 12px;
+        }
+    </style>
+</head>
+
+<body>
+
+    <header>
+        <div class="logo">Universidad</div>
+        <nav>
+            <span style="color: #64748b; font-size: 14px;">Sitio web de cliente (ejemplo de integración)</span>
+        </nav>
+    </header>
+
+    <main>
+        <div class="hero">
+            <span class="badge">Prueba de Integración</span>
+            <h1>Canal Webchat Embebido en Sitio de Terceros</h1>
+            <p>
+                Esta página simula la landing page o e-commerce de un cliente que utiliza la plataforma multicanal.
+                El widget de chat aparece en la esquina inferior derecha sin interferir con la lógica ni con el diseño
+                del sitio anfitrión.
+            </p>
+            <p>
+                <strong>Cómo se instala:</strong> La organización cliente solo pega el siguiente fragmento antes del
+                cierre de <code>&lt;/body&gt;</code>:
+            </p>
+            <div class="snippet-box">
+                &lt;script src="https://webchat.udcchat.com.ar/static/widget.js"<br>
+                &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;id="webchat-script"<br>
+                &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;data-org-id="3"<br>
+                &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;data-color="#1e40af"<br>
+                &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;data-title="Atención al Cliente"<br>
+                &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;defer&gt;&lt;/script&gt;
+            </div>
+            <p class="text-muted" style="margin-top: 12px; font-size: 13px;">
+                No hace falta <code>data-api-url</code> — si no se lo pasás, el widget usa solo el
+                origen desde donde se cargó <code>widget.js</code> (<code>window.location.origin</code>),
+                así que funciona igual en local, por túnel o por cualquier dominio donde lo sirvas.
+            </p>
+        </div>
+    </main>
+
+    <!-- INCRUSTACIÓN DEL WIDGET DE WEBCHAT — src relativo (sin origen fijo)
+         a propósito: esta página la sirve el propio servicio Webchat, así
+         que "/static/widget.js" resuelve solo contra quien sea que la esté
+         sirviendo en ese momento (localhost:8006, el túnel, etc.) — mismo
+         motivo por el que no hace falta data-api-url (ver nota arriba). -->
+    <script src="/static/widget.js" id="webchat-script" data-org-id="3"
+        data-color="#1e40af" data-title="Atención al Cliente" defer></script>
+
+</body>
+
+</html>
