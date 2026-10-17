@@ -23,7 +23,7 @@ from django.utils import timezone
 from bot_settings.models import BotMessages
 from common.permissions import StrictDjangoModelPermissions, require_organization, require_perm
 from organizations.models import Organization
-from platform_admin.service_auth import IsChannelGatewayService, ServiceTokenAuthentication
+from platform_admin.service_auth import IsInboundChannelService, ServiceTokenAuthentication
 from rest_framework import mixins, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
@@ -148,11 +148,11 @@ class MensajeEntranteView(APIView):
     operador — no hay más respuesta automática."""
 
     authentication_classes = [ServiceTokenAuthentication]
-    permission_classes = [IsChannelGatewayService]
+    permission_classes = [IsInboundChannelService]
     # `request.user` queda anónimo con `ServiceTokenAuthentication` (no hay
     # un usuario humano detrás) — sin esto, `AnonRateThrottle` (20/minuto)
     # aplicaría acá, muy por debajo de lo que un canal real puede recibir.
-    # La protección real de este endpoint es `IsChannelGatewayService`, no
+    # La protección real de este endpoint es `IsInboundChannelService`, no
     # un límite de tasa.
     throttle_classes = []
 

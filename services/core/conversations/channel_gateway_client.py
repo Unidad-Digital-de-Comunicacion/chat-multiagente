@@ -6,12 +6,17 @@ el mismo secreto compartido (`ServiceToken` del servicio `CHANNEL_GATEWAY`,
 hace falta un segundo secreto sólo para esto.
 
 `enviar_con_reintentos` es la función que hay que llamar desde afuera (no
-`enviar_mensaje_saliente` directo) — envuelve el mismo envío con hasta 3
+`enviar_mensaje_saliente` directo) — envuelve el envío con hasta 3
 intentos y backoff corto, pensada para el caso real confirmado en
 producción (2026-09-18/19): un bache momentáneo de conectividad interna
 entre Channel Gateway y Core (`CoreNoDisponible`, ver `channel-gateway/app/
 core_client.py`) que dura de menos de un segundo a un par de segundos y se
-resuelve solo en el intento siguiente."""
+resuelve solo en el intento siguiente. También es el único lugar que
+decide A QUIÉN mandarle el mensaje saliente: Channel Gateway para WhatsApp/
+Messenger/Instagram (`enviar_mensaje_saliente` de acá abajo), Webchat para
+ese canal (`conversations.webchat_client.enviar_mensaje_saliente`) — un
+call site (`ConversacionViewSet.responder`/`cierre.cerrar_conversacion`)
+no tiene que saber ese detalle."""
 import time
 
 import requests
@@ -40,7 +45,7 @@ MENSAJE_NO_ENVIADO = "No se pudo enviar este mensaje."
 def enviar_con_reintentos(conversacion, texto: str) -> bool:
     envio = EnvioSaliente.objects.create(conversacion=conversacion, texto=texto)
     for intento in range(1, MAX_INTENTOS + 1):
-        exito = enviar_mensaje_saliente(conversacion, texto)
+        exito = _despachar_por_canal(conversacion, texto)
         envio.intentos = intento
         if exito:
             envio.estado = EnvioSaliente.Estado.ENVIADO
@@ -59,6 +64,17 @@ def enviar_con_reintentos(conversacion, texto: str) -> bool:
         conversacion=conversacion, remitente=ConversacionLog.Remitente.SISTEMA, texto=MENSAJE_NO_ENVIADO,
     )
     return False
+
+
+def _despachar_por_canal(conversacion, texto: str) -> bool:
+    if conversacion.canal == Canal.Tipo.WEBCHAT:
+        # Import adentro de la función (no al tope del módulo) para evitar
+        # un ciclo: `webchat_client` no depende de este módulo, pero
+        # mantenemos el mismo criterio que el resto de la app usa para
+        # imports cruzados entre apps hermanas (ver `etiqueta_sistema.py`).
+        from .webchat_client import enviar_mensaje_saliente as enviar_a_webchat
+        return enviar_a_webchat(conversacion, texto)
+    return enviar_mensaje_saliente(conversacion, texto)
 
 
 def enviar_mensaje_saliente(conversacion, texto: str) -> bool:
