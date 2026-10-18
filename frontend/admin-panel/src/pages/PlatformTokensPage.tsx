@@ -72,9 +72,10 @@ export default function PlatformTokensPage() {
       </div>
       <p className="text-muted">
         Con qué se va a autenticar cada uno de los OTROS microservicios de este mismo proyecto (Channel
-        Gateway, Conversation Engine, Operators Desk, Analytics, Webchat) contra la API de Core. No es la
+        Gateway, Conversation Engine, Analytics, Webchat) contra la API de Core. No es la
         api key de un servicio externo como WhatsApp — eso se configura en "Canales", dentro de cada
-        organización. Hoy son todos stubs de Fase 0, nada consume estos tokens todavía.
+        organización. Channel Gateway y Webchat ya los usan de verdad; Conversation Engine y Analytics
+        siguen siendo sólo configuración hasta que tengan un consumidor real.
       </p>
 
       <table className="table">

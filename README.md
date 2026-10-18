@@ -15,7 +15,7 @@ docker compose up --build
 
 Servicios expuestos: Core (Django+DRF) en `:8001`, Admin Panel (React) en
 `:3000`, Channel Gateway en `:8002`, Conversation Engine en `:8003`,
-Operators Desk en `:8004`, Analytics en `:8005` (estos cuatro son stubs de
+Analytics en `:8005` (Conversation Engine y Analytics son stubs de
 Fase 0 — sólo `/health`). Webchat (`:8006`) es opcional:
 `docker compose --profile webchat up`.
 

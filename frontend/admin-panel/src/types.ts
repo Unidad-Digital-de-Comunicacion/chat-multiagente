@@ -272,12 +272,11 @@ export interface PlatformUser {
 }
 
 export type ServicioInterno =
-  | "CHANNEL_GATEWAY" | "CONVERSATION_ENGINE" | "OPERATORS_DESK" | "ANALYTICS" | "WEBCHAT";
+  | "CHANNEL_GATEWAY" | "CONVERSATION_ENGINE" | "ANALYTICS" | "WEBCHAT";
 
 export const SERVICIO_INTERNO_LABELS: Record<ServicioInterno, string> = {
   CHANNEL_GATEWAY: "Channel Gateway",
   CONVERSATION_ENGINE: "Conversation Engine",
-  OPERATORS_DESK: "Operators Desk",
   ANALYTICS: "Analytics",
   WEBCHAT: "Webchat",
 };

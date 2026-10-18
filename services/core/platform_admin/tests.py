@@ -26,17 +26,17 @@ class ServiceTokenViewSetTests(TestCase):
         self.admin = make_user(self.org, groups=["administradores"])
         self.list_url = reverse("plataforma-token-servicio-list")
 
-    def test_los_5_servicios_se_autogeneran_al_listar(self):
+    def test_los_servicios_se_autogeneran_al_listar(self):
         response = authenticated_client(self.superusuario).get(self.list_url)
         self.assertEqual(response.status_code, 200, response.data)
         servicios = {t["servicio"] for t in response.data["results"]}
         self.assertEqual(servicios, {s for s, _ in ServiceToken.Servicio.choices})
-        self.assertEqual(ServiceToken.objects.count(), 5)
+        self.assertEqual(ServiceToken.objects.count(), len(ServiceToken.Servicio.choices))
 
     def test_no_se_duplican_si_se_lista_dos_veces(self):
         authenticated_client(self.superusuario).get(self.list_url)
         authenticated_client(self.superusuario).get(self.list_url)
-        self.assertEqual(ServiceToken.objects.count(), 5)
+        self.assertEqual(ServiceToken.objects.count(), len(ServiceToken.Servicio.choices))
 
     def test_admin_de_organizacion_no_puede_entrar(self):
         response = authenticated_client(self.admin).get(self.list_url)

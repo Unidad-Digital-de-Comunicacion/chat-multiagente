@@ -163,26 +163,6 @@ services:
       retries: 10
       start_period: 10s
 
-  operators-desk:
-    build: ./services/operators-desk
-    <<: *fastapi-common
-    environment:
-      - DB_HOST=db
-      - DB_PORT=5432
-      - DB_NAME=${POSTGRES_DB}
-      - DB_SCHEMA=operators_desk
-      - DB_USER=${POSTGRES_USER}
-      - DB_PASSWORD=${POSTGRES_PASSWORD}
-      - CONVERSATION_ENGINE_URL=http://conversation-engine:8000
-    ports:
-      - "8004:8000"
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-      start_period: 10s
-
   analytics:
     build: ./services/analytics
     <<: *fastapi-common

@@ -1,15 +1,20 @@
 """Modelos de la sección "Plataforma" del Admin Panel (sólo superusuario
 real, ver `common.permissions.IsPlatformSuperuser`): tokens compartidos
 para que los DEMÁS microservicios de este mismo proyecto (Channel Gateway,
-Conversation Engine, Operators Desk, Analytics, Webchat) se autentiquen
-contra la API de Core — nunca credenciales de un servicio externo (eso es
+Conversation Engine, Analytics, Webchat) se autentiquen contra la API de
+Core — nunca credenciales de un servicio externo (eso es
 `channels.Canal.api_key`, la api key de WhatsApp/Messenger/Instagram, cosa
 completamente distinta).
 
-Estos 5 microservicios son hoy stubs de Fase 0 (sólo `/health`, sección 10
-de docs/CONTEXTO_PROYECTO.md) — nada consume todavía estos tokens de
-verdad, es sólo la configuración, mismo criterio que `channels.Canal` o
-`bot_settings.BotMessages` antes de que exista quien los use."""
+No todos están en uso real todavía: Channel Gateway y Webchat ya
+autentican de verdad contra Core con esto; Conversation Engine y Analytics
+siguen siendo sólo configuración hasta que tengan un consumidor real,
+mismo criterio que `channels.Canal` o `bot_settings.BotMessages` antes de
+que exista quien los use.
+
+`OPERATORS_DESK` existió acá (el FastAPI stub de `services/operators-desk`,
+nunca consumido — Operators Desk Web termina hablándole directo a Core) y
+se eliminó junto con ese servicio (2026-10)."""
 from django.db import models
 
 from common.encrypted_fields import EncryptedTextField
@@ -19,7 +24,6 @@ class ServiceToken(models.Model):
     class Servicio(models.TextChoices):
         CHANNEL_GATEWAY = "CHANNEL_GATEWAY", "Channel Gateway"
         CONVERSATION_ENGINE = "CONVERSATION_ENGINE", "Conversation Engine"
-        OPERATORS_DESK = "OPERATORS_DESK", "Operators Desk"
         ANALYTICS = "ANALYTICS", "Analytics"
         WEBCHAT = "WEBCHAT", "Webchat"
 

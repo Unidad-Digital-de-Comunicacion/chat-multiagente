@@ -32,15 +32,19 @@ source of truth of their own.
 
 | Service | Path | Stack | Port | Status |
 |---|---|---|---|---|
-| Core | `services/core` | Django + DRF | 8001 | Phases 0–2 implemented (see below) |
-| Channel Gateway | `services/channel-gateway` | FastAPI | 8002 | Phase 0 stub (`/health` only) |
-| Conversation Engine | `services/conversation-engine` | FastAPI + WS | 8003 | Phase 0 stub |
-| Operators Desk | `services/operators-desk` | FastAPI + WS | 8004 | Phase 0 stub |
-| Analytics | `services/analytics` | FastAPI, read-only | 8005 | Phase 0 stub |
+| Core | `services/core` | Django + DRF | 8001 | Implemented — source of truth for all business logic |
+| Channel Gateway | `services/channel-gateway` | FastAPI | 8002 | Implemented — WhatsApp/Messenger/Instagram webhooks, outbound sends, native selection widgets |
+| Conversation Engine | `services/conversation-engine` | FastAPI + WS | 8003 | Partial — real-time delivery only (`WS /ws/operador/{token}`), in-memory connections, single process |
+| Analytics | `services/analytics` | FastAPI, read-only | 8005 | Phase 0 stub (`/health` only) |
 | Webchat | `services/webchat` | FastAPI + WS | 8006 | First version built (session handshake, inbound/outbound messages, visitor WebSocket, embeddable `widget.js`), reviewed and wired into Core (`IsInboundChannelService`, `conversations.webchat_client`); opt-in via `--profile webchat` |
 | Admin Panel | `frontend/admin-panel` | React + TS | 3000 | Active |
-| Operators Desk Web | `frontend/operators-desk-web` | React + TS | 3001 | Not yet created |
-| Android operator app | `UDCOperadorAPP` | Java, Gradle | — | Skeleton only |
+| Operators Desk Web | `services/operators-desk/web` | React + TS | 3001 | Implemented and in production, published at `operadores.udcchat.com.ar` — talks directly to Core, not to any BFF |
+| Android operator app | `UDCOperadorAPP` | Java, Gradle | — | Functional — login, inbox, conversation thread, take/derive/tag/close with observations, internal notes; no refresh token yet |
+
+Note: the FastAPI stub that used to sit at `services/operators-desk` (port 8004, meant as a BFF
+for Operators Desk Web) was removed from the repo and from `docker-compose.yml` (2026-10) — it
+never had a real consumer; Operators Desk Web always talked straight to Core. Don't recreate it
+without an explicit ask.
 
 Core's menu tree (`MenuOpcion`), business hours (`HorarioAtencion`/
 `DiaExcepcional`), and conversation logging are **ported** from
@@ -109,10 +113,14 @@ Each has its own `requirements.txt`/`Dockerfile`; run via
   [services/core/users/group_permissions.py](services/core/users/group_permissions.py)
   (`GROUP_PERMISSIONS`), consumed by both the `setup_groups` management
   command and the tests — change permissions there, not ad hoc.
-  `encargados_difusion`, `analistas_datos`, and `operadores` currently have
-  **zero** Core permissions beyond authentication/profile — their screens
-  live in services that don't exist yet (Operators Desk, Analytics,
-  campaigns). Never add Admin Panel screens for those groups without
+  `encargados_difusion` and `analistas_datos` currently have **zero** Core
+  permissions beyond authentication/profile — their screens live in
+  services that don't exist yet (Analytics, campaigns). `operadores` does
+  have real Core permissions (`conversations.view_/change_conversacion`,
+  read-only `teams.view_team`/`tags.view_etiqueta`) — their screen is
+  Operators Desk Web (`services/operators-desk/web`, in production) and
+  the Android app, never the Admin Panel. Never add Admin Panel screens for
+  `encargados_difusion`/`analistas_datos` without
   checking whether the owning service (Phase 4/5/7/9) has landed.
 - **`common.permissions.StrictDjangoModelPermissions`**
   ([services/core/common/permissions.py](services/core/common/permissions.py)):

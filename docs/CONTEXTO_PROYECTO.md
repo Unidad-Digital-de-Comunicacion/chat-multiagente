@@ -68,29 +68,33 @@
   agregaciones de solo lectura. Ningún servicio FastAPI tiene su propia fuente de verdad del
   negocio (organización, usuarios, menú, horarios) — todo eso se consulta a Core vía REST.
 
-## 3. Detalle de los 6 microservicios
+## 3. Detalle de los 5 microservicios
+
+> Originalmente eran 6 (incluía un "Operators Desk Service" FastAPI, pensado como BFF para
+> Operators Desk Web) — se dio de baja en 2026-10 sin haber tenido nunca un consumidor real: la app
+> React de Operators Desk Web (sección 3.2) siempre le habló directo a Core.
 
 | # | Servicio | Carpeta | Stack | Puerto | Rol |
 |---|----------|---------|-------|--------|-----|
 | 1 | **Core Platform Service** | `services/core` | Django + DRF + PostgreSQL | 8001 | Organizaciones, usuarios, roles (Admin/Difusión/Operador/Data Manager), equipos, horarios hábiles (portado), menú árbol (portado), lógica del bot, suscripciones/límite de conexiones, historial, etiquetas, datos transaccionales. Fuente de verdad de todo. |
 | 2 | **Channel Gateway Service** | `services/channel-gateway` | FastAPI + PostgreSQL | 8002 | Messenger e Instagram YA implementados: recepción/verificación de webhooks de Meta, envío de mensajes salientes vía Graph API. Sin lógica de negocio propia — pide `api_key`/`webhook_secret` a Core por canal (endpoint interno autenticado con `ServiceToken`, ver sección 9). WhatsApp (Embedded Signup + Cloud API) queda pendiente, es más complejo. |
 | 3 | **Conversation Engine** | `services/conversation-engine` | FastAPI + WebSockets + PostgreSQL | 8003 | Post-derivación: asigna operador (round-robin) dentro del equipo indicado por Core, entrega mensajes en tiempo real vía WebSocket, controla el límite de conexiones simultáneas (`OperatorSession`). |
-| 4 | **Operators Desk Service** | `services/operators-desk` | FastAPI + WebSockets + PostgreSQL | 8004 | Backend a medida (BFF) para el **Operators Desk Web** (React): bandeja de chats asignados, hilo de conversación, acciones rápidas (responder/derivar/etiquetar/cerrar). Es la contraparte web de lo que la app Android resuelve en mobile — reutiliza Core (historial/datos) y Conversation Engine (tiempo real/asignación) en vez de duplicar su lógica. |
-| 5 | **Analytics Service** | `services/analytics` | FastAPI + PostgreSQL (solo lectura) | 8005 | Agregaciones y reportes para el rol Data Manager: volumen de conversaciones por canal/equipo/operador, tiempos de respuesta, uso del menú (abandono por nodo). Se conecta a los esquemas de Core/Conversation Engine con un usuario de base de datos **read-only**; no escribe nunca. |
-| 6 | **Webchat Service** *(opcional)* | `services/webchat` | FastAPI + WebSockets | 8006 | Backend del widget de chat embebible en un sitio web propio del cliente, como canal adicional a WhatsApp/Messenger/Instagram. Primera versión construida: handshake de sesión (`POST /sessions/`), mensaje entrante del visitante (`POST /mensajes/` → Core vía el mismo contrato normalizado que Channel Gateway, `channel="WEBCHAT"`), mensaje saliente de un operador (`POST /messages/send`, gateado con `ServiceToken`) empujado por WebSocket (`WS /ws/visitante/{visitor_id}`) al visitante conectado, y `widget.js` (Vanilla JS, Shadow DOM, sin dependencias) para incrustar en el sitio del cliente. Sin PostgreSQL propio todavía (todo en memoria del proceso — `ConnectionManager`, igual que Conversation Engine — y sin historial propio, ver más abajo). Sigue sin arrancar por defecto (`profiles: ["webchat"]`, `docker compose --profile webchat up`). |
+| 4 | **Analytics Service** | `services/analytics` | FastAPI + PostgreSQL (solo lectura) | 8005 | Agregaciones y reportes para el rol Data Manager: volumen de conversaciones por canal/equipo/operador, tiempos de respuesta, uso del menú (abandono por nodo). Se conecta a los esquemas de Core/Conversation Engine con un usuario de base de datos **read-only**; no escribe nunca. |
+| 5 | **Webchat Service** *(opcional)* | `services/webchat` | FastAPI + WebSockets | 8006 | Backend del widget de chat embebible en un sitio web propio del cliente, como canal adicional a WhatsApp/Messenger/Instagram. Primera versión construida: handshake de sesión (`POST /sessions/`), mensaje entrante del visitante (`POST /mensajes/` → Core vía el mismo contrato normalizado que Channel Gateway, `channel="WEBCHAT"`), mensaje saliente de un operador (`POST /messages/send`, gateado con `ServiceToken`) empujado por WebSocket (`WS /ws/visitante/{visitor_id}`) al visitante conectado, y `widget.js` (Vanilla JS, Shadow DOM, sin dependencias) para incrustar en el sitio del cliente. Sin PostgreSQL propio todavía (todo en memoria del proceso — `ConnectionManager`, igual que Conversation Engine — y sin historial propio, ver más abajo). Sigue sin arrancar por defecto (`profiles: ["webchat"]`, `docker compose --profile webchat up`). |
 
 ### 3.2 Frontends y app móvil (no son "microservicios" pero forman parte del repo)
 
 | Proyecto | Carpeta | Stack | Puerto | Consume |
 |---|---|---|---|---|
 | Admin Panel | `frontend/admin-panel` | React + TypeScript | 3000 | Core (todo lo administrativo) + Analytics (reportes) + enlaces SSO a las pantallas Django portadas (menú/horarios, ver sección 5). |
-| Operators Desk Web | `frontend/operators-desk-web` | React + TypeScript | 3001 | Operators Desk Service (bandeja/hilo/acciones) vía REST + WebSocket. |
-| App Operador Android | `mobile/android-operator-app` | Java (Android SDK, MVVM) | — (no dockerizado) | Mismos endpoints que Operators Desk Service (es el mismo contrato de API para ambos clientes: web y mobile). |
+| Operators Desk Web | `services/operators-desk/web` | React + TypeScript | 3001 | Core directo (bandeja/hilo/acciones vía REST) + Conversation Engine (tiempo real vía WebSocket). En producción, publicada en `operadores.udcchat.com.ar`. |
+| App Operador Android | `UDCOperadorAPP` | Java (Android SDK, MVVM) | — (no dockerizado) | Mismos endpoints que Operators Desk Web (es el mismo contrato de API para ambos clientes: web y mobile). |
 
-> Nota de diseño: **Operators Desk Service** y la **app Android** son dos clientes del mismo
-> contrato de "atención de chats" (bandeja, hilo, derivar, etiquetar, cerrar, historial). El
-> servicio FastAPI expone ese contrato una sola vez; el Admin Panel NO debe usarse para atender
-> chats (es solo configuración/administración).
+> Nota de diseño: **Operators Desk Web** y la **app Android** son dos clientes del mismo contrato
+> de "atención de chats" (bandeja, hilo, derivar, etiquetar, cerrar, historial), expuesto
+> directamente por Core — no por un BFF FastAPI aparte (esa idea original se descartó, ver la nota
+> de la sección 3). El Admin Panel NO debe usarse para atender chats (es solo
+> configuración/administración).
 
 ## 4. Modelo de datos por servicio (resumen de entidades)
 
@@ -500,7 +504,7 @@ guardan cifrados en la base de `channel-gateway`, no en variables de entorno.
   | `administradores` | Sólo desde el Admin Panel (React). Gestiona usuarios, equipos y permisos (grupos) de su propia organización, y configura el chatbot (menú + horarios + mensajes + modo de atención con/sin menú), el catálogo de etiquetas de conversación (por organización y por equipo, colores incluidos) y la api key/estado/chequeo de salud de cada canal de mensajería. |
   | `encargados_difusion` | NINGÚN permiso sobre Core — Core es sólo su API de autenticación (login, recuperar usuario/contraseña, "mi perfil"); campañas de difusión, templates y listas, estadísticas de envíos son de su propio panel cuando exista esa app (Fase 7+), no del Admin Panel de Core. |
   | `analistas_datos` | NINGÚN permiso sobre Core — mismo motivo que `encargados_difusion`; reportes de conversaciones/agentes/contactos, exportar CSV, son de Analytics (Fase 7), no del Admin Panel de Core. |
-  | `operadores` | NINGÚN permiso sobre Core — mismo motivo; sólo su perfil y recuperar usuario/contraseña. Ver/responder chats sin asignar o de sus equipos/a ellos mismos, aplicar/quitar etiquetas de una conversación, respuestas predefinidas, observaciones obligatorias al resolver/pausar y derivar son de Operators Desk, Fase 4/5, todavía no implementado (ver sección 11). |
+  | `operadores` | Sí tiene permisos reales sobre Core (`conversations.view_/change_conversacion`, `teams.view_team` y `tags.view_etiqueta` de sólo lectura) — no hay pantalla para esto en el Admin Panel (que sigue siendo sólo configuración), pero sí en Operators Desk Web y en la app Android: bandeja sin asignar/de sus equipos, tomar/responder/derivar/cerrar, aplicar/quitar etiquetas, observaciones obligatorias al resolver/pausar/rechazar, notas internas. Implementado directo contra Core (`conversations.ConversacionViewSet`), no vía un BFF aparte — ver sección 10, Fase 5. |
 
   El frontend nunca decide qué mostrar/ocultar mirando un nombre de rol o de grupo: `GET
   /api/core/users/me/` devuelve `permissions` (la lista real de `user.get_all_permissions()`) y
@@ -653,8 +657,7 @@ son templates Django con SSO, esa idea se descartó a favor de una sola UI en el
   caso particular: a diferencia de todos los demás, ahí `{nombre}` es el nombre del **operador**
   (no el del contacto) — default: "Hola, mi nombre es {nombre}. ¿En qué puedo ayudarte hoy?". Es
   sólo la configuración del texto; sugerírselo al operador al marcar una conversación como
-  "tomada" (o mandarlo solo) es Operators Desk, Fase 4/5 — todavía no implementado, igual que el
-  resto del flujo de conversaciones.
+  "tomada" (o mandarlo solo) es Operators Desk Web — implementado, ver sección 10, Fase 5.
 - **Catálogo de etiquetas de conversación** (`tags` app, nueva — sólo la parte de configuración;
   ver el resto de la consigna, deferido, en la Fase 4/5 de abajo): modelo `Etiqueta` con
   `organization` obligatoria. Dos orígenes automáticos, ninguno editable a mano por un Admin más
@@ -667,8 +670,9 @@ son templates Django con SSO, esa idea se descartó a favor de una sola UI en el
   borrar ni renombrar, sólo recolorear. Todas las demás etiquetas las arma un Admin a mano y son
   siempre **generales** (`team=None`) — no existe la opción de asignarles un equipo, `team` es de
   sólo lectura en `EtiquetaSerializer`. Permisos: `tags.add_/change_/delete_/view_etiqueta` para
-  administradores — `operadores` ya no tiene ningún permiso sobre Core (ver sección 9), aplicar
-  etiquetas es Operators Desk (Fase 4/5), su propio panel, no el Admin Panel de Core. `?team=<id>`
+  administradores — `operadores` no tiene permiso para administrar el catálogo (ver sección 9),
+  aplicar etiquetas existentes a una conversación es Operators Desk Web, su propio panel, no el
+  Admin Panel de Core. `?team=<id>`
   filtra el catálogo por equipo. El color se valida como hexadecimal
   (`#RRGGBB`). Admin Panel: página "Etiquetas" (`frontend/admin-panel/src/pages/TagsPage.tsx`) con
   dos grupos — generales y de equipo, edición 100% en línea (sin modal: cada fila es su propio
@@ -853,14 +857,16 @@ son templates Django con SSO, esa idea se descartó a favor de una sola UI en el
     `/api/core/plataforma/tokens-servicios/`): NO es la api key de un canal externo (eso sigue
     siendo `channels.Canal.api_key`, cosa completamente distinta) — es con qué se va a autenticar
     cada uno de los OTROS microservicios de este mismo proyecto (Channel Gateway, Conversation
-    Engine, Operators Desk, Analytics, Webchat) contra la API de Core. Un `ServiceToken` por
-    servicio, autogenerados los 5 al listar (`defaults.asegurar_service_tokens`, mismo patrón lazy
+    Engine, Analytics, Webchat) contra la API de Core. Un `ServiceToken` por
+    servicio, autogenerados los 4 al listar (`defaults.asegurar_service_tokens`, mismo patrón lazy
     que `channels.defaults.asegurar_canales` pero sin `organization` — esto es un único set para
     toda la plataforma, no por tenant). `token` es write-only (mismo patrón enmascarado que
     `Canal.api_key`: `token_configurado` + `token_preview`); la action `generar` (POST) genera uno
     seguro al azar (`secrets.token_urlsafe(32)`) y lo devuelve en texto plano UNA sola vez en esa
-    respuesta, igual que `UserViewSet.reset_password`. `CHANNEL_GATEWAY` es el primer servicio que
-    lo usa de verdad (los otros 4 siguen siendo sólo configuración, stubs de Fase 0): `platform_
+    respuesta, igual que `UserViewSet.reset_password`. `CHANNEL_GATEWAY` y `WEBCHAT` ya lo usan de
+    verdad; `CONVERSATION_ENGINE`/`ANALYTICS` siguen siendo sólo configuración hasta que tengan un
+    consumidor real (ver sección 3 — hubo un quinto, `OPERATORS_DESK`, para un servicio FastAPI que
+    se dio de baja en 2026-10 sin haber tenido nunca uno). `platform_
     admin.service_auth.ServiceTokenAuthentication` (agregada a `DEFAULT_AUTHENTICATION_CLASSES`,
     junto a `JWTAuthentication` — reacciona sólo al esquema `Authorization: Service-Token <token>`,
     nunca a `Bearer`, así que no interfiere con el login de usuarios) valida el token contra este
@@ -895,7 +901,7 @@ son templates Django con SSO, esa idea se descartó a favor de una sola UI en el
     (`Layout.tsx`), no el propio endpoint. El botón "Copiar mi token de acceso" en
     `/plataforma/manuales` quedó igual, por si alguna vez hace falta autenticar una llamada real
     de "Probarlo" (`Try it out`) contra un endpoint protegido desde el propio Swagger UI. No cubre
-    Channel Gateway/Conversation Engine/Operators Desk/Analytics/Webchat, sólo la API de Core.
+    Channel Gateway/Conversation Engine/Analytics/Webchat, sólo la API de Core.
     - **`drf-spectacular-sidecar`**: por default, Swagger/Redoc cargan su JS/CSS/fuentes desde
       `cdn.jsdelivr.net` — en un entorno sin salida a esa CDN (o con ella bloqueada) la página
       quedaba completamente en blanco, sin ningún error visible más que un 404/timeout silencioso
@@ -972,12 +978,15 @@ son templates Django con SSO, esa idea se descartó a favor de una sola UI en el
   entre procesos (Postgres LISTEN/NOTIFY — restricción no negociable del proyecto: nada de
   Redis/Kafka), no antes de que el volumen real lo justifique.
 
-### Fase 5 — Operators Desk Service + Operators Desk Web
+### Fase 5 — Operators Desk Web (atención)
 - Lo que esta fase pedía (bandeja, hilo, responder/derivar/etiquetar/cerrar, observaciones
   obligatorias al resolver/rechazar/pausar) está **implementado directo en Core**
-  (`conversations.views.ConversacionViewSet`), no como el BFF/Conversation Engine con WebSocket que
-  documentaban estos párrafos originalmente — mismo pivot pragmático que el resto de `conversations`
-  (bandeja/tomar/responder/cerrar, ver `users.group_permissions`). Contrato completo, con ejemplos
+  (`conversations.views.ConversacionViewSet`), no como el BFF FastAPI que documentaban estos
+  párrafos originalmente (`services/operators-desk`, un `/health` sin ningún consumidor real — se
+  dio de baja del repo en 2026-10) — mismo pivot pragmático que el resto de `conversations`
+  (bandeja/tomar/responder/cerrar, ver `users.group_permissions`). Operators Desk Web
+  (`services/operators-desk/web`) es la app real, en producción, que le habla directo a Core.
+  Contrato completo, con ejemplos
   de request/response, para quien construya un cliente (Operators Desk Web o la app Android):
   [`docs/operators-desk-api-contract.md`](operators-desk-api-contract.md).
   - **Etiquetas sobre una conversación**: `conversations.ConversacionEtiqueta` (conversación ×
@@ -1013,7 +1022,7 @@ son templates Django con SSO, esa idea se descartó a favor de una sola UI en el
     (roadmap)" del contrato de API para el enfoque que se evaluó).
 
 ### Fase 6 — App móvil Android
-- Mismo contrato de API que Operators Desk Service (sección 3.2): login, bandeja, hilo, acciones.
+- Mismo contrato de API que Operators Desk Web (sección 3.2): login, bandeja, hilo, acciones.
 
 ### Fase 7 — Analytics Service
 - Usuario de solo lectura contra los esquemas `core`/`conversation_engine`.
