@@ -111,20 +111,22 @@ error 500 o un healthcheck caído — no hace falta una stack de observabilidad 
 | Core | 12 módulos | Suite real, corre en CI... que no existe (ver sección 6) |
 | Channel Gateway | 6 módulos | Cubre webhooks/envío; no cubre el camino completo con Core real (mockeado) |
 | Conversation Engine | 4 módulos | — |
-| Webchat | **0** | Servicio completo (sesión, mensajes, WebSocket, cliente hacia Core) sin un solo test automatizado |
-| **Operators Desk Web (React)** | **0** | **En producción real (`operadores.udcchat.com.ar`) sin ningún test — es el gap de cobertura más serio de la lista, no Webchat: acá sí hay operadores usándola hoy** |
+| Webchat | **6 módulos (37 tests)** | Agregada 2026-10: salud, sesión/historial, mensaje entrante y saliente, WebSocket del visitante, `ConnectionManager`, `Service-Token`, cliente hacia Core (status≠200 y sin conexión) |
+| **Operators Desk Web (React)** | **0** | **En producción real (`operadores.udcchat.com.ar`) sin ningún test — es, ahora sí, el único gap de cobertura serio que queda: acá hay operadores usándola hoy mismo** |
 | Analytics | 0 | Stub — no aplica mientras siga así |
 
 El gap real y concreto más urgente es **Operators Desk Web**: es la herramienta con la que los
 operadores atienden conversaciones reales hoy mismo, y no tiene ni un test de componente ni un
 test end-to-end — cualquier regresión en "tomar"/"responder"/"derivar"/"cerrar" llega directo a
-producción sin red de seguridad. Webchat es el segundo caso más urgente: es el servicio más nuevo,
-con la lógica más intrincada (sesiones + WebSocket + dos direcciones de mensaje) y cero red de
-seguridad automatizada. Antes de seguir confiando en él para un cliente real (hoy requiere
-`--profile webchat` explícito, así que no está
-expuesto por default), al menos cubrir: creación de sesión, mensaje entrante válido/inválido,
-autenticación del mensaje saliente (`Service-Token`), y que un visitante desconectado no rompe el
-envío.
+producción sin red de seguridad. Webchat, que era el segundo caso más urgente, ya no lo es: tiene
+una suite completa (`services/webchat/tests/`, `requirements-dev.txt` + `.flake8` con el mismo
+alcance ASP/ASF que Channel Gateway) cubriendo exactamente lo que faltaba — creación de sesión,
+mensaje entrante válido/inválido, autenticación del mensaje saliente (`Service-Token`), y que un
+visitante desconectado no rompe el envío. Queda un detalle menor, no de cobertura: a diferencia de
+Channel Gateway, `core_client.py` todavía no tiene un cliente HTTP inyectable (`Depends`) — cada
+método abre el suyo — así que los tests de ese módulo parchean el import en vez de inyectar un
+seam real; `anti-slop-py` lo marca (`ASP003`). Portarlo al mismo patrón de `http_client.py` de
+Channel Gateway queda como mejora, no como bloqueante.
 
 ## 6. Build, CI/CD y despliegue 🔴
 
