@@ -24,4 +24,5 @@ urlpatterns = [
     path("api/core/", include("channels.urls")),
     path("api/core/", include("platform_admin.urls")),
     path("api/core/", include("conversations.urls")),
+    path("api/core/", include("monitoring.urls")),
 ]

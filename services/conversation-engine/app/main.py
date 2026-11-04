@@ -37,6 +37,9 @@ from .connections import gestor
 from .eventos import EventoConversacion
 from .http_client import get_http_client
 from .internal_auth import requerir_servicio_interno
+from .observabilidad import MiddlewareRequestId, configurar_logging, propagar_request_id
+
+configurar_logging("conversation-engine")
 
 
 class HealthResponse(BaseModel):
@@ -59,7 +62,7 @@ WS_CODIGO_NO_AUTORIZADO = 4401
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    async with httpx.AsyncClient(timeout=10.0) as client:
+    async with httpx.AsyncClient(timeout=10.0, event_hooks={"request": [propagar_request_id]}) as client:
         app.state.http_client = client
         yield
 
@@ -79,6 +82,7 @@ DESCRIPCION = (
 )
 
 app = FastAPI(title="Conversation Engine Service", description=DESCRIPCION, lifespan=lifespan)
+app.add_middleware(MiddlewareRequestId)
 
 
 @app.get("/health", response_model=HealthResponse)

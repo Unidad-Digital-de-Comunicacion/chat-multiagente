@@ -17,6 +17,11 @@ fi
 : "${CIERRE_INACTIVIDAD_INTERVALO_SEGUNDOS:=300}"
 export CIERRE_INACTIVIDAD_INTERVALO_SEGUNDOS
 
+# Cada cuánto corre `vigilar_incidentes` (programa homónimo de supervisord):
+# logs nuevos de todos los servicios + chequeos de salud + mail de alertas.
+: "${MONITOREO_INTERVALO_SEGUNDOS:=60}"
+export MONITOREO_INTERVALO_SEGUNDOS
+
 echo "entrypoint: esperando a que Postgres acepte conexiones..."
 python - <<'PYEOF'
 import os

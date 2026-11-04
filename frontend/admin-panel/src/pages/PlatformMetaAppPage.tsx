@@ -102,9 +102,9 @@ function EditarModal({
     setSubmitting(true);
 
     try {
-      const body: { app_id: string; app_secret?: string } = { app_id: appId };
+      // `app_secret` es write-only: sólo se manda si se escribió uno nuevo.
+      const body = appSecret ? { app_id: appId, app_secret: appSecret } : { app_id: appId };
 
-      if (appSecret) body.app_secret = appSecret;
       await api.patch("/api/core/plataforma/meta-app/", body);
       onSaved();
     } catch (err) {

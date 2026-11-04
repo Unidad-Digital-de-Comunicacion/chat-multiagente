@@ -383,3 +383,54 @@ export interface ConversacionHistorialRow {
   ultima_actividad: string;
   vencida_por_inactividad: boolean;
 }
+
+// ---- Monitoreo (Plataforma > Incidentes / Logs) ----
+
+export type IncidenteTipo = "error" | "caida" | "seguridad";
+
+export type IncidenteEstado = "abierto" | "resuelto";
+
+export interface Incidente {
+  id: number;
+  tipo: IncidenteTipo;
+  tipo_display: string;
+  estado: IncidenteEstado;
+  estado_display: string;
+  servicio: string;
+  titulo: string;
+  detalle: string;
+  request_ids: string[];
+  ocurrencias: number;
+  primera_vez: string;
+  ultima_vez: string;
+  notificado_at: string | null;
+  resuelto_at: string | null;
+  resuelto_por_email: string | null;
+}
+
+export interface ChequeoSalud {
+  nombre: string;
+  url: string;
+  ok: boolean | null;
+  fallos_consecutivos: number;
+  ultimo_detalle: string;
+  ultimo_chequeo_at: string | null;
+}
+
+export interface LineaLog {
+  ts: string;
+  level: string;
+  service: string;
+  logger: string;
+  msg: string;
+  request_id: string;
+  exc: string;
+}
+
+export interface RespuestaLogs {
+  servicios_disponibles: string[];
+  desde: string;
+  hasta: string;
+  truncado: boolean;
+  lineas: LineaLog[];
+}

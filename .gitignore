@@ -252,3 +252,9 @@ backups/
 
 # APK firmado del operador, versionado a propósito
 !UDCOperadorAPP/apk/*.apk
+
+# Datos de Postgres de desarrollo (bind mount de docker-compose.override.yml)
+/data/
+
+# Logs rotativos de todos los servicios (bind mount ./logs/<servicio>, ver docker-compose.yml)
+/logs/

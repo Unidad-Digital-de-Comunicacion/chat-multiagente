@@ -5,6 +5,7 @@ Fuente de verdad del negocio: organizaciones, usuarios/roles, equipos,
 horarios de atención y árbol de menú (ver docs/CONTEXTO_PROYECTO.md).
 """
 import os
+import sys
 from datetime import timedelta
 from pathlib import Path
 
@@ -35,6 +36,14 @@ FIELD_ENCRYPTION_KEY = os.environ.get("FIELD_ENCRYPTION_KEY", "")
 DEBUG = _env_bool("DJANGO_DEBUG", False)
 ALLOWED_HOSTS = _env_list("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1")
 
+# Cloudflare Tunnel termina el TLS y le habla a Core por http plano; el
+# esquema original llega en `X-Forwarded-Proto` (cloudflared lo setea y el
+# nginx interno lo reenvía, ver docker/nginx.conf). Sin esto
+# `request.build_absolute_uri()` arma las URLs de avatar como `http://` dentro
+# de un sitio `https://` — contenido mixto en el navegador, y la app Android
+# (cleartext bloqueado por default) no las muestra.
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+
 INSTALLED_APPS = [
     "django.contrib.admin",
     "django.contrib.auth",
@@ -58,11 +67,14 @@ INSTALLED_APPS = [
     "channels",
     "platform_admin",
     "conversations",
+    "monitoring",
 ]
 
 AUTH_USER_MODEL = "users.User"
 
 MIDDLEWARE = [
+    # Primero: el request_id tiene que existir antes de que loguee cualquier otro.
+    "common.observabilidad.RequestIdMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "corsheaders.middleware.CorsMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
@@ -131,7 +143,8 @@ USE_TZ = True
 STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
 MEDIA_URL = "/media/"
-MEDIA_ROOT = BASE_DIR / "mediafiles"
+# En Docker es /mediafiles (volumen `media_files`, o ./data/media en dev) — ver docker-compose.yml.
+MEDIA_ROOT = os.environ.get("MEDIA_ROOT") or str(BASE_DIR / "mediafiles")
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
@@ -233,6 +246,30 @@ DEFAULT_FROM_EMAIL = os.environ.get("DEFAULT_FROM_EMAIL", "no-responder@chatplat
 # /restablecer-contrasena/<uid>/<token> que se manda por mail.
 FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:3000")
 
+# --------------------------------------------------------------------------- #
+# Monitoreo (app `monitoring`): detector de incidentes sobre los logs de todos
+# los servicios + chequeos de salud HTTP, con aviso por mail. Lo corre
+# `manage.py vigilar_incidentes` en loop bajo supervisord.
+# --------------------------------------------------------------------------- #
+ALERTAS_EMAIL_DESTINO = _env_list("ALERTAS_EMAIL_DESTINO", "")
+ALERTAS_RENOTIFICAR_MINUTOS = int(os.environ.get("ALERTAS_RENOTIFICAR_MINUTOS", "60"))
+# Link "ver en el panel" del mail; por default el mismo Admin Panel del reset de contraseña.
+ALERTAS_PANEL_URL = os.environ.get("ALERTAS_PANEL_URL", FRONTEND_URL)
+MONITOREO_LOGIN_FALLIDOS_UMBRAL = int(os.environ.get("MONITOREO_LOGIN_FALLIDOS_UMBRAL", "10"))
+MONITOREO_FALLOS_PARA_CAIDA = int(os.environ.get("MONITOREO_FALLOS_PARA_CAIDA", "2"))
+MONITOREO_TIMEOUT_SEGUNDOS = float(os.environ.get("MONITOREO_TIMEOUT_SEGUNDOS", "5"))
+# "nombre|url" separados por coma. Un 5xx o un error de conexión cuenta como
+# falla (un 4xx no: el servicio respondió). Default: los servicios internos que
+# siempre están; los dominios públicos (detrás del túnel) se suman desde .env.
+MONITOREO_CHEQUEOS = [
+    tuple(item.split("|", 1)) for item in _env_list(
+        "MONITOREO_CHEQUEOS",
+        "channel-gateway|http://channel-gateway:8000/health,"
+        "conversation-engine|http://conversation-engine:8000/health,"
+        "analytics|http://analytics:8000/health",
+    ) if "|" in item
+]
+
 # URL pública de Channel Gateway — para armar `webhook_url` en
 # `channels.CanalSerializer` (la que el Admin pega en la configuración del
 # webhook de Meta). Puerto 8002 en dev (docker-compose); en producción es el
@@ -312,17 +349,44 @@ SIMPLE_JWT = {
 # `services/channel-gateway/app/main.py`). `disable_existing_loggers=False`
 # para no pisar el logging que gunicorn/Django ya configuran solos.
 # --------------------------------------------------------------------------- #
+# Logs: JSON por línea (`common.observabilidad.FormatoJson`, mismo formato que
+# los servicios FastAPI) a stdout y, si existe LOG_DIR, a `<LOG_DIR>/core.log`
+# con rotación por tamaño — en docker-compose LOG_DIR es un bind mount a
+# `./logs/core/` del host. `ConcurrentRotatingFileHandler` porque escriben a
+# la vez varios workers de gunicorn + los loops de supervisord; el lock en
+# /tmp del contenedor, no en el bind mount (ver app/observabilidad.py de
+# channel-gateway). Al correr tests no se escribe al archivo: el detector de
+# incidentes (`monitoring`) los tomaría como eventos reales.
+LOG_DIR = os.environ.get("LOG_DIR", "")
+LOGS_TODOS_DIR = os.environ.get("LOGS_TODOS_DIR", "")
+_CORRIENDO_TESTS = len(sys.argv) > 1 and sys.argv[1] == "test"
+_HANDLERS_LOG = ["console"]
 LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,
     "formatters": {
-        "simple": {"format": "%(levelname)s %(name)s %(message)s"},
+        "json": {"()": "common.observabilidad.FormatoJson", "servicio": "core"},
     },
     "handlers": {
-        "console": {"class": "logging.StreamHandler", "formatter": "simple"},
+        "console": {"class": "logging.StreamHandler", "formatter": "json"},
     },
     "root": {
-        "handlers": ["console"],
-        "level": "INFO",
+        "handlers": _HANDLERS_LOG,
+        "level": os.environ.get("LOG_LEVEL", "INFO"),
     },
 }
+if LOG_DIR and not _CORRIENDO_TESTS:
+    os.makedirs(LOG_DIR, exist_ok=True)
+    LOGGING["handlers"]["archivo"] = {
+        "class": "concurrent_log_handler.ConcurrentRotatingFileHandler",
+        "formatter": "json",
+        "filename": os.path.join(LOG_DIR, "core.log"),
+        "maxBytes": int(os.environ.get("LOG_MAX_BYTES", str(10 * 1024 * 1024))),
+        "backupCount": int(os.environ.get("LOG_BACKUPS", "10")),
+        "encoding": "utf-8",
+        "lock_file_directory": "/tmp",
+        # Ver app/observabilidad.py de channel-gateway: sin esto, en el bind
+        # mount de Windows la rotación con varios workers queda a medias.
+        "keep_file_open": False,
+    }
+    _HANDLERS_LOG.append("archivo")

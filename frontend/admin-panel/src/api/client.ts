@@ -72,7 +72,12 @@ export function extraerMensajeDeError(err: unknown): string | null {
 
   // SAFETY: ya confirmamos arriba que `err.data` es un objeto no nulo.
   const detalle = (err.data as { error?: { detail?: unknown } }).error?.detail;
+
   if (detalle == null) return null;
+
+  // Mismo motivo que el `typeof` de arriba: `detail` es string o
+  // `{campo: string[]}` según el tipo de error de DRF, y no hay esquema.
+  // oxlint-disable-next-line anti-slop/no-runtime-typeof
   if (typeof detalle === "string") return detalle;
 
   // SAFETY: si no es string, DRF lo generó como `{campo: string[]}` (error de validación).

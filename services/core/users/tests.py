@@ -1,12 +1,23 @@
+import shutil
+import tempfile
 from io import BytesIO
 
 from django.core.files.uploadedfile import SimpleUploadedFile
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.urls import reverse
 from PIL import Image
 
 from common.test_utils import authenticated_client, make_organization, make_user
 from users.models import User
+
+# Los avatares se guardan como `avatars/<pk>.<ext>`: sin esto, los tests
+# escribían (y el de "reemplazar" BORRABA) archivos en el MEDIA_ROOT real del
+# contenedor, pisando las fotos reales de los usuarios con el mismo pk.
+_MEDIA_ROOT_TESTS = tempfile.mkdtemp(prefix="core-media-tests-")
+
+
+def tearDownModule():
+    shutil.rmtree(_MEDIA_ROOT_TESTS, ignore_errors=True)
 
 
 def _imagen_de_prueba(color=(255, 0, 0), size=(300, 300)):
@@ -28,6 +39,7 @@ class UserManagerTests(TestCase):
         self.assertIsNone(superuser.organization_id)
 
 
+@override_settings(MEDIA_ROOT=_MEDIA_ROOT_TESTS)
 class UserViewSetTests(TestCase):
     def setUp(self):
         self.org_a = make_organization(name="Org A", slug="org-a")
@@ -238,6 +250,7 @@ class UserViewSetTests(TestCase):
         self.assertEqual(r2.status_code, 201, r2.data)
 
 
+@override_settings(MEDIA_ROOT=_MEDIA_ROOT_TESTS)
 class MyProfileViewTests(TestCase):
     """PATCH /api/core/users/me/ — el propio usuario edita sus datos
     personales (nombre, email, DNI, avatar). Nunca toca grupos/organización."""
@@ -320,6 +333,83 @@ class MyProfileViewTests(TestCase):
         self.user.refresh_from_db()
         self.assertNotEqual(self.user.avatar.name, nombre_anterior)
         self.assertFalse(storage.exists(nombre_anterior))
+
+    def _color_de_la_miniatura(self):
+        self.user.refresh_from_db()
+        with self.user.avatar_thumbnail.open("rb") as f:
+            return Image.open(f).convert("RGB").getpixel((10, 10))
+
+    def test_regenera_la_miniatura_aunque_el_archivo_anterior_ya_no_exista(self):
+        """Si el avatar anterior falta en disco (volumen de media perdido,
+        borrado a mano), el storage le da al nuevo EXACTAMENTE el mismo
+        nombre (`avatars/<pk>.jpg`). Antes la miniatura se regeneraba sólo si
+        el nombre cambiaba, así que en ese caso quedaba la vieja (o ninguna)."""
+        authenticated_client(self.user).patch(
+            self.url, {"avatar": _imagen_de_prueba(color=(255, 0, 0))}, format="multipart",
+        )
+        self.user.refresh_from_db()
+        storage = self.user.avatar.storage
+        storage.delete(self.user.avatar.name)
+        storage.delete(self.user.avatar_thumbnail.name)
+
+        response = authenticated_client(self.user).patch(
+            self.url, {"avatar": _imagen_de_prueba(color=(0, 0, 255))}, format="multipart",
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        self.user.refresh_from_db()
+        self.assertTrue(storage.exists(self.user.avatar.name))
+        self.assertTrue(storage.exists(self.user.avatar_thumbnail.name))
+        r, g, b = self._color_de_la_miniatura()
+        self.assertGreater(b, 200)
+        self.assertLess(r, 50)
+
+    def test_cambiar_la_foto_cambia_la_url_de_avatar_y_miniatura(self):
+        """Con nombre fijo, Cloudflare/navegador seguían sirviendo la foto
+        vieja desde caché hasta 4hs después de cambiarla."""
+        primera = authenticated_client(self.user).patch(
+            self.url, {"avatar": _imagen_de_prueba()}, format="multipart",
+        ).data
+        segunda = authenticated_client(self.user).patch(
+            self.url, {"avatar": _imagen_de_prueba(color=(0, 255, 0))}, format="multipart",
+        ).data
+        self.assertNotEqual(primera["avatar"], segunda["avatar"])
+        self.assertNotEqual(primera["avatar_thumbnail"], segunda["avatar_thumbnail"])
+
+    def test_editar_otros_datos_no_toca_el_avatar_ni_la_miniatura(self):
+        authenticated_client(self.user).patch(self.url, {"avatar": _imagen_de_prueba()}, format="multipart")
+        self.user.refresh_from_db()
+        avatar, miniatura = self.user.avatar.name, self.user.avatar_thumbnail.name
+
+        response = authenticated_client(self.user).patch(self.url, {"first_name": "Otra"})
+        self.assertEqual(response.status_code, 200, response.data)
+        self.user.refresh_from_db()
+        self.assertEqual((self.user.avatar.name, self.user.avatar_thumbnail.name), (avatar, miniatura))
+        self.assertTrue(self.user.avatar.storage.exists(avatar))
+
+    def test_quitar_el_avatar_borra_tambien_la_miniatura(self):
+        authenticated_client(self.user).patch(self.url, {"avatar": _imagen_de_prueba()}, format="multipart")
+        self.user.refresh_from_db()
+        storage = self.user.avatar.storage
+        avatar, miniatura = self.user.avatar.name, self.user.avatar_thumbnail.name
+
+        response = authenticated_client(self.user).patch(self.url, {"avatar": ""}, format="multipart")
+        self.assertEqual(response.status_code, 200, response.data)
+        self.user.refresh_from_db()
+        self.assertFalse(self.user.avatar)
+        self.assertFalse(self.user.avatar_thumbnail)
+        self.assertFalse(storage.exists(avatar))
+        self.assertFalse(storage.exists(miniatura))
+
+    def test_detras_del_proxy_https_las_urls_del_avatar_son_https(self):
+        """Cloudflare Tunnel termina el TLS y le habla a Core por http; si la
+        URL absoluta sale `http://`, el navegador la bloquea/reescribe como
+        contenido mixto dentro de un sitio https y la app Android (cleartext
+        bloqueado por default) directamente no la muestra."""
+        authenticated_client(self.user).patch(self.url, {"avatar": _imagen_de_prueba()}, format="multipart")
+        response = authenticated_client(self.user).get(self.url, HTTP_X_FORWARDED_PROTO="https")
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data["avatar"].startswith("https://"), response.data["avatar"])
+        self.assertTrue(response.data["avatar_thumbnail"].startswith("https://"))
 
     def test_me_get_tambien_devuelve_avatar_absoluto_despues_de_subirlo(self):
         authenticated_client(self.user).patch(self.url, {"avatar": _imagen_de_prueba()}, format="multipart")

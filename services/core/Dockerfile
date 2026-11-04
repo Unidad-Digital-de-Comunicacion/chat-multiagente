@@ -11,7 +11,8 @@ RUN apt-get update \
 WORKDIR /app
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --upgrade pip==26.2.2 \
+    && pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
@@ -19,7 +20,7 @@ RUN rm -f /etc/nginx/sites-enabled/default \
     && cp docker/nginx.conf /etc/nginx/conf.d/core.conf \
     && mkdir -p /etc/supervisor/conf.d \
     && cp docker/supervisord.conf /etc/supervisor/conf.d/supervisord.conf \
-    && mkdir -p /app/staticfiles /app/mediafiles /app/keys \
+    && mkdir -p /app/staticfiles /mediafiles /app/keys /var/log/udc \
     && chmod +x entrypoint.sh
 
 EXPOSE 80

@@ -336,6 +336,7 @@ export default function ConversationHistoryPage() {
     const base = superuser
       ? "/api/core/plataforma/historial-conversaciones/"
       : "/api/core/conversaciones/historial/";
+
     let cancelado = false;
 
     // `esPrimeraCarga` distingue la carga inicial (si falla, hay que
@@ -351,6 +352,7 @@ export default function ConversationHistoryPage() {
           if (cancelado) return;
           setFilas(data.results);
           setCount(data.count);
+
           if (esPrimeraCarga) setError(null);
         })
         .catch((err) => {

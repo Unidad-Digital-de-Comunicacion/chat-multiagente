@@ -157,9 +157,23 @@ Each has its own `requirements.txt`/`Dockerfile`; run via
 - **Media files**: `avatar`/`avatar_thumbnail` and any future
   `ImageField`/`FileField` must be serialized as absolute URLs
   (`request.build_absolute_uri`), never `FieldFile.url` directly — the Admin
-  Panel runs on a different origin/port. `/app/mediafiles` must stay on a
-  named volume (`media_files`), unlike `/app/staticfiles` which regenerates
-  on every boot via `collectstatic`.
+  Panel runs on a different origin/port. `MEDIA_ROOT` is `/mediafiles` (root
+  of the container, NOT under `/app` — a host bind mount nested under the
+  override's `./services/core:/app` leaves phantom dirs on Windows): named
+  volume `media_files` in prod, `./data/media` on the host in dev (override).
+  Uploaded files get a versioned name (`avatars/<pk>_<hash>.jpg`) because
+  Cloudflare caches `/media/` for 4h. Behind the tunnel Django needs
+  `SECURE_PROXY_SSL_HEADER` (set) for `https://` absolute URLs.
+- **Logs & incidents** (`monitoring` app): every service writes JSON lines
+  (`common/observabilidad.py` in Core, an identical `app/observabilidad.py`
+  in each FastAPI service — keep the 4 copies in sync) to `./logs/<service>/`
+  with size rotation (`concurrent-log-handler`, `keep_file_open=False` —
+  required on the Windows bind mount). A `request_id` (`X-Request-ID` or
+  Cloudflare's `Cf-Ray`) is propagated between services. `manage.py
+  vigilar_incidentes` runs in a supervisord loop, turns ERROR lines / failed
+  health checks / login brute force into `Incidente`s and mails
+  `ALERTAS_EMAIL_DESTINO`; the Admin Panel shows them in Plataforma >
+  Incidentes / Logs. Tests never write to the real log files.
 - **API docs**: `drf-spectacular` (+ `drf-spectacular-sidecar`, to avoid a
   CDN dependency for Swagger/Redoc assets) generates the OpenAPI schema at
   `/api/core/plataforma/schema/`. The raw schema endpoint is intentionally

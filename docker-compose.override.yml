@@ -4,10 +4,27 @@
 # cambio.
 
 services:
+  # En desarrollo los datos de Postgres viven en una carpeta del host
+  # (`./data/postgres`, ignorada por git), no en el volumen nombrado
+  # `pgdata` del compose base: así un `docker compose down -v` o un
+  # `docker volume prune` no se lleva la base puesta (pasó el 2026-11-02).
+  # Mismo destino que en docker-compose.yml, así que este bind mount
+  # REEMPLAZA al volumen `pgdata` (compose mezcla `volumes` por ruta
+  # destino). Producción (sin override) sigue usando el volumen nombrado.
+  db:
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+
   core:
     volumes:
       - jwt_keys:/app/keys
       - ./services/core:/app
+      # Mismo criterio que `db`: los archivos subidos (avatares, miniaturas)
+      # viven en `./data/media` del host, no en el volumen `media_files`.
+      # Reemplaza a ese volumen (mismo destino, /mediafiles en la raíz del
+      # contenedor — NO bajo /app: un bind mount del host anidado bajo el
+      # ./services/core:/app de arriba deja carpetas fantasma en Windows).
+      - ./data/media:/mediafiles
     environment:
       - GUNICORN_RELOAD=true
       # 1 solo worker bloqueaba TODOS los requests mientras uno estaba

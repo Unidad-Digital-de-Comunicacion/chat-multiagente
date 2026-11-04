@@ -24,6 +24,8 @@ import PlatformTokensPage from "./pages/PlatformTokensPage";
 import PlatformMetaAppPage from "./pages/PlatformMetaAppPage";
 import PlatformStatsPage from "./pages/PlatformStatsPage";
 import PlatformManualsPage from "./pages/PlatformManualsPage";
+import PlatformIncidentsPage from "./pages/PlatformIncidentsPage";
+import PlatformLogsPage from "./pages/PlatformLogsPage";
 
 /** La organización usa "/menu" como landing porque casi todo el mundo tiene
  * permiso para verlo — el superusuario de plataforma no (no gestiona el
@@ -61,6 +63,8 @@ export default function App() {
             <Route path="/plataforma/meta-app" element={<PlatformMetaAppPage />} />
             <Route path="/plataforma/estadisticas" element={<PlatformStatsPage />} />
             <Route path="/plataforma/manuales" element={<PlatformManualsPage />} />
+            <Route path="/plataforma/incidentes" element={<PlatformIncidentsPage />} />
+            <Route path="/plataforma/logs" element={<PlatformLogsPage />} />
             <Route path="/plataforma/historial-conversaciones" element={<ConversationHistoryPage />} />
             <Route path="/" element={<Home />} />
           </Route>

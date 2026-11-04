@@ -1,3 +1,5 @@
+import uuid
+
 from django.contrib.auth.models import AbstractBaseUser, PermissionsMixin
 from django.db import models
 
@@ -6,13 +8,23 @@ from .managers import UserManager
 AVATAR_THUMBNAIL_SIZE = (150, 150)
 
 
+def _version():
+    return uuid.uuid4().hex[:8]
+
+
+# Cada archivo nuevo lleva un sufijo de versión en el nombre
+# (`avatars/<pk>_<version>.<ext>`): Cloudflare cachea `/media/` hasta 4hs
+# (`Cache-Control: max-age=14400`) y el navegador también, así que con un
+# nombre fijo (`avatars/thumbnails/<pk>.jpg`) un cambio de foto seguía
+# mostrando la anterior durante horas. Nombre nuevo = URL nueva = sin caché
+# vieja; el archivo anterior se borra en `User.save`.
 def avatar_upload_path(instance, filename):
     ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else "jpg"
-    return f"avatars/{instance.pk}.{ext}"
+    return f"avatars/{instance.pk}_{_version()}.{ext}"
 
 
 def avatar_thumbnail_upload_path(instance, filename):
-    return f"avatars/thumbnails/{instance.pk}.jpg"
+    return f"avatars/thumbnails/{instance.pk}_{_version()}.jpg"
 
 
 class User(AbstractBaseUser, PermissionsMixin):
@@ -84,14 +96,20 @@ class User(AbstractBaseUser, PermissionsMixin):
     def save(self, *args, **kwargs):
         avatar_anterior = None
         if self.pk:
-            avatar_anterior = User.objects.filter(pk=self.pk).values_list("avatar", flat=True).first()
+            avatar_anterior = User.objects.filter(pk=self.pk).values_list("avatar", flat=True).first() or None
+        # Se decide por "llegó un archivo nuevo" (`_committed=False` hasta que
+        # `super().save()` lo escribe), NO comparando nombres: si el archivo
+        # anterior ya no existe en disco, el storage le da al nuevo exactamente
+        # el mismo nombre (`avatars/<pk>.jpg`) y la comparación por nombre
+        # concluía "no cambió" — la miniatura nunca se regeneraba.
+        avatar_nuevo = bool(self.avatar) and not self.avatar._committed
         super().save(*args, **kwargs)
         avatar_actual = self.avatar.name if self.avatar else None
-        if avatar_actual != avatar_anterior:
-            if avatar_anterior:
+        if avatar_nuevo or avatar_actual != avatar_anterior:
+            if avatar_anterior and avatar_anterior != avatar_actual:
                 # Storage por default no pisa archivos con el mismo nombre (le agrega un
-                # sufijo random) — borramos el anterior a mano para no acumular huérfanos
-                # y mantener siempre `avatars/<pk>.<ext>` como ruta estable.
+                # sufijo random) — borramos el anterior a mano para no acumular huérfanos.
+                # Nunca si el nombre coincide con el nuevo: sería borrar el recién subido.
                 self.avatar.storage.delete(avatar_anterior)
             self._regenerar_avatar_thumbnail()
 

@@ -559,8 +559,9 @@ guardan cifrados en la base de `channel-gateway`, no en variables de entorno.
   vez de `http://localhost:8001/media/...`) — arreglado en `services/core/docker/nginx.conf` usando
   `$http_host`. `MEDIA_URL` también tiene que tener `/` inicial (`"/media/"`, no `"media/"`) para que
   `build_absolute_uri` resuelva contra la raíz del host y no contra el path del request actual.
-  Aparte, `/app/mediafiles` (avatares subidos por usuarios) tiene que estar en un volumen nombrado
-  (`media_files:` en `docker-compose.yml`), no sólo en la capa escribible del contenedor — a
+  Aparte, `/mediafiles` (`MEDIA_ROOT`; antes `/app/mediafiles`, movido a la raíz del contenedor en
+  2026-11 para no anidar bind mounts bajo el `/app` del override) tiene que estar en un volumen nombrado
+  (`media_files:` en `docker-compose.yml`; en dev, `./data/media` del host), no sólo en la capa escribible del contenedor — a
   diferencia de `/app/staticfiles` (se regenera solo con `collectstatic` en cada arranque,
   `entrypoint.sh`), un avatar subido no se puede regenerar si se pierde al recrear el contenedor.
 - **Contratos entre servicios**: OpenAPI autogenerado (DRF + FastAPI). Antes de que un servicio

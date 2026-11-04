@@ -9,6 +9,7 @@ import requests
 
 from django.conf import settings
 
+from common.observabilidad import headers_request_id
 from platform_admin.models import ServiceToken
 
 TIMEOUT_SEGUNDOS = 10
@@ -25,7 +26,7 @@ def enviar_mensaje_saliente(conversacion, texto: str) -> bool:
         response = requests.post(
             f"{settings.WEBCHAT_INTERNAL_URL}/messages/send",
             json={"visitor_id": conversacion.contact.identificador_externo, "texto": texto},
-            headers={"Authorization": f"Service-Token {token}"},
+            headers={"Authorization": f"Service-Token {token}", **headers_request_id()},
             timeout=TIMEOUT_SEGUNDOS,
         )
     except requests.RequestException:

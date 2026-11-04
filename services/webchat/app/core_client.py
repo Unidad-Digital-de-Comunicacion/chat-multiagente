@@ -2,6 +2,7 @@ import logging
 import httpx
 from typing import List, Dict, Any
 from app.config import settings
+from app.observabilidad import request_id_actual
 
 logger = logging.getLogger("webchat.core_client")
 
@@ -20,6 +21,7 @@ class CoreClient:
             "Authorization": f"Service-Token {settings.CORE_SERVICE_TOKEN}",
             "Content-Type": "application/json",
             "Accept": "application/json",
+            **({"X-Request-ID": request_id_actual.get()} if request_id_actual.get() else {}),
         }
 
     async def enviar_mensaje_entrante(

@@ -5,7 +5,10 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
 from app.config import settings
+from app.observabilidad import MiddlewareRequestId, configurar_logging
 from app.routes import session_routes, message_routes, websocket_routes
+
+configurar_logging("webchat")
 
 app = FastAPI(
     title="Webchat Service (Channel Gateway - Webchat)",
@@ -21,6 +24,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Último en agregarse = el más externo: fija el request_id antes que CORS.
+app.add_middleware(MiddlewareRequestId)
 
 # Registro de rutas de API
 app.include_router(session_routes.router)

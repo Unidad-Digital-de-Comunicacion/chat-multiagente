@@ -15,6 +15,7 @@ import requests
 
 from django.conf import settings
 
+from common.observabilidad import headers_request_id
 from platform_admin.models import ServiceToken
 
 TIMEOUT_SEGUNDOS = 3
@@ -37,7 +38,7 @@ def notificar_evento(
                 "tipo": tipo, "organization_id": organization_id, "conversacion_id": conversacion_id,
                 "team_id": team_id, "operador_id": operador_id,
             },
-            headers={"Authorization": f"Service-Token {token}"},
+            headers={"Authorization": f"Service-Token {token}", **headers_request_id()},
             timeout=TIMEOUT_SEGUNDOS,
         )
     except requests.RequestException:

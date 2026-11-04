@@ -24,6 +24,7 @@ import requests
 from django.conf import settings
 
 from channels.models import Canal
+from common.observabilidad import headers_request_id
 from platform_admin.models import ServiceToken
 
 from .models import ConversacionLog, EnvioSaliente
@@ -97,7 +98,7 @@ def enviar_mensaje_saliente(conversacion, texto: str) -> bool:
                 "destinatario_id": conversacion.contact.identificador_externo,
                 "texto": texto,
             },
-            headers={"Authorization": f"Service-Token {token}"},
+            headers={"Authorization": f"Service-Token {token}", **headers_request_id()},
             timeout=TIMEOUT_SEGUNDOS,
         )
     except requests.RequestException:

@@ -1504,3 +1504,64 @@ input, select, textarea {
   justify-content: center;
   margin-top: 1rem;
 }
+
+/* ---- Monitoreo: incidentes y línea de tiempo de logs ---- */
+.row-clickable {
+  cursor: pointer;
+}
+
+.row-clickable:hover {
+  background: #f7f8fb;
+}
+
+.row-selected {
+  background: #eef2ff;
+}
+
+.incident-detail {
+  margin-top: 1.25rem;
+}
+
+.log-table td {
+  vertical-align: top;
+  font-size: 0.85rem;
+}
+
+.log-ts {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.log-msg {
+  word-break: break-word;
+}
+
+.log-row-error {
+  background: #fdf3f2;
+}
+
+.log-service {
+  display: inline-block;
+  padding: 0 0.4rem;
+  border: 1px solid;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+
+.log-rid {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.75rem;
+}
+
+.log-pre {
+  background: #f4f5f7;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.6rem;
+  font-size: 0.8rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 24rem;
+  overflow: auto;
+}
